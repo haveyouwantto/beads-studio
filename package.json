@@ -1,0 +1,34 @@
+{
+  "name": "beads-studio",
+  "private": true,
+  "version": "1.0.0",
+  "type": "module",
+  "description": "纯浏览器运行的拼豆工作流工作室：像素图规范化 → 拼豆化配色 → 色号调色板优化",
+  "scripts": {
+    "dev": "vite",
+    "build": "tsc -b && vite build",
+    "preview": "vite preview",
+    "typecheck": "tsc -b --force",
+    "test": "node --experimental-strip-types tests/core.test.ts",
+    "test:ui": "tsx --tsconfig tsconfig.app.json tests/ui.test.ts",
+    "test:all": "npm run test && npm run test:ui",
+    "sample:svg": "tsx --tsconfig tsconfig.app.json tests/sample-svg.gen.ts",
+    "verify:svg": "tsx --tsconfig tsconfig.app.json tests/svg-pixels.verify.ts"
+  },
+  "dependencies": {
+    "react": "^19.1.1",
+    "react-dom": "^19.1.1",
+    "zustand": "^5.0.8"
+  },
+  "devDependencies": {
+    "@types/jsdom": "^30.0.0",
+    "@types/node": "^26.6.3",
+    "@types/react": "^19.1.10",
+    "@types/react-dom": "^19.1.7",
+    "@vitejs/plugin-react": "^5.0.0",
+    "jsdom": "^29.1.1",
+    "tsx": "^4.23.15",
+    "typescript": "^5.9.2",
+    "vite": "^7.1.3"
+  }
+}

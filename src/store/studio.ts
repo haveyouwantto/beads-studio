@@ -1,0 +1,1200 @@
+﻿import { create } from 'zustand'
+import {
+  buildBasic24Palette,
+  buildBasic48Palette,
+  buildLibraryPalette,
+  buildWplacePalette,
+  type CodeSystem,
+  type PaletteEntry,
+  type PaletteSource,
+} from '../core/palette.ts'
+import { DEFAULT_QUANTIZE_OPTIONS, quantizeToPalette, type QuantizeOptions } from '../core/quantize.ts'
+import { DEFAULT_RENDER_OPTIONS, type RenderOptions } from '../core/svg.ts'
+import { analyzePeriods, sampleImage, type DetectReport } from '../core/regularize.ts'
+import { defaultCorners, sampleQuad } from '../core/warp.ts'
+import { collapseBlocks, detectUniformBlock } from '../core/direct.ts'
+import { packPixels, unpackPixels } from '../core/export.ts'
+import {
+  dataUrlToPixmap,
+  listProjects,
+  makeThumbnail,
+  pixmapToDataUrl,
+  readSession,
+  readProject,
+  removeProject,
+  saveProject,
+  writeSession,
+  type IndexEntry,
+  type PersistedProject,
+} from '../core/storage.ts'
+import type { Pixmap, Quad, SampleMode } from '../core/types.ts'
+import {
+  DEFAULT_OPTIMIZE_CONFIG,
+  PaletteOptimizer,
+  targetsFromPixmap,
+  type OptimizeConfig,
+  type OptimizeStats,
+  type TargetSample,
+  type TargetMode,
+} from '../core/optimize.ts'
+
+/**
+ * 三个阶段：① 规范化 → ② 优化颜色 → ③ 转拼豆图纸。
+ * 规范化产出 1:1 网格，作为「优化颜色」的优化目标，再交给「转拼豆图纸」出图。
+ */
+export type StageId = 'regularize' | 'optimize' | 'pattern'
+
+/**
+ * 规范化的三种输入方式：
+ * - auto   像素自动识别（FFT 自相关检测周期/相位）
+ * - quad   四角变换（手动拖四角，适配拍照透视）
+ * - direct 已经是 1:1 的设计稿，直接作为网格
+ */
+export type AlignmentMode = 'auto' | 'quad' | 'direct'
+
+/** 载入图片时的最长边上限：太大既慢又没必要 */
+export const MAX_IMAGE_DIM = 2400
+
+export interface SourceImage {
+  name: string
+  width: number
+  height: number
+  pixmap: Pixmap
+  /** object URL，用于 <img> 预览 */
+  url: string
+}
+
+export interface OptimizeRunState {
+  status: 'idle' | 'running' | 'done' | 'stopped'
+  progress: number
+  step: number
+  temperature: number
+  stats: OptimizeStats | null
+  candidates: number
+  targets: number
+  uniqueColors: number
+  pixels: number
+  bucket: number
+  elapsedMs: number
+  reason: string
+}
+
+const EMPTY_RUN: OptimizeRunState = {
+  status: 'idle',
+  progress: 0,
+  step: 0,
+  temperature: 0,
+  stats: null,
+  candidates: 0,
+  targets: 0,
+  uniqueColors: 0,
+  pixels: 0,
+  bucket: 0,
+  elapsedMs: 0,
+  reason: '',
+}
+
+export interface ProjectTab {
+  id: string
+  name: string
+  /** 小缩略图（PNG dataURL），自动保存时更新 */
+  thumb?: string
+}
+
+/**
+ * 属于「单个项目」的字段。
+ * 每个标签页各存一份，切换标签页时整组换掉，其余（当前阶段、色号库、存储状态）是全局的。
+ */
+const PROJECT_KEYS = [
+  'source',
+  'analysis',
+  'alignmentMode',
+  'periodX',
+  'periodY',
+  'phaseX',
+  'phaseY',
+  'sampleMode',
+  'corners',
+  'manualCols',
+  'manualRows',
+  'directBlock',
+  'grid',
+  'paletteSource',
+  'candidateHex',
+  'includeExtended',
+  'palette',
+  'quantizeOptions',
+  'renderOptions',
+  'result',
+  'codeSystem',
+  'optimizeTargetMode',
+  'optimizeConfig',
+  'optimizedPalette',
+] as const
+
+type ProjectKey = (typeof PROJECT_KEYS)[number]
+export type ProjectState = Pick<StudioState, ProjectKey>
+
+interface StudioState {
+  activeStage: StageId
+
+  // --- 标签页与本地存档 ---
+  tabs: ProjectTab[]
+  activeTabId: string
+  recent: IndexEntry[]
+  savedAt: number | null
+  autosave: boolean
+  notice: { kind: 'info' | 'warn' | 'error'; text: string } | null
+
+  // --- 阶段 1：规范化 ---
+  source: SourceImage | null
+  loading: boolean
+  error: string | null
+  alignmentMode: AlignmentMode
+  analysis: DetectReport | null
+  periodX: number
+  periodY: number
+  phaseX: number
+  phaseY: number
+  sampleMode: SampleMode
+  corners: Quad
+  manualCols: number
+  manualRows: number
+  /** direct 模式：把 N×N 像素块压成一颗豆（自动探测原图被放大的倍数） */
+  directBlock: number
+  grid: Pixmap | null
+
+  // --- 阶段 3：转拼豆图纸 ---
+  paletteSource: PaletteSource
+  /**
+   * 参与配色优化的候选色（HEX 列表）。
+   * 空数组 = 未筛选，表示色号库全部参与。
+   */
+  candidateHex: string[]
+  includeExtended: boolean
+  libraryPalette: PaletteEntry[]
+  palette: PaletteEntry[]
+  quantizeOptions: QuantizeOptions
+  renderOptions: RenderOptions
+  result: Pixmap | null
+
+  // --- 阶段 2：优化颜色 ---
+  optimizeTargetMode: TargetMode
+  optimizeConfig: OptimizeConfig
+  optimizeRun: OptimizeRunState
+  optimizedPalette: PaletteEntry[]
+  codeSystem: CodeSystem
+
+  // --- actions ---
+  setStage: (s: StageId) => void
+  goNext: () => void
+  goPrev: () => void
+
+  loadImageFile: (file: File) => Promise<void>
+  loadImageBlob: (blob: Blob, name: string) => Promise<void>
+  clearSource: () => void
+
+  setAlignmentMode: (m: AlignmentMode) => void
+  setSampleMode: (m: SampleMode) => void
+  runAnalysis: () => void
+  setPeriod: (axis: 'x' | 'y', value: number) => void
+  setPhase: (axis: 'x' | 'y', value: number) => void
+  setCorner: (index: number, x: number, y: number) => void
+  resetCorners: () => void
+  setManualSize: (cols: number, rows: number) => void
+  setDirectBlock: (n: number) => void
+  detectDirectBlock: () => void
+  buildGrid: () => void
+
+  setPaletteSource: (s: PaletteSource) => void
+  /** 设置配色优化的候选色（传空数组 = 全部参与） */
+  setCandidateHex: (hexes: string[]) => void
+  setIncludeExtended: (v: boolean) => void
+  setPalette: (entries: PaletteEntry[]) => void
+  setQuantizeOptions: (patch: Partial<QuantizeOptions>) => void
+  setRenderOptions: (patch: Partial<RenderOptions>) => void
+  setCodeSystem: (s: CodeSystem) => void
+  recomputeResult: () => void
+
+  setOptimizeConfig: (patch: Partial<OptimizeConfig>) => void
+  setOptimizeTargetMode: (m: TargetMode) => void
+  runOptimizer: () => Promise<void>
+  stopOptimizer: () => void
+  applyOptimizedPalette: () => void
+  clearOptimizedPalette: () => void
+
+  // --- 标签页 ---
+  newTab: () => void
+  openInNewTab: (blob: Blob, name: string) => Promise<void>
+  switchTab: (id: string) => void
+  closeTab: (id: string) => void
+  renameTab: (id: string, name: string) => void
+
+  // --- 本地存档 ---
+  initPersistence: () => () => void
+  saveCurrentProject: () => void
+  refreshRecent: () => void
+  openRecentProject: (id: string) => Promise<boolean>
+  deleteRecentProject: (id: string) => void
+  setAutosave: (v: boolean) => void
+  clearNotice: () => void
+}
+
+let activeOptimizer: PaletteOptimizer | null = null
+
+function newTabId(): string {
+  return `p${Date.now().toString(36)}${Math.random().toString(36).slice(2, 7)}`
+}
+
+export const NEW_TAB_NAME = '未命名项目'
+const FIRST_TAB_ID = newTabId()
+
+/** 读取某个非激活标签页的内存快照（用于标签栏缩略图等展示） */
+export function getTabSnapshot(id: string): ProjectState | undefined {
+  return tabSnapshots.get(id)
+}
+
+/** 一个全新项目的默认值 */
+function freshProject(): ProjectState {
+  const library = buildLibraryPalette({ includeExtended: false })
+  return {
+    source: null,
+    analysis: null,
+    alignmentMode: 'auto',
+    periodX: 1,
+    periodY: 1,
+    phaseX: 0,
+    phaseY: 0,
+    sampleMode: 'mean',
+    corners: defaultCorners(1, 1),
+    manualCols: 48,
+    manualRows: 48,
+    directBlock: 1,
+    grid: null,
+    paletteSource: 'library',
+    candidateHex: [],
+    includeExtended: false,
+    palette: library,
+    quantizeOptions: { ...DEFAULT_QUANTIZE_OPTIONS },
+    renderOptions: { ...DEFAULT_RENDER_OPTIONS },
+    result: null,
+    codeSystem: 'MARD',
+    optimizeTargetMode: 'grid',
+    optimizeConfig: { ...DEFAULT_OPTIMIZE_CONFIG },
+    optimizedPalette: [],
+  }
+}
+
+function snapshotProject(s: StudioState): ProjectState {
+  const out = {} as ProjectState
+  for (const key of PROJECT_KEYS) {
+    // 逐字段拷贝，保持类型安全
+    Object.assign(out, { [key]: s[key] })
+  }
+  return out
+}
+
+/** 把项目字段写回 store，并同步派生数据、清掉上一段的优化运行态 */
+function projectPatch(project: ProjectState): Partial<StudioState> {
+  return {
+    ...project,
+    libraryPalette: buildLibraryPalette({ includeExtended: project.includeExtended }),
+    optimizeRun: { ...EMPTY_RUN },
+  }
+}
+
+/**
+ * 按「色板来源」算出实际要用的色板。
+ *
+ * 关键点：优化结果一直存在 optimizedPalette 里，不会被别的来源覆盖，
+ * 所以「切到色号库再切回优化结果」能原样拿回自己那套颜色。
+ * 返回 null 表示这个来源当前不可用（例如还没跑过优化）。
+ */
+function resolvePaletteForSource(source: PaletteSource, s: StudioState): PaletteEntry[] | null {
+  switch (source) {
+    case 'optimized':
+      return s.optimizedPalette.length ? s.optimizedPalette : null
+    case 'library':
+      return s.libraryPalette
+    case 'basic24':
+      return buildBasic24Palette()
+    case 'basic48':
+      return buildBasic48Palette()
+    case 'wplace':
+      return buildWplacePalette()
+    case 'custom':
+    default:
+      return s.palette
+  }
+}
+
+/** 更新当前标签页的标题 */
+function withRenamedTab(tabs: ProjectTab[], id: string, name: string): ProjectTab[] {
+  return tabs.map((t) => (t.id === id ? { ...t, name } : t))
+}
+
+/** 记下「现在开着哪些标签页」，下次启动时照着恢复 */
+function persistSession(s: StudioState): void {
+  writeSession({
+    tabs: s.tabs.map((t) => ({ id: t.id, name: t.name })),
+    activeId: s.activeTabId,
+  })
+}
+
+/**
+ * 非激活标签的项目快照。
+ * store 里只有一份「当前项目」的字段，所以切走时必须把快照留在这儿，切回来再放回去。
+ */
+const tabSnapshots = new Map<string, ProjectState>()
+
+function tabNameOf(s: StudioState): string {
+  return s.tabs.find((t) => t.id === s.activeTabId)?.name ?? NEW_TAB_NAME
+}
+
+/** 标签页标题：去掉扩展名，太长就截断 */
+function shortName(name: string): string {
+  const base = name.replace(/\.[a-z0-9]{1,6}$/i, '').trim() || name
+  return base.length > 22 ? `${base.slice(0, 21)}…` : base
+}
+
+/**
+ * 对象身份编号：用来做「有没有变化」的廉价指纹。
+ * 项目里的像素对象每次重算都是新对象，所以身份变了就说明内容变了。
+ */
+const objectIds = new WeakMap<object, number>()
+let objectIdSeq = 0
+function idOf(value: object | null | undefined): number {
+  if (!value) return 0
+  let id = objectIds.get(value)
+  if (id === undefined) {
+    id = ++objectIdSeq
+    objectIds.set(value, id)
+  }
+  return id
+}
+
+/** 便宜的变更指纹：不碰大像素数据，只看标量 + 对象身份 */
+function fingerprint(s: StudioState): string {
+  return [
+    s.activeTabId,
+    s.codeSystem,
+    s.alignmentMode,
+    s.periodX,
+    s.periodY,
+    s.phaseX,
+    s.phaseY,
+    s.sampleMode,
+    s.manualCols,
+    s.manualRows,
+    s.directBlock,
+    s.paletteSource,
+    s.includeExtended,
+    s.optimizeTargetMode,
+    idOf(s.source),
+    idOf(s.grid),
+    idOf(s.result),
+    idOf(s.palette),
+    idOf(s.optimizedPalette),
+    idOf(s.corners),
+    idOf(s.quantizeOptions),
+    idOf(s.renderOptions),
+    idOf(s.optimizeConfig),
+  ].join('|')
+}
+
+// 原图 / 网格编码结果缓存：像素对象没换就不用重新编码
+let sourceCacheKey: object | null = null
+let sourceCacheValue = ''
+let gridCacheKey: object | null = null
+let gridCacheValue = ''
+
+function encodeSource(s: StudioState): PersistedProject['source'] {
+  if (!s.source) return null
+  const pm = s.source.pixmap
+  if (sourceCacheKey !== pm) {
+    sourceCacheValue = pixmapToDataUrl(pm)
+    sourceCacheKey = pm
+  }
+  return { name: s.source.name, width: s.source.width, height: s.source.height, png: sourceCacheValue }
+}
+
+function encodeGrid(s: StudioState): PersistedProject['grid'] {
+  if (!s.grid) return null
+  if (gridCacheKey !== s.grid) {
+    gridCacheValue = packPixels(s.grid)
+    gridCacheKey = s.grid
+  }
+  return { width: s.grid.width, height: s.grid.height, data: gridCacheValue }
+}
+
+/** store 状态 → 可写进 localStorage 的纯数据 */
+function serializeProject(s: StudioState): PersistedProject {
+  return {
+    alignmentMode: s.alignmentMode,
+    periodX: s.periodX,
+    periodY: s.periodY,
+    phaseX: s.phaseX,
+    phaseY: s.phaseY,
+    sampleMode: s.sampleMode,
+    corners: s.corners.map((p) => ({ x: p.x, y: p.y })),
+    manualCols: s.manualCols,
+    manualRows: s.manualRows,
+    directBlock: s.directBlock,
+    paletteSource: s.paletteSource,
+    candidateHex: [...s.candidateHex],
+    includeExtended: s.includeExtended,
+    paletteHex: s.palette.map((e) => e.hex),
+    codeSystem: s.codeSystem,
+    quantizeOptions: s.quantizeOptions,
+    renderOptions: s.renderOptions,
+    optimizeTargetMode: s.optimizeTargetMode,
+    optimizeConfig: s.optimizeConfig,
+    optimizedHex: s.optimizedPalette.map((e) => e.hex),
+    source: encodeSource(s),
+    sourceOmitted: false,
+    grid: encodeGrid(s),
+  }
+}
+
+/** 存档读回 store 可用的项目状态（需要解码原图，所以是异步的） */
+async function deserializeProject(p: PersistedProject): Promise<ProjectState> {
+  const fullLibrary = buildLibraryPalette({ includeExtended: true })
+  const byHex = new Map(fullLibrary.map((e) => [e.hex, e]))
+  const resolve = (hexes: string[]) =>
+    hexes.map((h) => byHex.get(h)).filter((e): e is PaletteEntry => Boolean(e))
+
+  const library = buildLibraryPalette({ includeExtended: p.includeExtended })
+  let source: SourceImage | null = null
+  if (p.source) {
+    const pixmap = await dataUrlToPixmap(p.source.png)
+    source = { name: p.source.name, width: pixmap.width, height: pixmap.height, pixmap, url: p.source.png }
+  }
+
+  let grid: Pixmap | null = null
+  if (p.grid) {
+    grid = {
+      width: p.grid.width,
+      height: p.grid.height,
+      data: unpackPixels(p.grid.width, p.grid.height, p.grid.data),
+    }
+  }
+
+  return {
+    source,
+    analysis: null,
+    alignmentMode: p.alignmentMode as AlignmentMode,
+    periodX: p.periodX,
+    periodY: p.periodY,
+    phaseX: p.phaseX,
+    phaseY: p.phaseY,
+    sampleMode: p.sampleMode as SampleMode,
+    corners: (p.corners.length === 4
+      ? p.corners.map((pt) => ({ x: pt.x, y: pt.y }))
+      : defaultCorners(source?.width ?? 1, source?.height ?? 1)) as Quad,
+    manualCols: p.manualCols,
+    manualRows: p.manualRows,
+    directBlock: p.directBlock,
+    grid,
+    paletteSource: p.paletteSource as PaletteSource,
+    candidateHex: Array.isArray(p.candidateHex) ? [...p.candidateHex] : [],
+    includeExtended: p.includeExtended,
+    palette: resolve(p.paletteHex).length ? resolve(p.paletteHex) : library,
+    quantizeOptions: { ...DEFAULT_QUANTIZE_OPTIONS, ...(p.quantizeOptions as object) },
+    renderOptions: { ...DEFAULT_RENDER_OPTIONS, ...(p.renderOptions as object) },
+    result: null,
+    codeSystem: p.codeSystem as CodeSystem,
+    optimizeTargetMode: p.optimizeTargetMode as TargetMode,
+    optimizeConfig: { ...DEFAULT_OPTIMIZE_CONFIG, ...(p.optimizeConfig as object) },
+    optimizedPalette: resolve(p.optimizedHex),
+  }
+}
+
+/** 解码图片并按上限缩放，返回可直接参与计算的像素缓冲 */
+async function decodeImage(blob: Blob): Promise<{ pixmap: Pixmap; url: string }> {
+  const url = URL.createObjectURL(blob)
+  const img = await new Promise<HTMLImageElement>((resolve, reject) => {
+    const el = new Image()
+    el.onload = () => resolve(el)
+    el.onerror = () => reject(new Error('无法解码该图片文件'))
+    el.src = url
+  })
+
+  let w = img.naturalWidth || img.width
+  let h = img.naturalHeight || img.height
+  if (!w || !h) throw new Error('图片尺寸为空')
+
+  const scale = Math.min(1, MAX_IMAGE_DIM / Math.max(w, h))
+  w = Math.max(1, Math.floor(w * scale))
+  h = Math.max(1, Math.floor(h * scale))
+
+  const canvas = document.createElement('canvas')
+  canvas.width = w
+  canvas.height = h
+  const ctx = canvas.getContext('2d', { willReadFrequently: true })
+  if (!ctx) throw new Error('无法创建 2D 画布上下文')
+  ctx.drawImage(img, 0, 0, w, h)
+  const data = ctx.getImageData(0, 0, w, h)
+
+  return {
+    pixmap: { width: w, height: h, data: new Uint8ClampedArray(data.data) },
+    url,
+  }
+}
+
+export const useStudio = create<StudioState>((set, get) => ({
+  activeStage: 'regularize',
+
+  tabs: [{ id: FIRST_TAB_ID, name: NEW_TAB_NAME }],
+  activeTabId: FIRST_TAB_ID,
+  recent: [],
+  savedAt: null,
+  autosave: true,
+  notice: null,
+
+  loading: false,
+  error: null,
+  libraryPalette: buildLibraryPalette({ includeExtended: false }),
+  optimizeRun: { ...EMPTY_RUN },
+
+  ...freshProject(),
+
+  setStage: (s) => set({ activeStage: s }),
+  goNext: () => {
+    const order: StageId[] = ['regularize', 'optimize', 'pattern']
+    const idx = order.indexOf(get().activeStage)
+    if (idx < order.length - 1) set({ activeStage: order[idx + 1] })
+  },
+  goPrev: () => {
+    const order: StageId[] = ['regularize', 'optimize', 'pattern']
+    const idx = order.indexOf(get().activeStage)
+    if (idx > 0) set({ activeStage: order[idx - 1] })
+  },
+
+  loadImageFile: async (file) => {
+    await get().loadImageBlob(file, file.name)
+  },
+
+  loadImageBlob: async (blob, name) => {
+    set({ loading: true, error: null })
+    try {
+      const { pixmap, url } = await decodeImage(blob)
+      const prevUrl = get().source?.url
+      if (prevUrl) URL.revokeObjectURL(prevUrl)
+
+      set({
+        source: { name, width: pixmap.width, height: pixmap.height, pixmap, url },
+        corners: defaultCorners(pixmap.width, pixmap.height),
+        analysis: null,
+        grid: null,
+        result: null,
+        loading: false,
+      })
+      get().detectDirectBlock()
+      if (get().alignmentMode === 'auto') get().runAnalysis()
+      else get().buildGrid()
+    } catch (err) {
+      set({ loading: false, error: err instanceof Error ? err.message : '载入图片失败' })
+    }
+  },
+
+  clearSource: () => {
+    const prevUrl = get().source?.url
+    if (prevUrl) URL.revokeObjectURL(prevUrl)
+    set({
+      source: null,
+      analysis: null,
+      grid: null,
+      result: null,
+      error: null,
+      optimizedPalette: [],
+      optimizeRun: { ...EMPTY_RUN },
+    })
+  },
+
+  setAlignmentMode: (m) => {
+    set({ alignmentMode: m })
+    if (m === 'auto') {
+      if (get().analysis) get().buildGrid()
+      else get().runAnalysis()
+    } else {
+      get().buildGrid()
+    }
+  },
+  setSampleMode: (m) => {
+    set({ sampleMode: m })
+    get().buildGrid()
+  },
+
+  runAnalysis: () => {
+    const src = get().source
+    if (!src) return
+    const report = analyzePeriods(src.pixmap)
+    if (!report) {
+      set({ analysis: null, error: '未能可靠检测到像素周期，请改用手动四角对齐' })
+      return
+    }
+    set({
+      analysis: report,
+      periodX: report.periodX,
+      periodY: report.periodY,
+      phaseX: report.phaseX,
+      phaseY: report.phaseY,
+      error: null,
+    })
+    get().buildGrid()
+  },
+
+  setPeriod: (axis, value) => {
+    const v = Math.max(1, value)
+    set(axis === 'x' ? { periodX: v } : { periodY: v })
+    get().buildGrid()
+  },
+  setPhase: (axis, value) => {
+    set(axis === 'x' ? { phaseX: value } : { phaseY: value })
+    get().buildGrid()
+  },
+
+  setCorner: (index, x, y) => {
+    const corners = get().corners.map((p, i) => (i === index ? { x, y } : p)) as Quad
+    set({ corners })
+    if (get().alignmentMode === 'quad') get().buildGrid()
+  },
+  resetCorners: () => {
+    const src = get().source
+    if (!src) return
+    set({ corners: defaultCorners(src.width, src.height) })
+    get().buildGrid()
+  },
+  setManualSize: (cols, rows) => {
+    set({ manualCols: Math.max(1, Math.round(cols)), manualRows: Math.max(1, Math.round(rows)) })
+    get().buildGrid()
+  },
+  setDirectBlock: (n) => {
+    set({ directBlock: Math.max(1, Math.round(n)) })
+    get().buildGrid()
+  },
+  detectDirectBlock: () => {
+    const src = get().source
+    if (!src) return
+    const block = detectUniformBlock(src.pixmap)
+    set({ directBlock: block, manualCols: src.width / block, manualRows: src.height / block })
+  },
+
+  buildGrid: () => {
+    const state = get()
+    const src = state.source
+    if (!src) return
+
+    let grid: Pixmap | null = null
+    if (state.alignmentMode === 'auto') {
+      const report = state.analysis
+      const periodX = report ? state.periodX : 1
+      const periodY = report ? state.periodY : 1
+      if (!report) return
+      const out = sampleImage(
+        src.pixmap.data,
+        src.pixmap.width,
+        src.pixmap.height,
+        periodX,
+        periodY,
+        state.phaseX % periodX,
+        state.phaseY % periodY,
+        state.sampleMode,
+      )
+      grid = out.pixmap
+    } else if (state.alignmentMode === 'quad') {
+      grid = sampleQuad(src.pixmap, state.corners, state.manualCols, state.manualRows)
+    } else {
+      grid =
+        state.directBlock > 1
+          ? collapseBlocks(src.pixmap, state.directBlock)
+          : { width: src.pixmap.width, height: src.pixmap.height, data: new Uint8ClampedArray(src.pixmap.data) }
+    }
+
+    set({ grid })
+    get().recomputeResult()
+  },
+
+  setPaletteSource: (s) => {
+    const state = get()
+    const resolved = resolvePaletteForSource(s, state)
+    if (!resolved) {
+      // 还没跑优化就想用优化结果：只提醒，不动当前色板
+      set({
+        notice: {
+          kind: 'warn',
+          text: '还没有配色优化结果。请先到「优化颜色」运行一次，再回来选用优化结果。',
+        },
+      })
+      return
+    }
+    set({ paletteSource: s, palette: resolved, notice: null })
+    get().recomputeResult()
+  },
+
+  setCandidateHex: (hexes) => {
+    set({ candidateHex: [...new Set(hexes)] })
+  },
+
+  setIncludeExtended: (v) => {
+    const library = buildLibraryPalette({ includeExtended: v })
+    const state = get()
+    // 扩展色号开关会改变色号库，候选色里不属于新库的自动丢弃
+    const allowed = new Set(library.map((e) => e.hex))
+    const candidateHex = state.candidateHex.filter((h) => allowed.has(h))
+    set({
+      includeExtended: v,
+      libraryPalette: library,
+      candidateHex,
+      palette: state.paletteSource === 'library' ? library : state.palette,
+    })
+    get().recomputeResult()
+  },
+
+  setPalette: (entries) => {
+    set({ palette: entries, paletteSource: 'custom' })
+    get().recomputeResult()
+  },
+
+  setQuantizeOptions: (patch) => {
+    set({ quantizeOptions: { ...get().quantizeOptions, ...patch } })
+    get().recomputeResult()
+  },
+
+  setRenderOptions: (patch) => {
+    set({ renderOptions: { ...get().renderOptions, ...patch } })
+  },
+
+  setCodeSystem: (s) => set({ codeSystem: s }),
+
+  recomputeResult: () => {
+    const { grid, palette, quantizeOptions } = get()
+    if (!grid) {
+      set({ result: null })
+      return
+    }
+    set({ result: quantizeToPalette(grid, palette, quantizeOptions) })
+  },
+
+  setOptimizeConfig: (patch) => set({ optimizeConfig: { ...get().optimizeConfig, ...patch } }),
+  setOptimizeTargetMode: (m) => set({ optimizeTargetMode: m }),
+
+  runOptimizer: async () => {
+    const state = get()
+    const grid = state.grid
+    const started = performance.now()
+
+    if (state.optimizeTargetMode === 'grid' && !grid) {
+      set({ error: '请先在「规范化」中生成像素网格，再运行配色优化' })
+      return
+    }
+
+    // 候选色 = 用户在「选择候选色」里勾选过的子集；没筛过就用整本色号库
+    const allowed = state.candidateHex.length ? new Set(state.candidateHex) : null
+    const candidates = allowed
+      ? state.libraryPalette.filter((e) => allowed.has(e.hex))
+      : state.libraryPalette
+    if (!candidates.length) {
+      set({
+        error: allowed
+          ? '当前勾选的候选色是空的，请先在「选择候选色」里至少勾一个颜色'
+          : '色号库为空',
+      })
+      return
+    }
+
+    let targetInfo: { samples: TargetSample[]; uniqueColors: number; pixels: number; bucket: number } = {
+      samples: [],
+      uniqueColors: 0,
+      pixels: 0,
+      bucket: 0,
+    }
+    if (state.optimizeTargetMode === 'grid' && grid) {
+      targetInfo = targetsFromPixmap(grid, { maxTargets: 1200 })
+    } else {
+      targetInfo = {
+        samples: candidates.map((e) => ({ rgb: e.rgb, lab: e.lab, count: 1 })),
+        uniqueColors: candidates.length,
+        pixels: candidates.length,
+        bucket: 0,
+      }
+    }
+
+    if (!targetInfo.samples.length) {
+      set({ error: '当前网格没有可用的目标颜色' })
+      return
+    }
+
+    const optimizer = new PaletteOptimizer(candidates, state.optimizeConfig, state.optimizeTargetMode)
+    activeOptimizer = optimizer
+    optimizer.setTargets(targetInfo.samples)
+
+    set({
+      error: null,
+      optimizedPalette: [],
+      optimizeRun: {
+        ...EMPTY_RUN,
+        status: 'running',
+        candidates: candidates.length,
+        targets: targetInfo.samples.length,
+        uniqueColors: targetInfo.uniqueColors,
+        pixels: targetInfo.pixels,
+        bucket: targetInfo.bucket,
+      },
+    })
+
+    const indicesToEntries = (idx: number[]) => idx.map((i) => candidates[i]).filter(Boolean)
+
+    try {
+      for await (const event of optimizer.run()) {
+        if (event.type === 'initialized') {
+          set((s) => ({
+            optimizeRun: { ...s.optimizeRun, stats: event.stats, step: 0, progress: 0 },
+            optimizedPalette: indicesToEntries(event.selected),
+          }))
+        } else if (event.type === 'progress') {
+          set((s) => ({
+            optimizeRun: {
+              ...s.optimizeRun,
+              status: 'running',
+              stats: event.stats,
+              step: event.step,
+              progress: event.progress,
+              temperature: event.temperature,
+              elapsedMs: performance.now() - started,
+            },
+            optimizedPalette: indicesToEntries(event.selected),
+          }))
+        } else {
+          const reasonText =
+            event.reason === 'early-exit'
+              ? `提前收敛（连续 ${state.optimizeConfig.patience} 步无改进）`
+              : event.reason === 'stopped'
+                ? '已手动停止'
+                : '已完成全部退火步数'
+          set((s) => ({
+            optimizeRun: {
+              ...s.optimizeRun,
+              status: event.reason === 'stopped' ? 'stopped' : 'done',
+              stats: event.stats,
+              step: event.steps,
+              progress: 100,
+              elapsedMs: performance.now() - started,
+              reason: reasonText,
+            },
+            optimizedPalette: indicesToEntries(event.selected),
+          }))
+        }
+      }
+    } catch (err) {
+      set({ error: err instanceof Error ? err.message : '优化过程出错' })
+    } finally {
+      activeOptimizer = null
+    }
+  },
+
+  stopOptimizer: () => {
+    activeOptimizer?.stop()
+  },
+
+  applyOptimizedPalette: () => {
+    const entries = get().optimizedPalette
+    if (!entries.length) return
+    set({ palette: entries, paletteSource: 'optimized', activeStage: 'pattern' })
+    get().recomputeResult()
+  },
+
+  clearOptimizedPalette: () => set({ optimizedPalette: [], optimizeRun: { ...EMPTY_RUN } }),
+
+  // ---------------------------------------------------------------- 标签页
+
+  newTab: () => {
+    const s = get()
+    if (s.source || s.grid) get().saveCurrentProject()
+    tabSnapshots.set(s.activeTabId, snapshotProject(s))
+    const id = newTabId()
+    set({
+      tabs: [...s.tabs, { id, name: NEW_TAB_NAME }],
+      activeTabId: id,
+      error: null,
+      activeStage: 'regularize',
+      ...projectPatch(freshProject()),
+    })
+  },
+
+  openInNewTab: async (blob, name) => {
+    // 当前标签还是空的就直接用它，避免留下一堆空标签
+    const s = get()
+    if (s.source || s.grid) get().saveCurrentProject()
+    if (!s.source && !s.grid) {
+      set({ tabs: withRenamedTab(s.tabs, s.activeTabId, shortName(name)) })
+    } else {
+      tabSnapshots.set(s.activeTabId, snapshotProject(s))
+      const id = newTabId()
+      set({
+        tabs: [...s.tabs, { id, name: shortName(name) }],
+        activeTabId: id,
+        activeStage: 'regularize',
+        ...projectPatch(freshProject()),
+      })
+    }
+    await get().loadImageBlob(blob, name)
+  },
+
+  switchTab: (id) => {
+    const s = get()
+    if (id === s.activeTabId) return
+    const target = s.tabs.find((t) => t.id === id)
+    if (!target) return
+    // 离开前先把当前标签写进本地存档，否则它的改动会随切换丢掉
+    if (s.source || s.grid) get().saveCurrentProject()
+    tabSnapshots.set(s.activeTabId, snapshotProject(s))
+    const snapshot = tabSnapshots.get(id) ?? freshProject()
+    set({
+      activeTabId: id,
+      error: null,
+      notice: null,
+      ...projectPatch(snapshot),
+    })
+  },
+
+  closeTab: (id) => {
+    const s = get()
+    const index = s.tabs.findIndex((t) => t.id === id)
+    if (index < 0) return
+
+    const closingSnapshot = id === s.activeTabId ? snapshotProject(s) : tabSnapshots.get(id)
+    if (closingSnapshot?.source?.url) URL.revokeObjectURL(closingSnapshot.source.url)
+    tabSnapshots.delete(id)
+
+    if (s.tabs.length === 1) {
+      // 最后一个标签不真的关掉，清空成新项目。
+      // 必须换一个新 id：否则它会顶着旧项目 id 却已经是空的，
+      // 之后从「最近项目」打开那个项目时会误判成「已打开」而切到这个空标签。
+      const freshId = newTabId()
+      set({
+        tabs: [{ id: freshId, name: NEW_TAB_NAME }],
+        activeTabId: freshId,
+        error: null,
+        notice: null,
+        ...projectPatch(freshProject()),
+      })
+      return
+    }
+
+    const tabs = s.tabs.filter((t) => t.id !== id)
+    if (id !== s.activeTabId) {
+      set({ tabs })
+      return
+    }
+
+    const next = tabs[Math.min(index, tabs.length - 1)]
+    const snapshot = tabSnapshots.get(next.id) ?? freshProject()
+    set({
+      tabs,
+      activeTabId: next.id,
+      error: null,
+      ...projectPatch(snapshot),
+    })
+  },
+
+  renameTab: (id, name) => {
+    set({ tabs: withRenamedTab(get().tabs, id, name || NEW_TAB_NAME) })
+    persistSession(get())
+  },
+
+  // ---------------------------------------------------------------- 本地存档
+
+  setAutosave: (v) => {
+    set({ autosave: v })
+    if (v) get().saveCurrentProject()
+  },
+
+  clearNotice: () => set({ notice: null }),
+  refreshRecent: () => set({ recent: listProjects() }),
+
+  saveCurrentProject: () => {
+    const s = get()
+    let payload: PersistedProject
+    let thumbnail = ''
+    try {
+      payload = serializeProject(s)
+      const thumbSource = s.result ?? s.grid
+      thumbnail = thumbSource ? makeThumbnail(thumbSource, 96) : ''
+    } catch (err) {
+      set({
+        notice: { kind: 'error', text: err instanceof Error ? err.message : '序列化失败' },
+      })
+      return
+    }
+
+    const outcome = saveProject(
+      {
+        id: s.activeTabId,
+        name: tabNameOf(s),
+        project: payload,
+        thumbnail,
+        gridWidth: s.grid?.width ?? 0,
+        gridHeight: s.grid?.height ?? 0,
+      },
+      s.tabs.map((t) => t.id),
+    )
+
+    if (!outcome.ok) {
+      set({ notice: { kind: 'error', text: outcome.error ?? '保存失败' } })
+    } else if (outcome.sourceOmitted) {
+      set({
+        savedAt: Date.now(),
+        notice: {
+          kind: 'warn',
+          text: '本地空间不足，这张原图没有存进自动存档（网格、配色、设置都已保存）。',
+        },
+      })
+    } else {
+      set({ savedAt: Date.now(), notice: null })
+    }
+    // 顺手把缩略图记到标签页上，标签栏就能直接显示
+    if (thumbnail) {
+      set({ tabs: get().tabs.map((t) => (t.id === s.activeTabId ? { ...t, thumb: thumbnail } : t)) })
+    }
+    persistSession(get())
+    set({ recent: listProjects() })
+  },
+
+  openRecentProject: async (id) => {
+    const s = get()
+    if (s.tabs.some((t) => t.id === id)) {
+      get().switchTab(id)
+      return true
+    }
+    const record = readProject(id)
+    if (!record) {
+      set({ notice: { kind: 'error', text: '这个项目的本地数据已经不存在了' } })
+      get().refreshRecent()
+      return false
+    }
+
+    try {
+      const project = await deserializeProject(record.project)
+      if (s.source || s.grid) get().saveCurrentProject()
+      tabSnapshots.set(s.activeTabId, snapshotProject(get()))
+      set({
+        tabs: [...s.tabs, { id, name: record.name }],
+        activeTabId: id,
+        activeStage: project.grid ? 'pattern' : 'regularize',
+        error: null,
+        notice: null,
+        ...projectPatch(project),
+      })
+      // 读档时把目标色与派生结果补齐
+      get().recomputeResult()
+      return true
+    } catch (err) {
+      set({
+        notice: {
+          kind: 'error',
+          text: err instanceof Error ? err.message : '读取项目失败',
+        },
+      })
+      return false
+    }
+  },
+
+  deleteRecentProject: (id) => {
+    removeProject(id)
+    set({ recent: listProjects() })
+  },
+
+  /**
+   * 自动保存：订阅 store，停止编辑 900ms 后写一次 localStorage。
+   * 序列化是同步的，所以关页面前也能补一次保存。
+   */
+  initPersistence: () => {
+    get().refreshRecent()
+
+    let timer: ReturnType<typeof setTimeout> | null = null
+    let lastSerialized = ''
+
+    const runSave = () => {
+      const s = get()
+      if (!s.autosave) return
+      // 完全空的项目不用进「最近项目」
+      if (!s.source && !s.grid) return
+      try {
+        serializeProject(s)
+      } catch {
+        return
+      }
+      const mark = fingerprint(s)
+      if (mark === lastSerialized) return
+      lastSerialized = mark
+      get().saveCurrentProject()
+    }
+
+    const unsubscribe = useStudio.subscribe((state, prev) => {
+      // 忽略保存本身引发的状态变化，避免自激循环
+      if (
+        state.savedAt !== prev.savedAt ||
+        state.notice !== prev.notice ||
+        state.recent !== prev.recent
+      ) {
+        return
+      }
+      if (timer) clearTimeout(timer)
+      timer = setTimeout(runSave, 900)
+    })
+
+    const onUnload = () => {
+      if (timer) clearTimeout(timer)
+      runSave()
+      persistSession(get())
+    }
+    window.addEventListener('beforeunload', onUnload)
+    window.addEventListener('pagehide', onUnload)
+
+    // 启动恢复：把上次开着的标签页装回来（只解码当前那个，其余按需解码）
+    void (async () => {
+      const session = readSession()
+      if (!session) return
+      const available = session.tabs.filter((t) => readProject(t.id))
+      if (!available.length) return
+
+      const activeId = available.some((t) => t.id === session.activeId)
+        ? session.activeId
+        : available[available.length - 1].id
+
+      set({
+        tabs: available.map((t) => ({ id: t.id, name: t.name })),
+        activeTabId: activeId,
+        loading: true,
+      })
+
+      const ordered = [...available].sort((a, b) => (a.id === activeId ? -1 : b.id === activeId ? 1 : 0))
+      for (const tab of ordered) {
+        const record = readProject(tab.id)
+        if (!record) continue
+        try {
+          const project = await deserializeProject(record.project)
+          tabSnapshots.set(tab.id, project)
+          if (get().activeTabId !== tab.id) continue
+          // 当前标签：真正放进 store
+          set({ loading: false, notice: null, ...projectPatch(project) })
+          get().recomputeResult()
+          persistSession(get())
+        } catch {
+          // 单个标签恢复失败就把它去掉，不影响其它标签
+          const rest = get().tabs.filter((t) => t.id !== tab.id)
+          if (rest.length) set({ tabs: rest })
+        }
+      }
+      lastSerialized = fingerprint(get())
+    })()
+
+    return () => {
+      unsubscribe()
+      if (timer) clearTimeout(timer)
+      window.removeEventListener('beforeunload', onUnload)
+      window.removeEventListener('pagehide', onUnload)
+    }
+  },
+}))
