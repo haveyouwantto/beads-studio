@@ -11,22 +11,10 @@ import { Notice, useMaterialRipple } from './components/ui.tsx'
 import { packPixels, unpackPixels, downloadText, type ProjectFile } from './core/export.ts'
 import { formatTime } from './core/storage.ts'
 
-const STAGES: { id: StageId; label: string; desc: string }[] = [
-  {
-    id: 'regularize',
-    label: '规范化',
-    desc: '四角变换 / 像素自动识别 / 直接上传 1:1 像素图',
-  },
-  {
-    id: 'optimize',
-    label: '优化颜色',
-    desc: '以规范化结果为优化目标，选出最终色号',
-  },
-  {
-    id: 'pattern',
-    label: '转拼豆图纸',
-    desc: '量化到色板、珠子预览、出图与用料清单',
-  },
+const STAGES: { id: StageId; label: string }[] = [
+  { id: 'regularize', label: '规范化' },
+  { id: 'optimize', label: '优化颜色' },
+  { id: 'pattern', label: '转拼豆图纸' },
 ]
 
 export default function App() {
@@ -268,7 +256,6 @@ export default function App() {
 
       <div className="body">
         <nav className="rail collection">
-          <div className="rail-title">工作流</div>
           {STAGES.map((s, i) => (
             <button
               key={s.id}
@@ -278,15 +265,10 @@ export default function App() {
               <span className="rail-num">
                 {stageDone[s.id] ? <i className="material-icons sm">check</i> : i + 1}
               </span>
-              <span>
-                <span className="rail-label">{s.label}</span>
-                <span className="rail-desc">{s.desc}</span>
-              </span>
+              <span className="rail-label">{s.label}</span>
             </button>
           ))}
           <div className="rail-foot">
-            当前色板 {palette.length} 色 · {codeSystem}
-            <div className="divider" />
             {autosave ? (
               <>自动保存{savedAt ? ` · ${formatTime(savedAt)}` : ''}</>
             ) : (

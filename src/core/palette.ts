@@ -135,7 +135,7 @@ export type PaletteSource = 'library' | 'optimized' | 'basic24' | 'basic48' | 'c
 
 export const PALETTE_SOURCE_LABELS: Record<PaletteSource, string> = {
   optimized: '优化结果',
-  library: '色号库',
+  library: '全色',
   basic24: '基础24色',
   basic48: '基础48色',
   custom: '自定义',

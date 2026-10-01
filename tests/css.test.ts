@@ -39,9 +39,9 @@ const markup = [
   `<style>${icons}</style>`,
   `<style>${mine}</style>`,
   '</head><body>',
-  '<nav class="rail"><div class="rail-title">工作流</div>',
+  '<nav class="rail">',
   '<button class="rail-step collection-item active"><span class="rail-num">1</span>',
-  '<span><span class="rail-label">规范化</span><span class="rail-desc">说明</span></span></button></nav>',
+  '<span class="rail-label">规范化</span></button></nav>',
   '<label class="check"><input type="checkbox" checked><span>包含扩展色号</span></label>',
   '<span class="badge">已打开</span>',
   '<div class="modal-overlay open"><div class="modal open modal-wide">',
@@ -59,6 +59,8 @@ const markup = [
   '<div class="row"><span>a</span></div>',
   '<div class="pattern-svg"></div>',
   '<div class="stat"><div class="k">平均</div><div class="v">12.3</div><div class="v sm">4</div></div>',
+  '<div class="tiny muted">小字</div>',
+  '<table class="bom"><thead><tr><th>色号</th></tr></thead></table>',
   '<header class="panel-head">面板标题</header>',
   '<div class="card panel"><div class="card-title panel-head">面板标题</div><div class="card-content panel-body">内容</div></div>',
   '<div class="stage-head"><h1>① 规范化</h1><p>把图片变成网格</p></div>',
@@ -174,8 +176,8 @@ section('MD2 规格值')
   )
   check('Body2 14/20', style('.stage-head p', 'font-size') === '14px' && style('.stage-head p', 'line-height') === '20px')
   check('Subtitle2 14/24 500', style('.panel-head', 'font-size') === '14px' && style('.panel-head', 'font-weight') === '500')
-  check('Caption 12/16', style('.rail-desc', 'font-size') === '12px' && style('.rail-desc', 'line-height') === '16px')
-  check('Overline 10/16 全大写', style('.rail-title', 'font-size') === '10px' && style('.rail-title', 'text-transform') === 'uppercase')
+  check('Caption 12/16', style('.tiny', 'font-size') === '12px' && style('.tiny', 'line-height') === '16px')
+  check('Overline 10/16 全大写', style('.bom th', 'font-size') === '10px' && style('.bom th', 'text-transform') === 'uppercase')
   check('统计数值走 Headline6', style('.stat .v', 'font-size') === '20px' && style('.stat .v', 'font-weight') === '500')
 
   check('surface 0 = #121212', toHex(style('body', 'background-color')) === '#121212', norm(style('body', 'background-color')))
@@ -258,7 +260,6 @@ section('响应式断点')
     value(narrow, '.rail-step', 'flex-basis'),
   )
   check('窄屏步骤项保留标题', value(narrow, '.rail-label', 'display') === 'block', value(narrow, '.rail-label', 'display'))
-  check('窄屏隐藏步骤栏说明', value(narrow, '.rail-desc', 'display') === 'none', value(narrow, '.rail-desc', 'display'))
 
   // 顶栏：标签栏独占一行，不然会和按钮挤在一起
   check('窄屏标签栏独占一行', value(narrow, '.tabstrip', 'flex-basis') === '100%', value(narrow, '.tabstrip', 'flex-basis'))

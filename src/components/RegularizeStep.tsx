@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { useStudio } from '../store/studio.ts'
-import { Field, Panel, Segmented, Stat, Notice, Empty, Check } from './ui.tsx'
+import { Field, Panel, Segmented, Stat, Notice, Empty } from './ui.tsx'
 import { drawPixmap } from '../core/render.ts'
 import { countUniqueColors } from '../core/quantize.ts'
 import { SAMPLE_MODE_LABELS, type SampleMode } from '../core/types.ts'
@@ -114,7 +114,6 @@ export function RegularizeStep({ onOpenFile }: { onOpenFile: () => void }) {
   const detectDirectBlock = useStudio((s) => s.detectDirectBlock)
   const grid = useStudio((s) => s.grid)
   const goNext = useStudio((s) => s.goNext)
-  const buildGrid = useStudio((s) => s.buildGrid)
 
   const [dragging, setDragging] = useState(-1)
   const imgRef = useRef<HTMLCanvasElement>(null)
@@ -358,12 +357,6 @@ export function RegularizeStep({ onOpenFile }: { onOpenFile: () => void }) {
               <div className="canvas-wrap">
                 <canvas ref={gridRef} />
               </div>
-              <div className="stat-grid" style={{ marginTop: 12 }}>
-                <Stat k="网格" v={`${grid.width}×${grid.height}`} />
-                <Stat k="总豆数" v={(grid.width * grid.height).toLocaleString()} />
-                <Stat k="唯一色" v={uniqueColors} />
-                <Stat k="压缩比" v={`${(source.width / grid.width).toFixed(2)}×`} />
-              </div>
               {grid.width * grid.height > 200000 && (
                 <div style={{ marginTop: 12 }}>
                   <Notice kind="warn">网格太大，后面的优化和出图会比较慢。</Notice>
@@ -491,11 +484,6 @@ export function RegularizeStep({ onOpenFile }: { onOpenFile: () => void }) {
               <button className="btn waves-effect waves-light" onClick={detectDirectBlock} style={{ width: '100%' }}>
                 重新探测放大倍数
               </button>
-              <div style={{ marginTop: 10 }}>
-                <Check checked={directBlock === 1} onChange={() => setDirectBlock(1)}>
-                  原样使用（1 像素 = 1 豆）
-                </Check>
-              </div>
             </>
           )}
         </Panel>
@@ -507,10 +495,6 @@ export function RegularizeStep({ onOpenFile }: { onOpenFile: () => void }) {
             <Stat k="唯一色" v={uniqueColors || '—'} small />
             <Stat k="格式" v={alignmentMode === 'auto' ? '自动' : alignmentMode === 'quad' ? '四角' : '1:1'} small />
           </div>
-          <div className="divider" />
-          <button className="btn waves-effect waves-light" style={{ width: '100%' }} onClick={buildGrid}>
-            重新生成网格
-          </button>
         </Panel>
       </div>
     </div>

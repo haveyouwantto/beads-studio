@@ -83,7 +83,7 @@ export function PatternStep({ onOpenFullscreen }: { onOpenFullscreen: () => void
   // 侧栏只有 330px 宽，五个中文标签放不下；界面上用短名，完整名字放 title
   const PALETTE_SHORT: Partial<Record<typeof paletteSource, string>> = {
     optimized: '优化结果',
-    library: '色号库',
+    library: '全色',
     basic24: '24色',
     basic48: '48色',
     custom: '自定义',
@@ -318,12 +318,6 @@ export function PatternStep({ onOpenFullscreen }: { onOpenFullscreen: () => void
           <div className="row tight">
             <button className="btn-flat btn-small waves-effect" onClick={() => setPasteOpen((v) => !v)}>
               粘贴色号
-            </button>
-            <button
-              className="btn-flat btn-small waves-effect"
-              onClick={() => setPaletteSource('library')}
-            >
-              用整本库
             </button>
           </div>
 
