@@ -1394,6 +1394,7 @@ table.bom .chip {
 }
 
 .fullscreen-stage .fs-canvas {
+  position: relative;
   flex: 1;
   overflow: hidden;
   display: grid;
@@ -1404,9 +1405,7 @@ table.bom .chip {
 
 /* 图纸预览：比容器大时按住鼠标拖动平移 */
 .canvas-wrap.pattern-host {
-  cursor: grab;
-  /* 双指捏合由我们自己处理，交给浏览器的话它会去缩放整个页面 */
-  touch-action: none;
+  cursor: default;
 }
 
 .fullscreen-stage .fs-canvas:active {
@@ -2202,11 +2201,6 @@ button:disabled {
   min-width: 0;
 }
 
-/* 顶栏在窄屏才长得下图标；宽屏保持纯文字按钮 */
-.topbar-actions .material-icons {
-  display: none;
-}
-
 .topbar {
   flex-shrink: 0;
 }
@@ -2250,8 +2244,179 @@ button:disabled {
   overflow-x: auto;
 }
 
-.project-file-row {
-  margin-bottom: 0;
+/* ---------- 顶部工具：图标按钮 ---------- */
+
+/* 宽屏直接摆图标；窄屏整组收进抽屉，改用 .topbar-menu 打开 */
+.topbar-menu {
+  display: none;
+}
+
+.icon-only {
+  min-width: 40px;
+  padding: 0 9px;
+}
+
+.icon-only .material-icons {
+  font-size: 20px;
+  vertical-align: -4px;
+}
+
+/* ---------- 侧边抽屉（窄屏工具菜单）---------- */
+
+.drawer-scrim {
+  position: fixed;
+  inset: 0;
+  z-index: 400;
+  background: rgba(0, 0, 0, 0.6);
+}
+
+.drawer {
+  position: fixed;
+  top: 0;
+  bottom: 0;
+  left: 0;
+  z-index: 401;
+  width: min(280px, 84vw);
+  display: flex;
+  flex-direction: column;
+  padding: var(--sp-2) 0;
+  background-color: var(--md-surface-1);
+  border-right: 1px solid var(--md-outline);
+  box-shadow: var(--elev-24);
+  overflow-y: auto;
+}
+
+.drawer-head {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-3);
+  padding: var(--sp-3) var(--sp-4) var(--sp-4);
+}
+
+.drawer-title {
+  font-weight: 700;
+  font-size: 15px;
+  letter-spacing: 0.2px;
+}
+
+.drawer-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+
+.drawer-item {
+  width: 100%;
+  height: 48px;
+  display: flex;
+  align-items: center;
+  gap: var(--sp-4);
+  padding: 0 var(--sp-4);
+  border: 0;
+  border-radius: 0 var(--radius-pill) var(--radius-pill) 0;
+  background-color: transparent;
+  color: var(--md-on-surface);
+  font-size: 14px;
+  font-weight: 500;
+  text-align: left;
+}
+
+.drawer-item:hover:not(:disabled) {
+  background-color: rgba(255, 255, 255, var(--md-state-hover));
+}
+
+.drawer-item:disabled {
+  background-color: transparent;
+  color: var(--md-on-surface-disabled);
+}
+
+.drawer-item .material-icons {
+  flex: 0 0 auto;
+  color: var(--md-on-surface-medium);
+}
+
+.drawer-label {
+  flex: 1;
+}
+
+/* ---------- 图纸预览（主界面只展示，不做缩放/平移）---------- */
+
+.canvas-wrap.pattern-host {
+  place-items: center;
+  padding: var(--sp-4);
+}
+
+.canvas-wrap.pattern-host .pattern-svg {
+  width: 100%;
+  /* 图纸四周留白，别贴着容器边 */
+  padding: var(--sp-3);
+}
+
+.canvas-wrap.pattern-host .pattern-svg svg {
+  display: block;
+  width: 100%;
+  height: auto;
+  max-height: 54vh;
+}
+
+/* ---------- 候选色方案 ---------- */
+
+.set-block {
+  margin-bottom: var(--sp-3);
+}
+
+.set-name {
+  width: 120px;
+}
+
+.set-empty {
+  padding: var(--sp-2) 0;
+}
+
+.set-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: grid;
+  gap: var(--sp-2);
+}
+
+.set-item {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-3);
+  padding: var(--sp-2) var(--sp-3);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  background-color: var(--panel-2);
+}
+
+.set-meta {
+  flex: 1;
+  min-width: 0;
+}
+
+.set-title {
+  font-size: 13px;
+  font-weight: 600;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.set-chips {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 3px;
+  margin-top: 4px;
+}
+
+.set-chips .chip {
+  width: 14px;
+  height: 14px;
+  border-radius: 3px;
+  border: 1px solid rgba(255, 255, 255, 0.18);
 }
 
 /* 规范化预览：画布按源图比例绘制，上限是 760×540 的固定像素。
@@ -2418,18 +2583,40 @@ button:disabled {
      永远不会因为差几个像素就被挤到第二行去。 */
   .topbar {
     display: grid;
-    grid-template-columns: minmax(0, 1fr) auto;
+    grid-template-columns: auto minmax(0, 1fr) auto;
     grid-template-areas:
-      'brand actions'
-      'tabs tabs';
+      'menu brand actions'
+      'tabs tabs tabs';
     align-items: center;
     padding: 0;
+  }
+
+  .topbar-menu {
+    grid-area: menu;
+    display: grid;
+    place-items: center;
+    width: 40px;
+    height: 40px;
+    margin-left: var(--sp-1);
+    border-radius: var(--radius-pill);
+    background-color: transparent;
+    color: var(--md-on-surface);
+    box-shadow: none;
+  }
+
+  .topbar-menu:hover {
+    background-color: rgba(255, 255, 255, var(--md-state-hover));
+  }
+
+  /* 手机上工具都在侧边栏里，顶栏只留菜单 + 品牌 */
+  .topbar-actions {
+    display: none;
   }
 
   .brand {
     grid-area: brand;
     min-height: 56px;
-    padding: 0 var(--sp-2) 0 var(--sp-3);
+    padding: 0 var(--sp-2) 0 var(--sp-1);
     overflow: hidden;
   }
 
@@ -2448,38 +2635,9 @@ button:disabled {
     display: none;
   }
 
-  .topbar-actions {
-    grid-area: actions;
-    flex-wrap: nowrap;
-    padding-right: var(--sp-2);
-  }
-
   .tabstrip {
     grid-area: tabs;
     padding-left: 0;
-  }
-
-  /* 文字按钮收成图标按钮；主按钮留文字，图标反而占宽 */
-  .topbar-actions .material-icons {
-    display: inline-block;
-  }
-
-  .topbar-actions .btn .material-icons {
-    display: none;
-  }
-
-  .topbar-actions .btn-flat {
-    min-width: 44px;
-    padding: 0 10px;
-  }
-
-  .topbar-actions .btn-flat .btn-label {
-    display: none;
-  }
-
-  /* 项目文件的导入导出移进「最近项目」弹窗 */
-  .topbar-file {
-    display: none;
   }
 
   .tabstrip .tabstrip-scroll .tab {
@@ -2543,9 +2701,3 @@ button:disabled {
   }
 }
 
-/* 极窄机型（320~360px）：品牌只留图标，给操作按钮让位 */
-@media (max-width: 374px) {
-  .brand-text {
-    display: none;
-  }
-}

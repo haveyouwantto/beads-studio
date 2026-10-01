@@ -15,6 +15,53 @@ import type { Pixmap } from './types.ts'
 export const INDEX_KEY = 'beads-studio:index'
 export const PROJECT_KEY_PREFIX = 'beads-studio:project:'
 export const SESSION_KEY = 'beads-studio:session'
+export const CANDIDATE_SETS_KEY = 'beads-studio:candidate-sets'
+
+/**
+ * 候选色方案：一组勾好的色号，存成本地方案，换项目也能直接套用。
+ * 和项目存档分开存 —— 方案是跨项目的，不属于某一个项目。
+ */
+export interface CandidateSet {
+  id: string
+  name: string
+  hexes: string[]
+  savedAt: number
+}
+
+export function readCandidateSets(): CandidateSet[] {
+  const ls = safeStorage()
+  if (!ls) return []
+  try {
+    const raw = ls.getItem(CANDIDATE_SETS_KEY)
+    if (!raw) return []
+    const parsed = JSON.parse(raw) as unknown
+    if (!Array.isArray(parsed)) return []
+    return parsed
+      .filter((item): item is CandidateSet => {
+        if (!item || typeof item !== 'object') return false
+        const s = item as Partial<CandidateSet>
+        return (
+          typeof s.id === 'string' &&
+          typeof s.name === 'string' &&
+          Array.isArray(s.hexes) &&
+          s.hexes.every((h) => typeof h === 'string')
+        )
+      })
+      .map((s) => ({ id: s.id, name: s.name, hexes: [...s.hexes], savedAt: Number(s.savedAt) || 0 }))
+  } catch {
+    return []
+  }
+}
+
+export function writeCandidateSets(sets: CandidateSet[]): void {
+  const ls = safeStorage()
+  if (!ls) return
+  try {
+    ls.setItem(CANDIDATE_SETS_KEY, JSON.stringify(sets))
+  } catch {
+    /* 方案很小，写不进去通常意味着存储被禁用，忽略即可 */
+  }
+}
 
 /** 上次退出时打开着哪些标签页 */
 export interface SessionState {

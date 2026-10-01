@@ -33,6 +33,7 @@ export function OptimizeStep() {
 
   const candidateHex = useStudio((s) => s.candidateHex)
   const candidateCount = candidateHex.length ? candidateHex.length : libraryPalette.length
+  const candidateSets = useStudio((s) => s.candidateSets)
 
   // 优化目标预览：直接来自「规范化」的网格
   const targetInfo = useMemo(() => (grid ? targetsFromPixmap(grid, { maxTargets: 1200 }) : null), [grid])
@@ -216,6 +217,22 @@ export function OptimizeStep() {
             <button className="btn waves-effect waves-light" style={{ width: '100%' }} onClick={() => setShowCandidates(true)}>
               选择候选色…
             </button>
+            {candidateSets.length > 0 && (
+              <select
+                value=""
+                style={{ marginTop: 8 }}
+                onChange={(e) => {
+                  if (e.target.value) useStudio.getState().applyCandidateSet(e.target.value)
+                }}
+              >
+                <option value="">套用方案…</option>
+                {candidateSets.map((s) => (
+                  <option key={s.id} value={s.id}>
+                    {s.name}（{s.hexes.length} 色）
+                  </option>
+                ))}
+              </select>
+            )}
           </Field>
 
           <div className="divider" />

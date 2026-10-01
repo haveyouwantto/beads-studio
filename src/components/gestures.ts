@@ -13,8 +13,8 @@ export type Pt = { x: number; y: number }
 export function usePinchPan(handlers: {
   /** 平移增量，单位是屏幕像素 */
   onPan: (dx: number, dy: number) => void
-  /** 捏合倍数（相对上一次事件）与两指中点 */
-  onPinch: (scale: number, center: Pt) => void
+  /** 捏合倍数（相对上一次事件）、当前两指中点、上一次的两指中点 */
+  onPinch: (scale: number, center: Pt, previous: Pt) => void
 }) {
   const latest = useRef(handlers)
   latest.current = handlers
@@ -60,9 +60,9 @@ export function usePinchPan(handlers: {
       const dist = Math.hypot(pair[0].x - pair[1].x, pair[0].y - pair[1].y)
       const mid = { x: (pair[0].x + pair[1].x) / 2, y: (pair[0].y + pair[1].y) / 2 }
       if (s.lastDist > 0 && dist > 0) {
-        latest.current.onPinch(dist / s.lastDist, mid)
-        // 双指整体移动 = 平移
-        latest.current.onPan(mid.x - s.lastMid.x, mid.y - s.lastMid.y)
+        // 中点位移交给 onPinch 一起算：缩放锚点本身就是中点，
+        // 两指整体平移是它的特例（scale = 1）
+        latest.current.onPinch(dist / s.lastDist, mid, s.lastMid)
       }
       s.lastDist = dist
       s.lastMid = mid

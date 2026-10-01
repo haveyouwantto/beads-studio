@@ -2,6 +2,7 @@ import { useEffect, useMemo, useState } from 'react'
 import { useStudio } from '../store/studio.ts'
 import { codeOf, mardSeries, type PaletteEntry } from '../core/palette.ts'
 import { idealTextColor } from '../core/color.ts'
+import { formatTime } from '../core/storage.ts'
 
 /**
  * 候选色选择弹窗。
@@ -15,6 +16,9 @@ export function CandidateColorsDialog({ onClose }: { onClose: () => void }) {
   const libraryPalette = useStudio((s) => s.libraryPalette)
   const candidateHex = useStudio((s) => s.candidateHex)
   const setCandidateHex = useStudio((s) => s.setCandidateHex)
+  const candidateSets = useStudio((s) => s.candidateSets)
+  const saveCandidateSet = useStudio((s) => s.saveCandidateSet)
+  const deleteCandidateSet = useStudio((s) => s.deleteCandidateSet)
   const includeExtended = useStudio((s) => s.includeExtended)
   const codeSystem = useStudio((s) => s.codeSystem)
 
@@ -22,6 +26,7 @@ export function CandidateColorsDialog({ onClose }: { onClose: () => void }) {
   const [selected, setSelected] = useState<Set<string>>(
     () => new Set(candidateHex.length ? candidateHex : libraryPalette.map((e) => e.hex)),
   )
+  const [setName, setSetName] = useState('')
 
   const groups = useMemo(() => {
     const map = new Map<string, PaletteEntry[]>()
@@ -99,6 +104,74 @@ export function CandidateColorsDialog({ onClose }: { onClose: () => void }) {
         </header>
 
         <div className="modal-content modal-body">
+          {/* 多套候选色方案：存本地，换项目也能直接套用 */}
+          <section className="set-block">
+            <header className="series-head">
+              <b className="series-name">方案</b>
+              <span className="tiny muted">当前选中 {selectedCount} 色</span>
+              <span style={{ flex: 1 }} />
+              <input
+                className="set-name"
+                type="text"
+                placeholder="方案名"
+                value={setName}
+                onChange={(e) => setSetName(e.target.value)}
+              />
+              <button
+                className="btn btn-small waves-effect waves-light"
+                disabled={selectedCount === 0}
+                onClick={() => {
+                  saveCandidateSet(setName, [...selected])
+                  setSetName('')
+                }}
+              >
+                存为方案
+              </button>
+            </header>
+
+            {candidateSets.length === 0 ? (
+              <div className="tiny muted set-empty">把当前勾选存成方案，下次一键套用。</div>
+            ) : (
+              <ul className="set-list">
+                {candidateSets.map((s) => (
+                  <li key={s.id} className="set-item">
+                    <div className="set-meta">
+                      <div className="set-title">
+                        {s.name}
+                        <span className="tiny muted">
+                          {' '}
+                          {s.hexes.length} 色 · {formatTime(s.savedAt)}
+                        </span>
+                      </div>
+                      {/* 让方案自己说明包含哪些颜色 */}
+                      <div className="set-chips">
+                        {s.hexes.slice(0, 24).map((h) => (
+                          <i key={h} className="chip" style={{ background: h }} title={h} />
+                        ))}
+                        {s.hexes.length > 24 && <span className="tiny muted">+{s.hexes.length - 24}</span>}
+                      </div>
+                    </div>
+                    <div className="row tight">
+                      <button
+                        className="btn-flat btn-small waves-effect"
+                        onClick={() => setSelected(new Set(s.hexes.filter((h) => libraryPalette.some((e) => e.hex === h))))}
+                      >
+                        载入
+                      </button>
+                      <button
+                        className="btn-flat btn-small waves-effect danger"
+                        onClick={() => deleteCandidateSet(s.id)}
+                      >
+                        删除
+                      </button>
+                    </div>
+                  </li>
+                ))}
+              </ul>
+            )}
+          </section>
+          <div className="divider" />
+
           {groups.map(([series, entries]) => {
             const on = entries.filter((e) => selected.has(e.hex)).length
             return (

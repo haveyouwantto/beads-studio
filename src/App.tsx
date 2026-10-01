@@ -6,6 +6,7 @@ import { PatternStep } from './components/PatternStep.tsx'
 import { FullscreenPreview } from './components/FullscreenPreview.tsx'
 import { TabBar } from './components/TabBar.tsx'
 import { RecentProjectsDialog } from './components/RecentProjectsDialog.tsx'
+import { MenuDrawer, type DrawerItem } from './components/MenuDrawer.tsx'
 import { Notice, useMaterialRipple } from './components/ui.tsx'
 import { packPixels, unpackPixels, downloadText, type ProjectFile } from './core/export.ts'
 import { formatTime } from './core/storage.ts'
@@ -48,6 +49,7 @@ export default function App() {
   const [dragOver, setDragOver] = useState(false)
   const [showFullscreen, setShowFullscreen] = useState(false)
   const [showRecent, setShowRecent] = useState(false)
+  const [showMenu, setShowMenu] = useState(false)
   const fileRef = useRef<HTMLInputElement>(null)
   const projectRef = useRef<HTMLInputElement>(null)
 
@@ -180,9 +182,37 @@ export default function App() {
     pattern: visited.pattern && Boolean(result),
   }
 
+  // 顶部工具：宽屏是图标按钮，窄屏收进侧边栏，两边用同一份定义
+  const tools: DrawerItem[] = [
+    {
+      icon: 'add_photo_alternate',
+      label: source ? '更换图片' : '打开图片',
+      disabled: loading,
+      onClick: openFile,
+    },
+    {
+      icon: 'fullscreen',
+      label: '全屏预览',
+      disabled: !result,
+      onClick: () => setShowFullscreen(true),
+    },
+    { icon: 'download', label: '导出文件', disabled: !grid, onClick: saveProject },
+    { icon: 'upload', label: '导入文件', onClick: () => projectRef.current?.click() },
+    { icon: 'folder_open', label: '最近项目', badge: recentCount, onClick: () => setShowRecent(true) },
+  ]
+
   return (
     <div className={dragOver ? 'app drop-active' : 'app'}>
       <header className="topbar">
+        <button
+          className="topbar-menu btn-floating waves-effect"
+          onClick={() => setShowMenu(true)}
+          title="工具菜单"
+          aria-label="工具菜单"
+        >
+          <i className="material-icons">menu</i>
+        </button>
+
         <div className="brand">
           <span className="brand-mark">
             <i className="material-icons sm">blur_on</i>
@@ -198,42 +228,19 @@ export default function App() {
         <span className="topbar-spacer" />
 
         <div className="row tight topbar-actions">
-          <button className="btn waves-effect waves-light" onClick={openFile} disabled={loading}>
-            <i className="material-icons sm">add_photo_alternate</i>
-            <span className="btn-label">{loading ? '载入中…' : source ? '更换图片' : '打开图片'}</span>
-          </button>
-          <button
-            className="btn-flat waves-effect"
-            onClick={() => setShowFullscreen(true)}
-            disabled={!result}
-            title="全屏预览"
-            aria-label="全屏预览"
-          >
-            <i className="material-icons sm">fullscreen</i>
-            <span className="btn-label">全屏预览</span>
-          </button>
-          <button
-            className="btn-flat waves-effect topbar-file"
-            onClick={saveProject}
-            disabled={!grid}
-            title="导出成项目文件"
-          >
-            <i className="material-icons sm">download</i>
-            <span className="btn-label">导出文件</span>
-          </button>
-          <button
-            className="btn-flat waves-effect topbar-file"
-            onClick={() => projectRef.current?.click()}
-            title="从项目文件导入"
-          >
-            <i className="material-icons sm">upload</i>
-            <span className="btn-label">导入文件</span>
-          </button>
-          <button className="btn-flat waves-effect" onClick={() => setShowRecent(true)} title="最近项目" aria-label="最近项目">
-            <i className="material-icons sm">folder_open</i>
-            <span className="btn-label">最近项目</span>
-            {recentCount > 0 && <span className="pill">{recentCount}</span>}
-          </button>
+          {tools.map((t, i) => (
+            <button
+              key={t.label}
+              className={i === 0 ? 'btn icon-only waves-effect waves-light' : 'btn-flat icon-only waves-effect'}
+              onClick={t.onClick}
+              disabled={t.disabled}
+              title={t.label}
+              aria-label={t.label}
+            >
+              <i className="material-icons sm">{t.icon}</i>
+              {t.badge ? <span className="pill">{t.badge}</span> : null}
+            </button>
+          ))}
         </div>
 
         <input
@@ -321,9 +328,11 @@ export default function App() {
 
           {activeStage === 'regularize' && <RegularizeStep onOpenFile={openFile} />}
           {activeStage === 'optimize' && <OptimizeStep />}
-          {activeStage === 'pattern' && <PatternStep />}
+          {activeStage === 'pattern' && <PatternStep onOpenFullscreen={() => setShowFullscreen(true)} />}
         </main>
       </div>
+
+      {showMenu && <MenuDrawer items={tools} onClose={() => setShowMenu(false)} />}
 
       {showFullscreen && result && (
         <FullscreenPreview
@@ -333,14 +342,7 @@ export default function App() {
         />
       )}
 
-      {showRecent && (
-        <RecentProjectsDialog
-          onClose={() => setShowRecent(false)}
-          onExportProject={saveProject}
-          onImportProject={() => projectRef.current?.click()}
-          hasGrid={Boolean(grid)}
-        />
-      )}
+      {showRecent && <RecentProjectsDialog onClose={() => setShowRecent(false)} />}
     </div>
   )
 }

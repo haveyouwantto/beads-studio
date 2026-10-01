@@ -1,4 +1,4 @@
-import { useMemo, useRef, useState } from 'react'
+import { useMemo, useState } from 'react'
 import { useStudio } from '../store/studio.ts'
 import { Check, Empty, Field, Notice, Panel, Segmented, Stat } from './ui.tsx'
 import { buildHexLookup } from '../core/render.ts'
@@ -28,13 +28,10 @@ import {
   downloadText,
 } from '../core/export.ts'
 import { idealTextColor } from '../core/color.ts'
-import { clampZoom, usePinchPan } from './gestures.ts'
 
 const EXPORT_SCALES = [1, 2, 4, 8] as const
-const MIN_ZOOM = 0.2
-const MAX_ZOOM = 6
 
-export function PatternStep() {
+export function PatternStep({ onOpenFullscreen }: { onOpenFullscreen: () => void }) {
   const grid = useStudio((s) => s.grid)
   const result = useStudio((s) => s.result)
   const goPrev = useStudio((s) => s.goPrev)
@@ -55,44 +52,8 @@ export function PatternStep() {
 
   const [pasteOpen, setPasteOpen] = useState(false)
   const [pasteText, setPasteText] = useState('')
-  const [zoom, setZoom] = useState(1)
   const [exportScale, setExportScale] = useState(2)
   const [busy, setBusy] = useState(false)
-  const chartRef = useRef<HTMLDivElement>(null)
-  // 手势回调里要读到最新的缩放值，state 更新是异步的，所以另存一份
-  const zoomRef = useRef(zoom)
-
-  const applyZoom = (value: number) => {
-    zoomRef.current = clampZoom(value, MIN_ZOOM, MAX_ZOOM)
-    setZoom(zoomRef.current)
-  }
-
-  /** 以屏幕上某一点为锚缩放：锚点下的那颗豆子保持不动 */
-  const zoomAt = (clientX: number, clientY: number, next: number) => {
-    const el = chartRef.current
-    const clamped = clampZoom(next, MIN_ZOOM, MAX_ZOOM)
-    const k = clamped / zoomRef.current
-    applyZoom(clamped)
-    if (!el) return
-    const rect = el.getBoundingClientRect()
-    const px = clientX - rect.left + el.scrollLeft
-    const py = clientY - rect.top + el.scrollTop
-    requestAnimationFrame(() => {
-      el.scrollLeft = px * k - (clientX - rect.left)
-      el.scrollTop = py * k - (clientY - rect.top)
-    })
-  }
-
-  // 单指/鼠标平移，双指捏合缩放
-  const gesture = usePinchPan({
-    onPan: (dx, dy) => {
-      const el = chartRef.current
-      if (!el) return
-      el.scrollLeft -= dx
-      el.scrollTop -= dy
-    },
-    onPinch: (scale, center) => zoomAt(center.x, center.y, zoomRef.current * scale),
-  })
 
   // 预览尺寸：超大图纸自动降档，但预览始终是矢量的，放大不会糊
   const previewOptions = useMemo(
@@ -195,8 +156,6 @@ export function PatternStep() {
     )
   }
 
-  const previewZoomedW = preview ? preview.width * zoom : 0
-  const previewZoomedH = preview ? preview.height * zoom : 0
   const previewCellSize = previewOptions.cellSize
   const shrinkNote = preview && previewCellSize < renderOptions.cellSize
 
@@ -218,6 +177,15 @@ export function PatternStep() {
           hint={`${result?.width ?? 0} × ${result?.height ?? 0} 格 · ${bom.length} 个色号 · ${totalBeads.toLocaleString()} 颗豆`}
           actions={
             <>
+              <button
+                className="btn-flat btn-small icon-only waves-effect"
+                onClick={onOpenFullscreen}
+                title="全屏看图"
+                aria-label="全屏看图"
+              >
+                <i className="material-icons sm">fullscreen</i>
+              </button>
+              <span className="grow" />
               <span className="tiny muted">导出倍数</span>
               <select
                 value={exportScale}
@@ -242,35 +210,15 @@ export function PatternStep() {
         >
           {preview && (
             <>
-              <div
-                ref={chartRef}
-                className="canvas-wrap pattern-host"
-                onWheel={(e) => zoomAt(e.clientX, e.clientY, zoomRef.current * (e.deltaY > 0 ? 0.9 : 1.1))}
-                {...gesture}
-              >
-                <div
-                  className="pattern-svg"
-                  style={{ width: previewZoomedW, height: previewZoomedH, pointerEvents: 'none' }}
-                  dangerouslySetInnerHTML={{ __html: preview.svg }}
-                />
+              {/* 主界面只做展示：图纸等比缩进容器，缩放/平移都到全屏里做 */}
+              <div className="canvas-wrap pattern-host">
+                <div className="pattern-svg" dangerouslySetInnerHTML={{ __html: preview.svg }} />
               </div>
 
               <div className="row" style={{ marginTop: 10, alignItems: 'center' }}>
-                <span className="tiny muted">缩放</span>
-                <input
-                  type="range"
-                  min={0.2}
-                  max={6}
-                  step={0.05}
-                  value={zoom}
-                  onChange={(e) => applyZoom(Number(e.target.value))}
-                  style={{ flex: 1, minWidth: 120 }}
-                />
-                <span className="mono tiny" style={{ width: 56, textAlign: 'right' }}>
-                  {Math.round(zoom * 100)}%
-                </span>
-                <button className="btn-flat btn-small waves-effect" onClick={() => applyZoom(1)}>
-                  100%
+                <button className="btn btn-small waves-effect waves-light" onClick={onOpenFullscreen}>
+                  <i className="material-icons sm">fullscreen</i>
+                  全屏看图
                 </button>
                 <button className="btn-flat btn-small waves-effect" onClick={exportPixelPng}>
                   导出 1:1 像素图

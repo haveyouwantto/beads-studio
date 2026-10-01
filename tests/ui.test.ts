@@ -214,6 +214,7 @@ const { TabBar } = await import('../src/components/TabBar.tsx')
 const { RecentProjectsDialog } = await import('../src/components/RecentProjectsDialog.tsx')
 const { CandidateColorsDialog } = await import('../src/components/CandidateColorsDialog.tsx')
 const { usePinchPan } = await import('../src/components/gestures.ts')
+const { MenuDrawer } = await import('../src/components/MenuDrawer.tsx')
 
 const act = (React as unknown as { act: (cb: () => void | Promise<void>) => Promise<void> }).act
 
@@ -619,14 +620,7 @@ section('最近项目弹窗')
   const dialogRoot = createRoot(host)
   let dialogError: string | null = null
   try {
-    dialogRoot.render(
-      React.createElement(RecentProjectsDialog, {
-        onClose: () => undefined,
-        onExportProject: () => undefined,
-        onImportProject: () => undefined,
-        hasGrid: Boolean(useStudio.getState().grid),
-      }),
-    )
+    dialogRoot.render(React.createElement(RecentProjectsDialog, { onClose: () => undefined }))
     await flush()
   } catch (err) {
     dialogError = err instanceof Error ? err.message : String(err)
@@ -634,9 +628,6 @@ section('最近项目弹窗')
   check('弹窗渲染无异常', dialogError === null, dialogError ?? '')
   check('弹窗列出了存档项目', (host.querySelectorAll('.recent-item').length ?? 0) > 0)
   check('弹窗显示占用空间', (host.textContent ?? '').includes('占用'))
-  // 窄屏顶栏会把「导出/导入项目文件」收进这个弹窗，所以这里必须有入口
-  check('弹窗提供导出项目文件入口', (host.textContent ?? '').includes('导出当前项目'))
-  check('弹窗提供导入项目文件入口', (host.textContent ?? '').includes('导入项目文件'))
 
   dialogRoot.unmount()
   await flush()
@@ -660,6 +651,78 @@ section('标签栏组件单独渲染')
   tabRoot.unmount()
   await flush()
   host.remove()
+}
+
+section('窄屏工具抽屉')
+{
+  const host = dom.window.document.createElement('div')
+  dom.window.document.body.appendChild(host)
+  const drawerRoot = createRoot(host)
+  let clicked = ''
+  let closed = 0
+  drawerRoot.render(
+    React.createElement(MenuDrawer, {
+      items: [
+        { icon: 'add_photo_alternate', label: '打开图片', onClick: () => { clicked = '打开图片' } },
+        { icon: 'folder_open', label: '最近项目', badge: 2, onClick: () => { clicked = '最近项目' } },
+        { icon: 'download', label: '导出文件', disabled: true, onClick: () => { clicked = '导出文件' } },
+      ],
+      onClose: () => { closed += 1 },
+    }),
+  )
+  await flush()
+  const buttons = [...host.querySelectorAll('.drawer-item')] as HTMLElement[]
+  check('抽屉列出全部工具', buttons.length === 3, String(buttons.length))
+  check('抽屉显示计数徽标', host.querySelector('.drawer-item .pill')?.textContent === '2')
+  check('不可用的工具是禁用态', buttons[2]?.hasAttribute('disabled') === true)
+
+  buttons[0]?.click()
+  await flush()
+  check('点工具会执行并关闭抽屉', clicked === '打开图片' && closed === 1, `${clicked}/${closed}`)
+
+  ;(host.querySelector('.drawer-scrim') as HTMLElement).click()
+  await flush()
+  check('点遮罩关闭抽屉', closed === 2, String(closed))
+
+  drawerRoot.unmount()
+  await flush()
+  host.remove()
+}
+
+section('候选色方案')
+{
+  const lib = useStudio.getState().libraryPalette
+  const hexes = [lib[0].hex, lib[1].hex, lib[2].hex]
+  const SETS_KEY = 'beads-studio:candidate-sets'
+
+  useStudio.setState({ candidateSets: [] })
+  dom.window.localStorage.removeItem(SETS_KEY)
+
+  useStudio.getState().saveCandidateSet('试色三色', hexes)
+  const saved = useStudio.getState().candidateSets
+  check('方案保存到 store', saved.length === 1 && saved[0].name === '试色三色', `${saved.length} 个`)
+  check('方案记住包含哪些颜色', saved[0]?.hexes.join() === hexes.join(), saved[0]?.hexes.join())
+  check('方案落盘到 localStorage', Boolean(dom.window.localStorage.getItem(SETS_KEY)))
+
+  const reread = storage.readCandidateSets()
+  check('方案能从本地读回', reread.length === 1 && reread[0].hexes.length === 3, JSON.stringify(reread.map((s) => s.name)))
+
+  // 同名视为覆盖，避免同一套颜色存出一串重名方案
+  useStudio.getState().saveCandidateSet('试色三色', [hexes[0]])
+  const afterOverwrite = useStudio.getState().candidateSets
+  check('同名方案是覆盖', afterOverwrite.length === 1 && afterOverwrite[0].hexes.length === 1)
+
+  useStudio.setState({ candidateHex: [] })
+  useStudio.getState().applyCandidateSet(afterOverwrite[0].id)
+  check('套用方案写回候选色', useStudio.getState().candidateHex.join() === hexes[0], useStudio.getState().candidateHex.join())
+
+  useStudio.getState().deleteCandidateSet(afterOverwrite[0].id)
+  check('删除方案', useStudio.getState().candidateSets.length === 0)
+  check('删除同步到本地', storage.readCandidateSets().length === 0)
+
+  dom.window.localStorage.setItem(SETS_KEY, '{坏数据')
+  check('本地数据损坏时当成没有方案', storage.readCandidateSets().length === 0)
+  dom.window.localStorage.removeItem(SETS_KEY)
 }
 
 section('图纸预览手势')

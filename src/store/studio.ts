@@ -19,11 +19,14 @@ import {
   listProjects,
   makeThumbnail,
   pixmapToDataUrl,
+  readCandidateSets,
   readSession,
   readProject,
   removeProject,
   saveProject,
+  writeCandidateSets,
   writeSession,
+  type CandidateSet,
   type IndexEntry,
   type PersistedProject,
 } from '../core/storage.ts'
@@ -172,6 +175,8 @@ interface StudioState {
    * 空数组 = 未筛选，表示色号库全部参与。
    */
   candidateHex: string[]
+  /** 候选色方案（全局，跨项目），只存本地 */
+  candidateSets: CandidateSet[]
   includeExtended: boolean
   libraryPalette: PaletteEntry[]
   /** 哪些阶段真正被打开过（按项目记）；没进过的阶段不显示「已完成」勾 */
@@ -212,6 +217,10 @@ interface StudioState {
   setPaletteSource: (s: PaletteSource) => void
   /** 设置配色优化的候选色（传空数组 = 全部参与） */
   setCandidateHex: (hexes: string[]) => void
+  /** 候选色方案：保存 / 套用 / 删除，存在本地，跨项目可用 */
+  saveCandidateSet: (name: string, hexes: string[]) => void
+  applyCandidateSet: (id: string) => void
+  deleteCandidateSet: (id: string) => void
   setIncludeExtended: (v: boolean) => void
   setPalette: (entries: PaletteEntry[]) => void
   setQuantizeOptions: (patch: Partial<QuantizeOptions>) => void
@@ -251,6 +260,8 @@ function newTabId(): string {
 
 export const NEW_TAB_NAME = '未命名项目'
 const FIRST_TAB_ID = newTabId()
+/** 四角变换的默认分辨率（列 × 行） */
+export const DEFAULT_QUAD_SIZE = 52
 
 /** 读取某个非激活标签页的内存快照（用于标签栏缩略图等展示） */
 export function getTabSnapshot(id: string): ProjectState | undefined {
@@ -271,8 +282,8 @@ function freshProject(): ProjectState {
     phaseY: 0,
     sampleMode: 'mean',
     corners: defaultCorners(1, 1),
-    manualCols: 48,
-    manualRows: 48,
+    manualCols: DEFAULT_QUAD_SIZE,
+    manualRows: DEFAULT_QUAD_SIZE,
     directBlock: 1,
     grid: null,
     paletteSource: 'library',
@@ -560,6 +571,8 @@ export const useStudio = create<StudioState>((set, get) => ({
   error: null,
   libraryPalette: buildLibraryPalette({ includeExtended: false }),
   optimizeRun: { ...EMPTY_RUN },
+  // 方案存在本地，跨项目共享，所以随 store 一起初始化
+  candidateSets: readCandidateSets(),
 
   ...freshProject(),
 
@@ -682,7 +695,9 @@ export const useStudio = create<StudioState>((set, get) => ({
     const src = get().source
     if (!src) return
     const block = detectUniformBlock(src.pixmap)
-    set({ directBlock: block, manualCols: src.width / block, manualRows: src.height / block })
+    // 只记录探测到的倍数。manualCols/Rows 是四角变换的分辨率，
+    // 由用户自己填（默认 52×52），不要被 1:1 模式的探测结果改掉。
+    set({ directBlock: block })
   },
 
   buildGrid: () => {
@@ -739,6 +754,40 @@ export const useStudio = create<StudioState>((set, get) => ({
 
   setCandidateHex: (hexes) => {
     set({ candidateHex: [...new Set(hexes)] })
+  },
+
+  saveCandidateSet: (name, hexes) => {
+    const trimmed = name.trim() || `方案 ${get().candidateSets.length + 1}`
+    const unique = [...new Set(hexes)]
+    const sets = get().candidateSets
+    // 同名视为覆盖，避免反复保存同一个方案堆出一串重名
+    const existing = sets.find((s) => s.name === trimmed)
+    const next: CandidateSet[] = [
+      {
+        id: existing?.id ?? `set${Date.now().toString(36)}${Math.random().toString(36).slice(2, 6)}`,
+        name: trimmed,
+        hexes: unique,
+        savedAt: Date.now(),
+      },
+      ...sets.filter((s) => s.name !== trimmed),
+    ]
+    writeCandidateSets(next)
+    set({ candidateSets: next })
+  },
+
+  applyCandidateSet: (id) => {
+    const target = get().candidateSets.find((s) => s.id === id)
+    if (!target) return
+    const allowed = new Set(get().libraryPalette.map((e) => e.hex))
+    const usable = target.hexes.filter((h) => allowed.has(h))
+    const all = usable.length >= get().libraryPalette.length
+    set({ candidateHex: all ? [] : usable })
+  },
+
+  deleteCandidateSet: (id) => {
+    const next = get().candidateSets.filter((s) => s.id !== id)
+    writeCandidateSets(next)
+    set({ candidateSets: next })
   },
 
   setIncludeExtended: (v) => {

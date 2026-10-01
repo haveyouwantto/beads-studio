@@ -264,9 +264,14 @@ section('响应式断点')
   check('窄屏标签栏独占一行', value(narrow, '.tabstrip', 'flex-basis') === '100%', value(narrow, '.tabstrip', 'flex-basis'))
   check('窄屏标签栏不限宽（原来的 62vw 会截断）', value(narrow, '.tabstrip', 'max-width') === '100%', value(narrow, '.tabstrip', 'max-width'))
   check('窄屏顶栏用两列网格', value(phone, '.topbar', 'display') === 'grid', value(phone, '.topbar', 'display'))
-  check('手机顶栏收成图标按钮', value(phone, '.topbar-actions .btn-flat .btn-label', 'display') === 'none')
-  check('手机隐藏项目文件按钮', value(phone, '.topbar-file', 'display') === 'none', value(phone, '.topbar-file', 'display'))
+  check('手机顶栏工具收进侧边栏', value(phone, '.topbar-actions', 'display') === 'none', value(phone, '.topbar-actions', 'display'))
+  check('手机显示菜单按钮', value(phone, '.topbar-menu', 'display') === 'grid', value(phone, '.topbar-menu', 'display'))
+  check('宽屏不显示菜单按钮', value('', '.topbar-menu', 'display') === 'none', value('', '.topbar-menu', 'display'))
+  // 工具栏现在是纯图标，任何一档把图标藏起来都会变成一排空按钮
+  check('宽屏工具栏图标不被隐藏', value('', '.topbar-actions .material-icons', 'display') !== 'none', value('', '.topbar-actions .material-icons', 'display'))
   check('手机顶栏按钮不被挤扁', value(narrow, '.topbar-actions > *', 'flex-shrink') === '0')
+  check('侧边栏是固定定位抽屉', value('', '.drawer', 'position') === 'fixed', value('', '.drawer', 'position'))
+  check('工具栏按钮是图标尺寸', value('', '.icon-only', 'min-width') === '40px', value('', '.icon-only', 'min-width'))
 
   // 溢出根源：网格子项的 min-width:auto 会被内容顶宽
   check(
@@ -281,8 +286,10 @@ section('响应式断点')
   check('手机弹窗留出边距', value(phone, '.modal', 'width') === 'calc(100% - 16px)', value(phone, '.modal', 'width'))
   check('手机全屏工具栏换行', value(phone, '.fullscreen-stage .fs-bar', 'flex-wrap') === 'wrap')
 
-  // 图纸预览要自己处理捏合手势，交给浏览器会变成缩放整个页面
-  check('图纸预览接管触摸手势', value('', '.canvas-wrap.pattern-host', 'touch-action') === 'none', value('', '.canvas-wrap.pattern-host', 'touch-action'))
+  // 主界面图纸只做展示：等比缩进容器，缩放/平移都留给全屏
+  check('主界面图纸等比适配', value('', '.canvas-wrap.pattern-host .pattern-svg svg', 'width') === '100%')
+  check('主界面图纸限高', value('', '.canvas-wrap.pattern-host .pattern-svg svg', 'max-height') === '54vh')
+  check('主界面图纸有留白', value('', '.canvas-wrap.pattern-host .pattern-svg', 'padding') === 'var(--sp-3)')
   // 画布与预览框一起等比缩进容器，内容只留边不拉伸
   check('预览画布用 contain', value('', '.canvas-wrap.fit .overlay-host > canvas:not(.handle-layer)', 'object-fit') === 'contain')
 }
