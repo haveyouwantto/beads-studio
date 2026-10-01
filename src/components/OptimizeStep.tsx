@@ -70,14 +70,12 @@ export function OptimizeStep() {
         <div className="stage-head">
           <div>
             <h1>② 优化颜色</h1>
-            <p>以「规范化」产出的网格作为优化目标，从色号库里挑出最合适的 N 种颜色。</p>
           </div>
         </div>
-        <Empty icon="palette" title="还没有可以优化的目标">
-          需要先在「规范化」里生成 1 像素 = 1 颗豆的网格。
+        <Empty icon="palette" title="还没有可优化的网格">
           <div style={{ marginTop: 12 }}>
             <button className="btn waves-effect waves-light" onClick={goPrev}>
-              回到规范化
+              ← 回到规范化
             </button>
           </div>
         </Empty>
@@ -91,7 +89,6 @@ export function OptimizeStep() {
         <div className="stage-head">
           <div>
             <h1>② 优化颜色</h1>
-            <p>优化目标取自规范化结果里每一格的颜色，按出现次数加权。</p>
           </div>
           <span className="grow" />
           <button className="btn-flat btn-small waves-effect" onClick={goPrev}>
@@ -126,18 +123,6 @@ export function OptimizeStep() {
                 <Stat k="总像素" v={(grid.width * grid.height).toLocaleString()} small />
                 <Stat k="唯一颜色" v={targetInfo?.uniqueColors ?? 0} small />
                 <Stat k="目标色数" v={targetMode === 'grid' ? targetCount : libraryPalette.length} small />
-              </div>
-              <div className="divider" />
-              <div className="tiny muted">
-                {targetMode === 'grid' ? (
-                  targetInfo?.bucket && targetInfo.bucket > 0 ? (
-                    <>颜色过多，已合并到 {targetCount} 个目标色。</>
-                  ) : (
-                    <>{targetCount} 个目标色，出现越多权重越高。</>
-                  )
-                ) : (
-                  <>以整本色号库为目标，得到一组通用配色。</>
-                )}
               </div>
             </div>
           </div>
@@ -227,7 +212,6 @@ export function OptimizeStep() {
           <Field
             label="候选色"
             value={`${candidateCount} / ${libraryPalette.length}`}
-            hint="优化只会从勾选的颜色里挑；默认整本色号库都可选"
           >
             <button className="btn waves-effect waves-light" style={{ width: '100%' }} onClick={() => setShowCandidates(true)}>
               选择候选色…
@@ -236,7 +220,7 @@ export function OptimizeStep() {
 
           <div className="divider" />
 
-          <Field label="颜料预算 K" value={`${config.k} 色`} hint={`含固定的 2 个黑白，共约 ${needed} 色`}>
+          <Field label="颜料预算 K" value={`${config.k} 色`} hint={`共约 ${needed} 色`}>
             <input
               type="range"
               min={2}
@@ -256,7 +240,7 @@ export function OptimizeStep() {
               onChange={(e) => setConfig({ steps: Math.max(1000, Number(e.target.value) || 1000) })}
             />
           </Field>
-          <Field label="提前终止耐心值" hint="连续这么多步没有更好解就提前结束">
+          <Field label="提前终止耐心值" hint="没有更好解就结束">
             <input
               type="number"
               min={200}
@@ -299,13 +283,13 @@ export function OptimizeStep() {
 
           <div style={{ display: 'grid', gap: 9 }}>
             <Check checked={config.weighted} onChange={(v) => setConfig({ weighted: v })}>
-              按出现次数<b>加权</b>（推荐）
+              按出现次数<b>加权</b>
             </Check>
             <Check checked={config.mandatory} onChange={(v) => setConfig({ mandatory: v })}>
               固定包含<b>黑白</b>（MARD H02 / H07）
             </Check>
             <Check checked={config.greedyInit} onChange={(v) => setConfig({ greedyInit: v })}>
-              贪心最远点<b>初始解</b>（更稳）
+              贪心最远点<b>初始解</b>
             </Check>
             <Check checked={config.polish} onChange={(v) => setConfig({ polish: v })}>
               退火后做<b>贪心精修</b>
@@ -344,13 +328,6 @@ export function OptimizeStep() {
             <Stat k="目标色" v={run.targets || targetCount} small />
             <Stat k="当前温度" v={run.temperature ? run.temperature.toExponential(2) : '—'} small />
             <Stat k="用时" v={run.elapsedMs ? `${(run.elapsedMs / 1000).toFixed(1)}s` : '—'} small />
-          </div>
-          <div className="divider" />
-          <div className="tiny muted">
-            色号库当前可用 <b>{libraryPalette.length}</b> 色（MARD A–H{includeExtended ? ' + 扩展色号' : ''}），
-            其中 <b>{candidateCount}</b> 色参与优化。
-            <br />
-            相同种子 + 相同设置 = 相同结果，方便复现。
           </div>
           {run.status === 'done' && (
             <>

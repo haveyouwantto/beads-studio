@@ -2,6 +2,10 @@ import { useEffect, useMemo, useRef, useState } from 'react'
 import { buildPatternSvg } from '../core/svg.ts'
 import { useStudio } from '../store/studio.ts'
 import type { Pixmap } from '../core/types.ts'
+import { clampZoom, usePinchPan } from './gestures.ts'
+
+const MIN_ZOOM = 0.2
+const MAX_ZOOM = 16
 
 /**
  * 全屏看图：拼豆时要对着屏幕一颗颗摆，需要放大 + 拖动，并且屏幕别自动熄灭。
@@ -20,18 +24,13 @@ export function FullscreenPreview({
   const renderOptions = useStudio((s) => s.renderOptions)
   const [zoom, setZoom] = useState(1)
   const [pan, setPan] = useState({ x: 0, y: 0 })
-  // 拖动状态放 ref：用 state 会因为更新时机和 pointercancel 漏掉，拖两下就断
-  const drag = useRef({ active: false, x: 0, y: 0 })
   const wakeLock = useRef<WakeLockSentinel | null>(null)
 
-  const endDrag = (e: React.PointerEvent<HTMLDivElement>) => {
-    drag.current.active = false
-    try {
-      e.currentTarget.releasePointerCapture(e.pointerId)
-    } catch {
-      // 指针已经不在捕获状态，忽略
-    }
-  }
+  // 单指拖动平移，双指捏合缩放（摆豆子时捏合是最顺手的操作）
+  const gesture = usePinchPan({
+    onPan: (dx, dy) => setPan((p) => ({ x: p.x + dx, y: p.y + dy })),
+    onPinch: (scale) => setZoom((z) => clampZoom(z * scale, MIN_ZOOM, MAX_ZOOM)),
+  })
 
   const pattern = useMemo(
     () =>
@@ -78,13 +77,13 @@ export function FullscreenPreview({
         <strong className="fs-title">图纸预览</strong>
         <span className="muted tiny fs-label">{label}</span>
         <span style={{ flex: 1 }} />
-        <button className="btn-flat btn-small waves-effect" onClick={() => setZoom((z) => Math.max(0.2, z / 1.2))}>
+        <button className="btn-flat btn-small waves-effect" onClick={() => setZoom((z) => clampZoom(z / 1.2, MIN_ZOOM, MAX_ZOOM))}>
           <i className="material-icons sm">remove</i>
         </button>
         <span className="mono tiny" style={{ width: 56, textAlign: 'center' }}>
           {Math.round(zoom * 100)}%
         </span>
-        <button className="btn-flat btn-small waves-effect" onClick={() => setZoom((z) => Math.min(16, z * 1.2))}>
+        <button className="btn-flat btn-small waves-effect" onClick={() => setZoom((z) => clampZoom(z * 1.2, MIN_ZOOM, MAX_ZOOM))}>
           <i className="material-icons sm">add</i>
         </button>
         <button
@@ -104,27 +103,9 @@ export function FullscreenPreview({
       <div
         className="fs-canvas"
         onWheel={(e) => {
-          setZoom((z) => Math.min(16, Math.max(0.2, z * (e.deltaY > 0 ? 0.9 : 1.1))))
+          setZoom((z) => clampZoom(z * (e.deltaY > 0 ? 0.9 : 1.1), MIN_ZOOM, MAX_ZOOM))
         }}
-        onPointerDown={(e) => {
-          if (e.pointerType === 'mouse' && e.button !== 0) return
-          drag.current = { active: true, x: e.clientX, y: e.clientY }
-          try {
-            e.currentTarget.setPointerCapture(e.pointerId)
-          } catch {
-            // 某些环境不支持捕获，退化成普通拖动
-          }
-        }}
-        onPointerMove={(e) => {
-          if (!drag.current.active) return
-          const dx = e.clientX - drag.current.x
-          const dy = e.clientY - drag.current.y
-          drag.current.x = e.clientX
-          drag.current.y = e.clientY
-          setPan((p) => ({ x: p.x + dx, y: p.y + dy }))
-        }}
-        onPointerUp={endDrag}
-        onPointerCancel={endDrag}
+        {...gesture}
       >
         <div
           className="pattern-svg"

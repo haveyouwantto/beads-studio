@@ -1405,11 +1405,8 @@ table.bom .chip {
 /* 图纸预览：比容器大时按住鼠标拖动平移 */
 .canvas-wrap.pattern-host {
   cursor: grab;
-}
-
-.canvas-wrap.pattern-host.dragging {
-  cursor: grabbing;
-  user-select: none;
+  /* 双指捏合由我们自己处理，交给浏览器的话它会去缩放整个页面 */
+  touch-action: none;
 }
 
 .fullscreen-stage .fs-canvas:active {
@@ -1570,6 +1567,28 @@ textarea {
 .check input[type='radio'] + span::after {
   display: none;
   content: none;
+}
+
+/* Materialize: [type=checkbox]{position:absolute;opacity:0;pointer-events:none}
+   它把真复选框藏起来，改用 +span::before 画一个假的。
+   上面刚把那个伪元素关掉，真复选框又还藏着 —— 结果一个都看不见。
+   这里把真复选框放回来，用浏览器原生的绘制。 */
+input[type='checkbox'],
+input[type='checkbox']:checked,
+input[type='checkbox']:not(:checked),
+input[type='radio'],
+input[type='radio']:checked,
+input[type='radio']:not(:checked) {
+  position: static;
+  opacity: 1;
+  pointer-events: auto;
+  width: 16px;
+  height: 16px;
+  margin: 0;
+  padding: 0;
+  border: 0;
+  accent-color: var(--md-primary);
+  flex: 0 0 auto;
 }
 
 /* Materialize: span.badge{float:right;height:22px;min-width:3rem;color:#757575}
@@ -2235,21 +2254,26 @@ button:disabled {
   margin-bottom: 0;
 }
 
-/* 规范化预览：画布按源图比例绘制，但上限是 760×540 的固定像素。
-   窄屏会超出容器，宽屏则被 max-height 压成不等比。
-   改成「host 跟着画布走 + 画布等比缩进容器」：
+/* 规范化预览：画布按源图比例绘制，上限是 760×540 的固定像素。
+   窄屏会超出容器、矮屏会被 max-height 压扁，所以这里让 host 和画布一起
+   等比缩进容器（宽高都留 auto，交给 max-width / max-height 约束）。
    覆盖层是绝对定位 inset:0，只有 host 和画布严丝合缝时，
-   四角控制点的坐标换算才对得上。 */
+   四角控制点的坐标换算才对得上；object-fit: contain 是最后一道保险，
+   万一某个引擎把盒子算得不一样，画面也只会留边，不会被拉变形。 */
 .canvas-wrap.fit {
   grid-template-columns: minmax(0, 1fr);
 }
 
 .canvas-wrap.fit .overlay-host,
-.canvas-wrap.fit .overlay-host > canvas:not(.handle-layer) {
+.canvas-wrap.fit .overlay-host > canvas {
   width: auto !important;
   height: auto !important;
   max-width: 100% !important;
   max-height: 58vh !important;
+}
+
+.canvas-wrap.fit .overlay-host > canvas:not(.handle-layer) {
+  object-fit: contain;
 }
 
 @media (max-width: 900px) {

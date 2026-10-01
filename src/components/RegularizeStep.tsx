@@ -261,14 +261,16 @@ export function RegularizeStep({ onOpenFile }: { onOpenFile: () => void }) {
         <div className="stage-head">
           <div>
             <h1>① 规范化</h1>
-            <p>把任意图片变成「一个像素 = 一颗豆」的网格。</p>
           </div>
         </div>
         <Empty icon="image" title="先放入一张图片">
           <button className="btn waves-effect waves-light" onClick={onOpenFile} style={{ marginTop: 12 }}>
             打开图片
           </button>
-          <div style={{ marginTop: 8 }}>也可以直接把图片拖进来，或按 ⌘/Ctrl + V 粘贴截图</div>
+          <div style={{ marginTop: 8 }}>也可以拖进来，或按 ⌘/Ctrl + V 粘贴</div>
+          <div style={{ marginTop: 8 }} className="tiny muted">
+            图片只在本机处理，不会上传
+          </div>
         </Empty>
       </div>
     )
@@ -280,7 +282,6 @@ export function RegularizeStep({ onOpenFile }: { onOpenFile: () => void }) {
         <div className="stage-head">
           <div>
             <h1>① 规范化</h1>
-            <p>把图片变成「一个像素 = 一颗豆」的网格。</p>
           </div>
           <span className="grow" />
           <button className="btn-flat btn-small waves-effect" onClick={onOpenFile}>
@@ -294,8 +295,10 @@ export function RegularizeStep({ onOpenFile }: { onOpenFile: () => void }) {
           tight
         >
           <div className="canvas-wrap fit">
+            {/* 尺寸按源图比例算好（viewW × viewH），CSS 再把它等比缩进容器；
+                画布和覆盖层用同一个尺寸，四角控制点才不会错位。 */}
             <div className="overlay-host" style={{ width: viewW, height: viewH }}>
-              <canvas ref={imgRef} style={{ width: viewW, height: viewH }} />
+              <canvas ref={imgRef} />
               <canvas
                 ref={overlayRef}
                 className="handle-layer"
@@ -368,7 +371,7 @@ export function RegularizeStep({ onOpenFile }: { onOpenFile: () => void }) {
               )}
             </>
           ) : (
-            <Notice kind="warn">当前设置还没有生成网格，先检查右侧参数。</Notice>
+            <Notice kind="warn">还没有生成网格。</Notice>
           )}
         </Panel>
       </div>
@@ -389,9 +392,6 @@ export function RegularizeStep({ onOpenFile }: { onOpenFile: () => void }) {
 
           {alignmentMode === 'auto' && (
             <>
-              <div className="tiny muted" style={{ marginBottom: 12 }}>
-                适合：像素画截图、被放大的像素图、正对着拍的拼豆板。
-              </div>
               <Field label="格内取样方式">
                 <select value={sampleMode} onChange={(e) => setSampleMode(e.target.value as SampleMode)}>
                   {(Object.keys(SAMPLE_MODE_LABELS) as SampleMode[]).map((m) => (
@@ -450,9 +450,6 @@ export function RegularizeStep({ onOpenFile }: { onOpenFile: () => void }) {
 
           {alignmentMode === 'quad' && (
             <>
-              <div className="tiny muted" style={{ marginBottom: 12 }}>
-                适合：斜着拍、有透视、有背景杂物的照片。拖动 4 个角点框住拼豆区域。
-              </div>
               <Field label="列数（横向豆数）">
                 <input
                   type="number"
@@ -472,20 +469,13 @@ export function RegularizeStep({ onOpenFile }: { onOpenFile: () => void }) {
               <button className="btn waves-effect waves-light" onClick={resetCorners} style={{ width: '100%' }}>
                 重置四角
               </button>
-              <div className="tiny muted" style={{ marginTop: 10 }}>
-                提示：先用可见的一行/一列豆子数出行列数，再对齐四角。
-              </div>
             </>
           )}
 
           {alignmentMode === 'direct' && (
             <>
-              <div className="tiny muted" style={{ marginBottom: 12 }}>
-                适合：已经是 1 像素 = 1 颗豆的设计稿。
-              </div>
               <Notice kind="info">
-                已探测到原图可能是 <b>{directBlock}×</b> 整数倍放大。
-                {directBlock > 1 ? `选择 ${directBlock} 会把 ${directBlock}×${directBlock} 像素块压成一颗豆。` : ''}
+                已探测到 <b>{directBlock}×</b> 整数倍放大。
               </Notice>
               <div style={{ height: 12 }} />
               <Field label="像素块压缩" value={`${directBlock}×`} hint="1 = 一个像素就是一颗豆">

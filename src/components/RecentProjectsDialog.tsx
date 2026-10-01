@@ -50,7 +50,7 @@ export function RecentProjectsDialog({
           <div>
             <h2>最近项目</h2>
             <p className="tiny muted">
-              自动保存在本机浏览器里，共 {usage.count} 个 · 占用 {formatBytes(usage.bytes)}
+              共 {usage.count} 个 · 占用 {formatBytes(usage.bytes)}
             </p>
           </div>
           <span style={{ flex: 1 }} />
@@ -86,9 +86,7 @@ export function RecentProjectsDialog({
               <div>
                 <i className="material-icons lg empty-icon">folder_open</i>
                 <div style={{ fontWeight: 600, color: 'var(--text)' }}>还没有自动存档</div>
-                <div style={{ marginTop: 6 }}>
-                  打开一张图片后，项目会自动存到这里；下次打开应用可以直接接着做。
-                </div>
+                <div style={{ marginTop: 6 }}>打开图片后会自动存到这里。</div>
               </div>
             </div>
           ) : (
@@ -148,10 +146,9 @@ export function RecentProjectsDialog({
 
         <footer className="modal-foot">
           <Check checked={autosave} onChange={setAutosave}>
-            自动保存到本机浏览器（关闭后只保留当前会话）
+            自动保存（关闭后只保留当前会话）
           </Check>
           <span style={{ flex: 1 }} />
-          <span className="tiny muted">存档只在本机</span>
         </footer>
       </div>
     </div>

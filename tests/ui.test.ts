@@ -213,6 +213,7 @@ const storage = await import('../src/core/storage.ts')
 const { TabBar } = await import('../src/components/TabBar.tsx')
 const { RecentProjectsDialog } = await import('../src/components/RecentProjectsDialog.tsx')
 const { CandidateColorsDialog } = await import('../src/components/CandidateColorsDialog.tsx')
+const { usePinchPan } = await import('../src/components/gestures.ts')
 
 const act = (React as unknown as { act: (cb: () => void | Promise<void>) => Promise<void> }).act
 
@@ -657,6 +658,70 @@ section('标签栏组件单独渲染')
   check('标签栏渲染无异常', err === null, err ?? '')
   check('标签栏有新建按钮', host.querySelector('.tab-new') !== null)
   tabRoot.unmount()
+  await flush()
+  host.remove()
+}
+
+section('图纸预览手势')
+{
+  const host = dom.window.document.createElement('div')
+  dom.window.document.body.appendChild(host)
+  const gestureRoot = createRoot(host)
+  const pans: [number, number][] = []
+  const pinches: number[] = []
+
+  function Probe() {
+    const gesture = usePinchPan({
+      onPan: (dx, dy) => pans.push([dx, dy]),
+      onPinch: (scale) => pinches.push(scale),
+    })
+    return React.createElement('div', { id: 'gesture-probe', ...gesture })
+  }
+
+  gestureRoot.render(React.createElement(Probe))
+  await flush()
+  const el = host.querySelector('#gesture-probe') as HTMLElement | null
+  check('手势探针已渲染', el !== null)
+
+  const send = (type: string, id: number, x: number, y: number) => {
+    el?.dispatchEvent(
+      new dom.window.PointerEvent(type, {
+        pointerId: id,
+        clientX: x,
+        clientY: y,
+        pointerType: 'touch',
+        bubbles: true,
+        cancelable: true,
+      }),
+    )
+  }
+
+  // 单指拖动 = 平移
+  send('pointerdown', 1, 100, 100)
+  send('pointermove', 1, 130, 120)
+  check('单指拖动产生平移', pans.some(([dx, dy]) => dx === 30 && dy === 20), JSON.stringify(pans))
+  send('pointerup', 1, 130, 120)
+
+  // 双指张开 = 放大（100 → 160 像素，倍数 1.6）
+  pans.length = 0
+  send('pointerdown', 1, 100, 200)
+  send('pointerdown', 2, 200, 200)
+  send('pointermove', 2, 260, 200)
+  check('双指张开输出放大倍数', Math.abs((pinches[0] ?? 0) - 1.6) < 0.001, JSON.stringify(pinches))
+
+  // 双指收拢 = 缩小（160 → 100 像素，倍数 0.625）
+  pinches.length = 0
+  send('pointermove', 2, 200, 200)
+  check('双指收拢输出缩小倍数', Math.abs((pinches[0] ?? 0) - 0.625) < 0.001, JSON.stringify(pinches))
+
+  // 抬起一根手指后回到单指平移
+  send('pointerup', 2, 200, 200)
+  pans.length = 0
+  send('pointermove', 1, 110, 200)
+  check('松开一指后恢复平移', pans.length > 0, JSON.stringify(pans))
+  send('pointerup', 1, 110, 200)
+
+  gestureRoot.unmount()
   await flush()
   host.remove()
 }

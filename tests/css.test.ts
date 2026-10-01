@@ -53,6 +53,7 @@ const markup = [
   '<button class="btn-flat btn-small waves-effect">重来</button>',
   '<select id="metric"><option>Lab ΔE</option></select>',
   '<input type="number" value="12"><input type="text" value="名字">',
+  '<label class="check"><input type="checkbox"><span>自动保存</span></label>',
   '<span class="btn-flat"><span class="pill">3</span></span>',
   '<ul class="tabs tabs-fixed-width segmented"><li class="tab"><a class="active">色号库</a></li><li class="indicator"></li></ul>',
   '<div class="row"><span>a</span></div>',
@@ -128,6 +129,13 @@ section('Materialize 不再误伤自定义组件')
   // Materialize 给文本框写的是 content-box，宽 100% 会多出一圈内边距 + 边框
   check('输入框用 border-box', style('input[type=number]', 'box-sizing') === 'border-box', style('input[type=number]', 'box-sizing'))
   check('文本框用 border-box', style('input[type=text]', 'box-sizing') === 'border-box', style('input[type=text]', 'box-sizing'))
+
+  // Materialize 把真复选框藏起来等它自己的伪元素来画，我们的 .check 又把伪元素关了
+  // —— 两边一凑，复选框就彻底不可见。这里要求真复选框被放回来。
+  check('复选框可见', style('.check input[type=checkbox]', 'opacity') === '1', style('.check input[type=checkbox]', 'opacity'))
+  check('复选框不脱离文档流', style('.check input[type=checkbox]', 'position') === 'static', style('.check input[type=checkbox]', 'position'))
+  check('复选框可点击', style('.check input[type=checkbox]', 'pointer-events') === 'auto', style('.check input[type=checkbox]', 'pointer-events'))
+  check('复选框有尺寸', style('.check input[type=checkbox]', 'width') === '16px', style('.check input[type=checkbox]', 'width'))
 
   // 分段选择必须等宽：Materialize 的 .tabs 默认不是 flex，靠不住
   check('分段选择强制单行', style('.tabs.segmented', 'flex-wrap') === 'nowrap', style('.tabs.segmented', 'flex-wrap'))
@@ -272,6 +280,11 @@ section('响应式断点')
   check('用料清单可横向滚动', value('', '.bom-wrap', 'overflow-x') === 'auto', value('', '.bom-wrap', 'overflow-x'))
   check('手机弹窗留出边距', value(phone, '.modal', 'width') === 'calc(100% - 16px)', value(phone, '.modal', 'width'))
   check('手机全屏工具栏换行', value(phone, '.fullscreen-stage .fs-bar', 'flex-wrap') === 'wrap')
+
+  // 图纸预览要自己处理捏合手势，交给浏览器会变成缩放整个页面
+  check('图纸预览接管触摸手势', value('', '.canvas-wrap.pattern-host', 'touch-action') === 'none', value('', '.canvas-wrap.pattern-host', 'touch-action'))
+  // 画布与预览框一起等比缩进容器，内容只留边不拉伸
+  check('预览画布用 contain', value('', '.canvas-wrap.fit .overlay-host > canvas:not(.handle-layer)', 'object-fit') === 'contain')
 }
 
 console.log(`\n${'─'.repeat(52)}`)

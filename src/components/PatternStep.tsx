@@ -28,8 +28,11 @@ import {
   downloadText,
 } from '../core/export.ts'
 import { idealTextColor } from '../core/color.ts'
+import { clampZoom, usePinchPan } from './gestures.ts'
 
 const EXPORT_SCALES = [1, 2, 4, 8] as const
+const MIN_ZOOM = 0.2
+const MAX_ZOOM = 6
 
 export function PatternStep() {
   const grid = useStudio((s) => s.grid)
@@ -56,13 +59,40 @@ export function PatternStep() {
   const [exportScale, setExportScale] = useState(2)
   const [busy, setBusy] = useState(false)
   const chartRef = useRef<HTMLDivElement>(null)
-  // 图纸比容器大时，按住鼠标拖动即可平移（滚轮/触控仍走容器自身的滚动）
-  const drag = useRef({ active: false, x: 0, y: 0, left: 0, top: 0 })
+  // 手势回调里要读到最新的缩放值，state 更新是异步的，所以另存一份
+  const zoomRef = useRef(zoom)
 
-  const endDrag = () => {
-    drag.current.active = false
-    chartRef.current?.classList.remove('dragging')
+  const applyZoom = (value: number) => {
+    zoomRef.current = clampZoom(value, MIN_ZOOM, MAX_ZOOM)
+    setZoom(zoomRef.current)
   }
+
+  /** 以屏幕上某一点为锚缩放：锚点下的那颗豆子保持不动 */
+  const zoomAt = (clientX: number, clientY: number, next: number) => {
+    const el = chartRef.current
+    const clamped = clampZoom(next, MIN_ZOOM, MAX_ZOOM)
+    const k = clamped / zoomRef.current
+    applyZoom(clamped)
+    if (!el) return
+    const rect = el.getBoundingClientRect()
+    const px = clientX - rect.left + el.scrollLeft
+    const py = clientY - rect.top + el.scrollTop
+    requestAnimationFrame(() => {
+      el.scrollLeft = px * k - (clientX - rect.left)
+      el.scrollTop = py * k - (clientY - rect.top)
+    })
+  }
+
+  // 单指/鼠标平移，双指捏合缩放
+  const gesture = usePinchPan({
+    onPan: (dx, dy) => {
+      const el = chartRef.current
+      if (!el) return
+      el.scrollLeft -= dx
+      el.scrollTop -= dy
+    },
+    onPinch: (scale, center) => zoomAt(center.x, center.y, zoomRef.current * scale),
+  })
 
   // 预览尺寸：超大图纸自动降档，但预览始终是矢量的，放大不会糊
   const previewOptions = useMemo(
@@ -152,14 +182,12 @@ export function PatternStep() {
         <div className="stage-head">
           <div>
             <h1>③ 转拼豆图纸</h1>
-            <p>把网格量化到色板，输出矢量拼豆图纸、珠子预览与用料清单。</p>
           </div>
         </div>
         <Empty icon="grid_on" title="还没有网格">
-          先完成第一步「规范化」。
           <div style={{ marginTop: 12 }}>
             <button className="btn waves-effect waves-light" onClick={goPrev}>
-              回到规范化
+              ← 回到规范化
             </button>
           </div>
         </Empty>
@@ -178,7 +206,6 @@ export function PatternStep() {
         <div className="stage-head">
           <div>
             <h1>③ 转拼豆图纸</h1>
-            <p>每格吸附到色板里最接近的色号。每格细线，每 {renderOptions.majorEvery} 格粗线。</p>
           </div>
           <span className="grow" />
           <button className="btn-flat btn-small waves-effect" onClick={goPrev}>
@@ -218,29 +245,8 @@ export function PatternStep() {
               <div
                 ref={chartRef}
                 className="canvas-wrap pattern-host"
-                onPointerDown={(e) => {
-                  if (e.pointerType !== 'mouse' || e.button !== 0) return
-                  const el = chartRef.current
-                  if (!el) return
-                  drag.current = {
-                    active: true,
-                    x: e.clientX,
-                    y: e.clientY,
-                    left: el.scrollLeft,
-                    top: el.scrollTop,
-                  }
-                  el.classList.add('dragging')
-                  e.preventDefault()
-                }}
-                onPointerMove={(e) => {
-                  const el = chartRef.current
-                  if (!el || !drag.current.active) return
-                  el.scrollLeft = drag.current.left - (e.clientX - drag.current.x)
-                  el.scrollTop = drag.current.top - (e.clientY - drag.current.y)
-                }}
-                onPointerUp={endDrag}
-                onPointerLeave={endDrag}
-                onPointerCancel={endDrag}
+                onWheel={(e) => zoomAt(e.clientX, e.clientY, zoomRef.current * (e.deltaY > 0 ? 0.9 : 1.1))}
+                {...gesture}
               >
                 <div
                   className="pattern-svg"
@@ -257,13 +263,13 @@ export function PatternStep() {
                   max={6}
                   step={0.05}
                   value={zoom}
-                  onChange={(e) => setZoom(Number(e.target.value))}
+                  onChange={(e) => applyZoom(Number(e.target.value))}
                   style={{ flex: 1, minWidth: 120 }}
                 />
                 <span className="mono tiny" style={{ width: 56, textAlign: 'right' }}>
                   {Math.round(zoom * 100)}%
                 </span>
-                <button className="btn-flat btn-small waves-effect" onClick={() => setZoom(1)}>
+                <button className="btn-flat btn-small waves-effect" onClick={() => applyZoom(1)}>
                   100%
                 </button>
                 <button className="btn-flat btn-small waves-effect" onClick={exportPixelPng}>
@@ -340,7 +346,7 @@ export function PatternStep() {
               </table>
             </div>
           ) : (
-            <Notice kind="warn">没有统计到用量，可能是色板为空。</Notice>
+            <Notice kind="warn">色板为空。</Notice>
           )}
         </Panel>
       </div>
@@ -354,17 +360,6 @@ export function PatternStep() {
               options={paletteOptions}
             />
           </Field>
-          <div className="tiny muted" style={{ marginBottom: 12 }}>
-            {paletteSource === 'optimized' && (
-              <>
-                「优化颜色」选出的 <b>{palette.length}</b> 个色号。
-              </>
-            )}
-            {paletteSource === 'library' && <>使用整本 MARD 色号库，共 {palette.length} 色。</>}
-            {paletteSource === 'basic24' && <>MARD 基础 24 色，适合先用少量豆子试色。</>}
-            {paletteSource === 'basic48' && <>MARD 基础 48 色，比 24 色多了各系列的过渡色。</>}
-            {paletteSource === 'custom' && <>自定义色板，可以在下面粘贴色号。</>}
-          </div>
 
           {optimizedPalette.length === 0 && paletteSource !== 'optimized' && (
             <div style={{ marginBottom: 12 }}>
@@ -458,7 +453,6 @@ export function PatternStep() {
           <Field
             label="粗线间隔"
             value={`每 ${renderOptions.majorEvery} 格`}
-            hint="细线每格都有，这个决定每隔多少格加一条粗线"
           >
             <input
               type="range"
@@ -470,7 +464,7 @@ export function PatternStep() {
             />
           </Field>
 
-          <Field label="格子大小" value={`${renderOptions.cellSize} px`} hint="决定 SVG 的固有尺寸与导出分辨率">
+          <Field label="格子大小" value={`${renderOptions.cellSize} px`}>
             <input
               type="range"
               min={8}
@@ -535,7 +529,7 @@ export function PatternStep() {
             />
           </Field>
           <Check checked={quantizeOptions.quantize} onChange={(v) => setQuantizeOptions({ quantize: v })}>
-            吸附到色板（关闭则保留原始像素颜色）
+            吸附到色板
           </Check>
         </Panel>
 

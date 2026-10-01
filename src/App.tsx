@@ -278,14 +278,10 @@ export default function App() {
             </button>
           ))}
           <div className="rail-foot">
-            图片只在本地浏览器内处理，不会上传。
-            <br />
-            快捷键 ⌘/Ctrl + 1 · 2 · 3 切换阶段。
-            <div className="divider" />
             当前色板 {palette.length} 色 · {codeSystem}
             <div className="divider" />
             {autosave ? (
-              <>已开启自动保存{savedAt ? ` · ${formatTime(savedAt)}` : ''}</>
+              <>自动保存{savedAt ? ` · ${formatTime(savedAt)}` : ''}</>
             ) : (
               <>自动保存已关闭</>
             )}

@@ -73,8 +73,8 @@ export function CandidateColorsDialog({ onClose }: { onClose: () => void }) {
           <div>
             <h2>选择候选色</h2>
             <p className="tiny muted">
-              配色优化只会从勾选的颜色里挑。当前选中 <b>{selectedCount}</b> / {total} 色
-              {includeExtended ? '（含扩展色号）' : '（MARD A–H）'}
+              已选 <b>{selectedCount}</b> / {total} 色
+              {includeExtended ? ' · 含扩展色号' : ' · MARD A–H'}
             </p>
           </div>
           <span style={{ flex: 1 }} />
