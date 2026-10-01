@@ -92,10 +92,10 @@ export function PatternStep({ onOpenFullscreen }: { onOpenFullscreen: () => void
   }
   // 每个来源一句话说明它是干什么的
   const PALETTE_HINT: Partial<Record<typeof paletteSource, string>> = {
-    optimized: '刚才找到的颜色方案',
-    library: 'MARD 全 221 色',
-    kit: '网上流行的套装',
-    custom: '输入自己的 #RGB 值，一行一个',
+    optimized: '「优化颜色」选出的方案',
+    library: includeExtended ? 'MARD 完整 291 色' : 'MARD 标准 221 色',
+    kit: '常见零售套装，在下面选档位',
+    custom: '自己填 #RGB，一行一个',
   }
 
   const paletteOptions = VISIBLE_PALETTE_SOURCES.map((value) => ({
