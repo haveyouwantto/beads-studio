@@ -30,6 +30,7 @@ import {
   downloadText,
 } from '../core/export.ts'
 import { idealTextColor } from '../core/color.ts'
+import { STAGE_META } from './stages.ts'
 
 const EXPORT_SCALES = [1, 2, 4, 8] as const
 
@@ -152,7 +153,10 @@ export function PatternStep({ onOpenFullscreen }: { onOpenFullscreen: () => void
       <div className="columns">
         <div className="stage-head">
           <div>
-            <h1>③ 转拼豆图纸</h1>
+            <h1>
+              <i className="material-icons">{STAGE_META.pattern.icon}</i>
+              {STAGE_META.pattern.label}
+            </h1>
           </div>
         </div>
         <Empty icon="grid_on" title="还没有网格">
@@ -176,7 +180,10 @@ export function PatternStep({ onOpenFullscreen }: { onOpenFullscreen: () => void
       <div>
         <div className="stage-head">
           <div>
-            <h1>③ 转拼豆图纸</h1>
+            <h1>
+              <i className="material-icons">{STAGE_META.pattern.icon}</i>
+              {STAGE_META.pattern.label}
+            </h1>
           </div>
           <span className="grow" />
           <button className="btn-flat btn-small waves-effect" onClick={goPrev}>

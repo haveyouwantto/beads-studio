@@ -4,6 +4,7 @@ import { Field, Panel, Segmented, Stat, Notice, Empty } from './ui.tsx'
 import { drawPixmap } from '../core/render.ts'
 import { countUniqueColors } from '../core/quantize.ts'
 import { SAMPLE_MODE_LABELS, type SampleMode } from '../core/types.ts'
+import { STAGE_META } from './stages.ts'
 
 const VIEW_MAX_W = 760
 const VIEW_MAX_H = 540
@@ -259,7 +260,10 @@ export function RegularizeStep({ onOpenFile }: { onOpenFile: () => void }) {
       <div className="columns">
         <div className="stage-head">
           <div>
-            <h1>① 规范化</h1>
+            <h1>
+              <i className="material-icons">{STAGE_META.regularize.icon}</i>
+              {STAGE_META.regularize.label}
+            </h1>
           </div>
         </div>
         <Empty icon="image" title="先放入一张图片">
@@ -280,7 +284,10 @@ export function RegularizeStep({ onOpenFile }: { onOpenFile: () => void }) {
       <div>
         <div className="stage-head">
           <div>
-            <h1>① 规范化</h1>
+            <h1>
+              <i className="material-icons">{STAGE_META.regularize.icon}</i>
+              {STAGE_META.regularize.label}
+            </h1>
           </div>
           <span className="grow" />
           <button className="btn-flat btn-small waves-effect" onClick={onOpenFile}>

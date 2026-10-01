@@ -64,7 +64,7 @@ const markup = [
   '<table class="bom"><thead><tr><th>色号</th></tr></thead></table>',
   '<header class="panel-head">面板标题</header>',
   '<div class="card panel"><div class="card-title panel-head">面板标题</div><div class="card-content panel-body">内容</div></div>',
-  '<div class="stage-head"><h1>① 规范化</h1><p>把图片变成网格</p></div>',
+  '<div class="stage-head"><h1><i class="material-icons">palette</i>规范化</h1><p>把图片变成网格</p></div>',
   '</body></html>',
 ].join('\n')
 
@@ -178,6 +178,14 @@ section('MD2 规格值')
     style('.stage-head h1', 'font-size') === '20px' &&
       style('.stage-head h1', 'line-height') === '32px' &&
       style('.stage-head h1', 'font-weight') === '500',
+  )
+  // 阶段标题用 Material 图标 + 文字，不用 ①②③ 这类字符
+  check('阶段标题是图标 + 文字', style('.stage-head h1', 'display') === 'inline-flex', style('.stage-head h1', 'display'))
+  check(
+    '阶段标题图标 20dp 主题色',
+    style('.stage-head h1 .material-icons', 'font-size') === '20px' &&
+      toHex(style('.stage-head h1 .material-icons', 'color')) === '#90caf9',
+    `${style('.stage-head h1 .material-icons', 'font-size')} / ${style('.stage-head h1 .material-icons', 'color')}`,
   )
   check('Body2 14/20', style('.stage-head p', 'font-size') === '14px' && style('.stage-head p', 'line-height') === '20px')
   check('Subtitle2 14/24 500', style('.panel-head', 'font-size') === '14px' && style('.panel-head', 'font-weight') === '500')

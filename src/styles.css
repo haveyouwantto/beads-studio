@@ -753,8 +753,18 @@ button {
 }
 
 .stage-head h1 {
+  /* 阶段标题 = Material 图标 + Headline 6 文字，不用 ①②③ 这类字符 */
+  display: inline-flex;
+  align-items: center;
+  gap: var(--sp-2);
   margin: 0;
   font-size: 20px;
+}
+
+.stage-head h1 .material-icons {
+  font-size: 20px;
+  line-height: 1;
+  color: var(--md-primary);
 }
 
 .stage-head p {

@@ -7,6 +7,7 @@ import { buildPaletteExport, downloadText } from '../core/export.ts'
 import { idealTextColor } from '../core/color.ts'
 import { drawPixmap } from '../core/render.ts'
 import { CandidateColorsDialog } from './CandidateColorsDialog.tsx'
+import { STAGE_META } from './stages.ts'
 
 export function OptimizeStep() {
   const grid = useStudio((s) => s.grid)
@@ -70,7 +71,10 @@ export function OptimizeStep() {
       <div className="columns">
         <div className="stage-head">
           <div>
-            <h1>② 优化颜色</h1>
+            <h1>
+              <i className="material-icons">{STAGE_META.optimize.icon}</i>
+              {STAGE_META.optimize.label}
+            </h1>
           </div>
         </div>
         <Empty icon="palette" title="还没有可优化的网格">
@@ -90,7 +94,10 @@ export function OptimizeStep() {
       <div>
         <div className="stage-head">
           <div>
-            <h1>② 优化颜色</h1>
+            <h1>
+              <i className="material-icons">{STAGE_META.optimize.icon}</i>
+              {STAGE_META.optimize.label}
+            </h1>
           </div>
           <span className="grow" />
           <button className="btn-flat btn-small waves-effect" onClick={goPrev}>

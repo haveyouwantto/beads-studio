@@ -7,15 +7,12 @@ import { FullscreenPreview } from './components/FullscreenPreview.tsx'
 import { TabBar } from './components/TabBar.tsx'
 import { RecentProjectsDialog } from './components/RecentProjectsDialog.tsx'
 import { MenuDrawer, type DrawerItem } from './components/MenuDrawer.tsx'
+import { STAGE_META, STAGE_ORDER } from './components/stages.ts'
 import { Notice, useMaterialRipple } from './components/ui.tsx'
 import { packPixels, unpackPixels, downloadText, type ProjectFile } from './core/export.ts'
 import { formatTime } from './core/storage.ts'
 
-const STAGES: { id: StageId; label: string; icon: string }[] = [
-  { id: 'regularize', label: '规范化', icon: 'center_focus_strong' },
-  { id: 'optimize', label: '优化颜色', icon: 'palette' },
-  { id: 'pattern', label: '转拼豆图纸', icon: 'grid_on' },
-]
+const STAGES = STAGE_ORDER.map((id) => ({ id, ...STAGE_META[id] }))
 
 export default function App() {
   const activeStage = useStudio((s) => s.activeStage)
