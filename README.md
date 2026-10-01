@@ -113,7 +113,12 @@ npm run test:pwa   # PWA 静态自检：manifest 字段、图标尺寸、SW 事�
 ### 部署
 
 推送到 `main` 会由 [.github/workflows/deploy-pages.yml](.github/workflows/deploy-pages.yml)
-自动跑测试 → 构建 → 发布到 GitHub Pages（首次运行会自己把 Pages 的源设成 GitHub Actions）。
+自动跑测试 → 构建 → 发布到 GitHub Pages。
+
+> 仓库的 Pages 已经开好，源是 **GitHub Actions**。工作流里刻意没写 `enablement: true` ——
+> 用 workflow 自带的 GITHUB_TOKEN 去**创建** Pages 站点会被拒（`Resource not accessible by integration`），
+> 只有仓库设置里的授权或带 `pages` 权限的个人 token 才行。换新仓库时先到 Settings → Pages 选一次
+> GitHub Actions，或者跑 `gh api -X POST repos/<owner>/<repo>/pages -f build_type=workflow`。
 
 构建用的是相对路径 `base: './'`，所以放在 `https://<用户名>.github.io/<仓库名>/` 这种子目录下
 也能正常加载资源、manifest 与 Service Worker；换到别的静态托管（Netlify / Vercel / 自己的服务器）
