@@ -221,8 +221,11 @@ section('色板与色号库')
 const palette = buildLibraryPalette({ includeExtended: false })
 const fullpalette = buildLibraryPalette({ includeExtended: true })
 {
-  check('标准色号库 206 色', palette.length === 206, `实际 ${palette.length}`)
-  check('含扩展色号更多', fullpalette.length > palette.length, `${fullpalette.length} > ${palette.length}`)
+  // MARD 官方口径：标准 221 色 = A–H + M 九个系列；完整 291 色 = 再加 P/Q/R/T/Y/ZG
+  check('标准色号库 221 色（A–H + M）', palette.length === 221, `实际 ${palette.length}`)
+  check('标准库包含 M 系列', palette.some((e) => e.codes.MARD.startsWith('M')), '')
+  check('标准库不含 P/Q/R/T/Y/ZG', !palette.some((e) => /^(P|Q|R|T|Y|ZG)/.test(e.codes.MARD)))
+  check('含扩展色号 291 色', fullpalette.length === 291, `实际 ${fullpalette.length}`)
   check('包含固定黑白 H02/H07', palette.some((e) => e.codes.MARD === 'H02') && palette.some((e) => e.codes.MARD === 'H07'))
   check('每个色号都有 HEX 与 Lab', palette.every((e) => e.hex.startsWith('#') && e.lab.length === 3))
 

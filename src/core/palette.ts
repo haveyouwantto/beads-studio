@@ -33,10 +33,6 @@ export function makeEntry(hex: string, codes: Record<string, string> = {}): Pale
   return { hex: rgbToHex(rgb), rgb, lab: rgbToLab(rgb), codes }
 }
 
-function mardFamily(code: string): string {
-  return code.slice(0, 1).toUpperCase()
-}
-
 /** MARD 色号的系列字母（A–H / M / P / Q / R / T / Y / ZG…） */
 export function mardSeries(code: string): string {
   const m = /^([A-Za-z]+)/.exec(code || '')
@@ -44,18 +40,21 @@ export function mardSeries(code: string): string {
 }
 
 /**
- * 从内嵌色号库构建调色板。
- * 原工具只把 MARD 首位落在 A–H 的色号作为候选，其余（M/P/Q/R/T/Y/ZG 等扩展色）默认排除。
- * 这里保留该默认，但允许包含扩展色号。
+ * MARD 官方把色号分成两档（多来源一致）：
+ * - 标准 221 色：A B C D E F G H M 九个系列
+ * - 完整 291 色：再加 P Q R T Y ZG 六个系列
+ * 所以 M 属于标准色，只有 P/Q/R/T/Y/ZG 才是「扩展色号」，
+ * 界面上不勾扩展时给的就是 221 色。
  */
+const STANDARD_SERIES = new Set(['A', 'B', 'C', 'D', 'E', 'F', 'G', 'H', 'M'])
+
+/** 从内嵌色号库构建调色板；includeExtended 打开时给完整的 291 色 */
 export function buildLibraryPalette(options: { includeExtended?: boolean } = {}): PaletteEntry[] {
   const entries: PaletteEntry[] = []
   for (const [hex, info] of Object.entries(BEAD_COLOR_DATA)) {
     const mard = info.MARD ?? ''
     if (!mard) continue
-    const family = mardFamily(mard)
-    const isStandard = family >= 'A' && family <= 'H'
-    if (!isStandard && !options.includeExtended) continue
+    if (!options.includeExtended && !STANDARD_SERIES.has(mardSeries(mard))) continue
     entries.push(makeEntry(hex, info))
   }
   return entries

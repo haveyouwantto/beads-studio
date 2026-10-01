@@ -310,7 +310,7 @@ export function PatternStep({ onOpenFullscreen }: { onOpenFullscreen: () => void
           {paletteSource === 'library' && (
             <div style={{ marginBottom: 12 }}>
               <Check checked={includeExtended} onChange={setIncludeExtended}>
-                包含扩展色号 M/P/Q/R/T/Y/ZG
+                包含扩展色号 P/Q/R/T/Y/ZG
               </Check>
             </div>
           )}

@@ -79,7 +79,7 @@ export function CandidateColorsDialog({ onClose }: { onClose: () => void }) {
             <h2>选择候选色</h2>
             <p className="tiny muted">
               已选 <b>{selectedCount}</b> / {total} 色
-              {includeExtended ? ' · 含扩展色号' : ' · MARD A–H'}
+              {includeExtended ? ' · 含扩展色号' : ' · MARD A–M'}
             </p>
           </div>
           <span style={{ flex: 1 }} />

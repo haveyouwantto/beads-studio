@@ -333,7 +333,7 @@ export function OptimizeStep() {
               退火后做<b>贪心精修</b>
             </Check>
             <Check checked={includeExtended} onChange={setIncludeExtended}>
-              色号库包含<b>扩展色号</b>（M/P/Q/R/T/Y/ZG）
+              色号库包含<b>扩展色号</b>（P/Q/R/T/Y/ZG）
             </Check>
           </div>
 
