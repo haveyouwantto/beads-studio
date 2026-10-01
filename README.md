@@ -110,6 +110,15 @@ npm run dev -- --host
 npm run test:pwa   # PWA 静态自检：manifest 字段、图标尺寸、SW 事件、index.html 引用
 ```
 
+### 部署
+
+推送到 `main` 会由 [.github/workflows/deploy-pages.yml](.github/workflows/deploy-pages.yml)
+自动跑测试 → 构建 → 发布到 GitHub Pages（首次运行会自己把 Pages 的源设成 GitHub Actions）。
+
+构建用的是相对路径 `base: './'`，所以放在 `https://<用户名>.github.io/<仓库名>/` 这种子目录下
+也能正常加载资源、manifest 与 Service Worker；换到别的静态托管（Netlify / Vercel / 自己的服务器）
+同样直接可用 —— 整个 `dist/` 丢上去就行。
+
 ## 标签页与自动保存
 
 - **标签页**：顶栏是浏览器式的项目标签。每个标签是一个独立项目（各自的图、网格、色板、配色结果），

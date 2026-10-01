@@ -1,0 +1,58 @@
+name: Deploy to GitHub Pages
+
+# main 有推送就重新构建发布；也可以手动触发
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+# 同时只跑一个发布任务，新的推送取消排队中的旧任务
+concurrency:
+  group: pages
+  cancel-in-progress: true
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - name: 安装依赖
+        run: npm ci
+
+      # 构建前先跑测试：算法 / CSS 层叠 / PWA 资源 / 运行时冒烟
+      - name: 测试
+        run: npm run test:all
+
+      - name: 构建
+        run: npm run build
+
+      # enablement: 首次运行时自动把 Pages 打开（源设为 GitHub Actions），
+      # 省得还要去 Settings → Pages 点一遍
+      - uses: actions/configure-pages@v5
+        with:
+          enablement: true
+
+      - uses: actions/upload-pages-artifact@v3
+        with:
+          path: dist
+
+  deploy:
+    needs: build
+    runs-on: ubuntu-latest
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - id: deployment
+        uses: actions/deploy-pages@v4
