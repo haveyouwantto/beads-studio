@@ -1,4 +1,4 @@
-﻿import { create } from 'zustand'
+import { create } from 'zustand'
 import {
   buildBasic24Palette,
   buildBasic48Palette,
@@ -106,6 +106,7 @@ export interface ProjectTab {
  * 每个标签页各存一份，切换标签页时整组换掉，其余（当前阶段、色号库、存储状态）是全局的。
  */
 const PROJECT_KEYS = [
+  'visited',
   'source',
   'analysis',
   'alignmentMode',
@@ -173,6 +174,8 @@ interface StudioState {
   candidateHex: string[]
   includeExtended: boolean
   libraryPalette: PaletteEntry[]
+  /** 哪些阶段真正被打开过（按项目记）；没进过的阶段不显示「已完成」勾 */
+  visited: Record<StageId, boolean>
   palette: PaletteEntry[]
   quantizeOptions: QuantizeOptions
   renderOptions: RenderOptions
@@ -258,6 +261,7 @@ export function getTabSnapshot(id: string): ProjectState | undefined {
 function freshProject(): ProjectState {
   const library = buildLibraryPalette({ includeExtended: false })
   return {
+    visited: { regularize: true, optimize: false, pattern: false },
     source: null,
     analysis: null,
     alignmentMode: 'auto',
@@ -480,6 +484,7 @@ async function deserializeProject(p: PersistedProject): Promise<ProjectState> {
   }
 
   return {
+    visited: { regularize: true, optimize: false, pattern: false },
     source,
     analysis: null,
     alignmentMode: p.alignmentMode as AlignmentMode,
@@ -558,16 +563,16 @@ export const useStudio = create<StudioState>((set, get) => ({
 
   ...freshProject(),
 
-  setStage: (s) => set({ activeStage: s }),
+  setStage: (s) => set((prev) => ({ activeStage: s, visited: { ...prev.visited, [s]: true } })),
   goNext: () => {
     const order: StageId[] = ['regularize', 'optimize', 'pattern']
     const idx = order.indexOf(get().activeStage)
-    if (idx < order.length - 1) set({ activeStage: order[idx + 1] })
+    if (idx < order.length - 1) get().setStage(order[idx + 1])
   },
   goPrev: () => {
     const order: StageId[] = ['regularize', 'optimize', 'pattern']
     const idx = order.indexOf(get().activeStage)
-    if (idx > 0) set({ activeStage: order[idx - 1] })
+    if (idx > 0) get().setStage(order[idx - 1])
   },
 
   loadImageFile: async (file) => {

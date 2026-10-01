@@ -1,4 +1,4 @@
-﻿import { useCallback, useEffect, useRef, useState } from 'react'
+import { useCallback, useEffect, useRef, useState } from 'react'
 import { useStudio, type StageId } from './store/studio.ts'
 import { RegularizeStep } from './components/RegularizeStep.tsx'
 import { OptimizeStep } from './components/OptimizeStep.tsx'
@@ -6,7 +6,7 @@ import { PatternStep } from './components/PatternStep.tsx'
 import { FullscreenPreview } from './components/FullscreenPreview.tsx'
 import { TabBar } from './components/TabBar.tsx'
 import { RecentProjectsDialog } from './components/RecentProjectsDialog.tsx'
-import { Notice } from './components/ui.tsx'
+import { Notice, useMaterialRipple } from './components/ui.tsx'
 import { packPixels, unpackPixels, downloadText, type ProjectFile } from './core/export.ts'
 import { formatTime } from './core/storage.ts'
 
@@ -43,6 +43,7 @@ export default function App() {
   const notice = useStudio((s) => s.notice)
   const autosave = useStudio((s) => s.autosave)
   const recentCount = useStudio((s) => s.recent.length)
+  const visited = useStudio((s) => s.visited)
 
   const [dragOver, setDragOver] = useState(false)
   const [showFullscreen, setShowFullscreen] = useState(false)
@@ -51,6 +52,7 @@ export default function App() {
   const projectRef = useRef<HTMLInputElement>(null)
 
   const openFile = useCallback(() => fileRef.current?.click(), [])
+  useMaterialRipple()
 
   const onPickFile = (files: FileList | null) => {
     const file = files?.[0]
@@ -172,16 +174,19 @@ export default function App() {
   }
 
   const stageDone: Record<StageId, boolean> = {
-    regularize: Boolean(grid),
-    optimize: optimizedPalette.length > 0,
-    pattern: Boolean(result),
+    // 没进过的阶段不算完成：图纸是自动生成的，否则一做完第一步第三步就提前打勾了
+    regularize: visited.regularize && Boolean(grid),
+    optimize: visited.optimize && optimizedPalette.length > 0,
+    pattern: visited.pattern && Boolean(result),
   }
 
   return (
     <div className={dragOver ? 'app drop-active' : 'app'}>
       <header className="topbar">
         <div className="brand">
-          <span className="brand-mark">🫧</span>
+          <span className="brand-mark">
+            <i className="material-icons sm">blur_on</i>
+          </span>
           <div>
             Beads Studio
             <br />
@@ -194,19 +199,19 @@ export default function App() {
         <span className="topbar-spacer" />
 
         <div className="row tight">
-          <button className="btn primary" onClick={openFile} disabled={loading}>
+          <button className="btn waves-effect waves-light" onClick={openFile} disabled={loading}>
             {loading ? '载入中…' : source ? '更换图片' : '打开图片'}
           </button>
-          <button className="btn ghost" onClick={() => setShowFullscreen(true)} disabled={!result}>
+          <button className="btn-flat waves-effect" onClick={() => setShowFullscreen(true)} disabled={!result}>
             全屏预览
           </button>
-          <button className="btn ghost" onClick={saveProject} disabled={!grid} title="导出成项目文件">
+          <button className="btn-flat waves-effect" onClick={saveProject} disabled={!grid} title="导出成项目文件">
             导出文件
           </button>
-          <button className="btn ghost" onClick={() => projectRef.current?.click()} title="从项目文件导入">
+          <button className="btn-flat waves-effect" onClick={() => projectRef.current?.click()} title="从项目文件导入">
             导入文件
           </button>
-          <button className="btn ghost" onClick={() => setShowRecent(true)}>
+          <button className="btn-flat waves-effect" onClick={() => setShowRecent(true)}>
             最近项目
             {recentCount > 0 && <span className="pill">{recentCount}</span>}
           </button>
@@ -236,15 +241,17 @@ export default function App() {
       </header>
 
       <div className="body">
-        <nav className="rail">
+        <nav className="rail collection">
           <div className="rail-title">工作流</div>
           {STAGES.map((s, i) => (
             <button
               key={s.id}
-              className={`rail-step ${activeStage === s.id ? 'active' : ''} ${stageDone[s.id] ? 'done' : ''}`}
+              className={`rail-step collection-item ${activeStage === s.id ? 'active' : ''} ${stageDone[s.id] ? 'done' : ''}`}
               onClick={() => setStage(s.id)}
             >
-              <span className="rail-num">{stageDone[s.id] ? '✓' : i + 1}</span>
+              <span className="rail-num">
+                {stageDone[s.id] ? <i className="material-icons sm">check</i> : i + 1}
+              </span>
               <span>
                 <span className="rail-label">{s.label}</span>
                 <span className="rail-desc">{s.desc}</span>
@@ -272,7 +279,7 @@ export default function App() {
               <Notice kind="error">
                 {error}
                 <button
-                  className="btn sm ghost"
+                  className="btn-flat btn-small waves-effect"
                   style={{ marginLeft: 10 }}
                   onClick={() => useStudio.setState({ error: null })}
                 >
@@ -287,7 +294,7 @@ export default function App() {
               <Notice kind={notice.kind}>
                 {notice.text}
                 <button
-                  className="btn sm ghost"
+                  className="btn-flat btn-small waves-effect"
                   style={{ marginLeft: 10 }}
                   onClick={() => useStudio.getState().clearNotice()}
                 >

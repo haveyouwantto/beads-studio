@@ -1,4 +1,4 @@
-import { useMemo, useState } from 'react'
+import { useMemo, useRef, useState } from 'react'
 import { useStudio } from '../store/studio.ts'
 import { Check, Empty, Field, Notice, Panel, Segmented, Stat } from './ui.tsx'
 import { buildHexLookup } from '../core/render.ts'
@@ -55,6 +55,14 @@ export function PatternStep() {
   const [zoom, setZoom] = useState(1)
   const [exportScale, setExportScale] = useState(2)
   const [busy, setBusy] = useState(false)
+  const chartRef = useRef<HTMLDivElement>(null)
+  // 图纸比容器大时，按住鼠标拖动即可平移（滚轮/触控仍走容器自身的滚动）
+  const drag = useRef({ active: false, x: 0, y: 0, left: 0, top: 0 })
+
+  const endDrag = () => {
+    drag.current.active = false
+    chartRef.current?.classList.remove('dragging')
+  }
 
   // 预览尺寸：超大图纸自动降档，但预览始终是矢量的，放大不会糊
   const previewOptions = useMemo(
@@ -81,9 +89,18 @@ export function PatternStep() {
   const usedSet = useMemo(() => new Set(bom.map((r) => r.hex)), [bom])
   const lookup = useMemo(() => buildHexLookup(palette), [palette])
 
+  // 侧栏只有 330px 宽，五个中文标签放不下；界面上用短名，完整名字放 title
+  const PALETTE_SHORT: Partial<Record<typeof paletteSource, string>> = {
+    optimized: '优化结果',
+    library: '色号库',
+    basic24: '24色',
+    basic48: '48色',
+    custom: '自定义',
+  }
   const paletteOptions = VISIBLE_PALETTE_SOURCES.map((value) => ({
     value,
-    label: PALETTE_SOURCE_LABELS[value],
+    label: PALETTE_SHORT[value] ?? PALETTE_SOURCE_LABELS[value],
+    title: PALETTE_SOURCE_LABELS[value],
   }))
 
   const tooBig = (options: typeof renderOptions, scale: number): boolean => {
@@ -138,10 +155,10 @@ export function PatternStep() {
             <p>把网格量化到色板，输出矢量拼豆图纸、珠子预览与用料清单。</p>
           </div>
         </div>
-        <Empty icon="🧩" title="还没有网格">
+        <Empty icon="grid_on" title="还没有网格">
           先完成第一步「规范化」。
           <div style={{ marginTop: 12 }}>
-            <button className="btn primary" onClick={goPrev}>
+            <button className="btn waves-effect waves-light" onClick={goPrev}>
               回到规范化
             </button>
           </div>
@@ -161,13 +178,10 @@ export function PatternStep() {
         <div className="stage-head">
           <div>
             <h1>③ 转拼豆图纸</h1>
-            <p>
-              每格吸附到色板里最接近的色号。图纸用矢量绘制，放大多少倍都清晰；
-              每格之间有细线，每 {renderOptions.majorEvery} 格有粗线，方便数格子。
-            </p>
+            <p>每格吸附到色板里最接近的色号。每格细线，每 {renderOptions.majorEvery} 格粗线。</p>
           </div>
           <span className="grow" />
-          <button className="btn ghost sm" onClick={goPrev}>
+          <button className="btn-flat btn-small waves-effect" onClick={goPrev}>
             ← 优化颜色
           </button>
         </div>
@@ -189,10 +203,10 @@ export function PatternStep() {
                   </option>
                 ))}
               </select>
-              <button className="btn sm primary" onClick={exportChartPng} disabled={busy}>
+              <button className="btn btn-small waves-effect waves-light" onClick={exportChartPng} disabled={busy}>
                 {busy ? '导出中…' : '导出 PNG'}
               </button>
-              <button className="btn sm ghost" onClick={exportChartSvg}>
+              <button className="btn-flat btn-small waves-effect" onClick={exportChartSvg}>
                 导出 SVG
               </button>
             </>
@@ -201,10 +215,36 @@ export function PatternStep() {
         >
           {preview && (
             <>
-              <div className="canvas-wrap pattern-host">
+              <div
+                ref={chartRef}
+                className="canvas-wrap pattern-host"
+                onPointerDown={(e) => {
+                  if (e.pointerType !== 'mouse' || e.button !== 0) return
+                  const el = chartRef.current
+                  if (!el) return
+                  drag.current = {
+                    active: true,
+                    x: e.clientX,
+                    y: e.clientY,
+                    left: el.scrollLeft,
+                    top: el.scrollTop,
+                  }
+                  el.classList.add('dragging')
+                  e.preventDefault()
+                }}
+                onPointerMove={(e) => {
+                  const el = chartRef.current
+                  if (!el || !drag.current.active) return
+                  el.scrollLeft = drag.current.left - (e.clientX - drag.current.x)
+                  el.scrollTop = drag.current.top - (e.clientY - drag.current.y)
+                }}
+                onPointerUp={endDrag}
+                onPointerLeave={endDrag}
+                onPointerCancel={endDrag}
+              >
                 <div
                   className="pattern-svg"
-                  style={{ width: previewZoomedW, height: previewZoomedH }}
+                  style={{ width: previewZoomedW, height: previewZoomedH, pointerEvents: 'none' }}
                   dangerouslySetInnerHTML={{ __html: preview.svg }}
                 />
               </div>
@@ -223,10 +263,10 @@ export function PatternStep() {
                 <span className="mono tiny" style={{ width: 56, textAlign: 'right' }}>
                   {Math.round(zoom * 100)}%
                 </span>
-                <button className="btn sm ghost" onClick={() => setZoom(1)}>
+                <button className="btn-flat btn-small waves-effect" onClick={() => setZoom(1)}>
                   100%
                 </button>
-                <button className="btn sm ghost" onClick={exportPixelPng}>
+                <button className="btn-flat btn-small waves-effect" onClick={exportPixelPng}>
                   导出 1:1 像素图
                 </button>
               </div>
@@ -236,17 +276,11 @@ export function PatternStep() {
                   <Notice kind="info">
                     {shrinkNote && (
                       <>
-                        图纸较大，预览已按 {previewCellSize} px/格 显示；导出的 PNG / SVG 仍按你设置的{' '}
-                        {renderOptions.cellSize} px/格，且是矢量重绘，放大不糊。
-                        <br />
+                        图纸较大，预览已缩到 {previewCellSize} px/格；导出仍按 {renderOptions.cellSize} px/格。
                       </>
                     )}
-                    {preview.codesSuppressed && (
-                      <>格子太多（超过 12000 格），已自动省略色号，避免 SVG 过大。缩小图案或降低格子数后再开色号。</>
-                    )}
-                    {preview.beadSuppressed && (
-                      <>格子太多，珠子样式已自动退回方格样式。需要珠子预览请先减小图案尺寸。</>
-                    )}
+                    {preview.codesSuppressed && <>格子太多，已省略色号。</>}
+                    {preview.beadSuppressed && <>格子太多，珠子样式已退回方格。</>}
                   </Notice>
                 </div>
               )}
@@ -260,14 +294,14 @@ export function PatternStep() {
           actions={
             <>
               <button
-                className="btn sm ghost"
+                className="btn-flat btn-small waves-effect"
                 disabled={!bom.length}
                 onClick={() => downloadText(bomToCsv(bom, 'Beads Studio 用料清单'), 'beads-bom.csv', 'text/csv')}
               >
                 导出 CSV
               </button>
               <button
-                className="btn sm ghost"
+                className="btn-flat btn-small waves-effect"
                 disabled={!bom.length}
                 onClick={() =>
                   downloadText(buildPaletteExport(palette, codeSystem, 'code'), `beads-codes-${codeSystem}.txt`)
@@ -323,8 +357,7 @@ export function PatternStep() {
           <div className="tiny muted" style={{ marginBottom: 12 }}>
             {paletteSource === 'optimized' && (
               <>
-                「优化颜色」选出的 <b>{optimizedPalette.length}</b> 个色号，共 {palette.length} 色。
-                换到别的来源再切回来，这套结果不会丢。
+                「优化颜色」选出的 <b>{palette.length}</b> 个色号。
               </>
             )}
             {paletteSource === 'library' && <>使用整本 MARD 色号库，共 {palette.length} 色。</>}
@@ -335,16 +368,14 @@ export function PatternStep() {
 
           {optimizedPalette.length === 0 && paletteSource !== 'optimized' && (
             <div style={{ marginBottom: 12 }}>
-              <Notice kind="info">
-                还没运行过配色优化。先去「优化颜色」选一遍，这里就能直接用「优化结果」。
-              </Notice>
+              <Notice kind="info">还没运行过配色优化。</Notice>
             </div>
           )}
 
           {paletteSource === 'optimized' && optimizedPalette.length === 0 && (
             <div style={{ marginBottom: 12 }}>
               <Notice kind="warn">
-                还没有优化结果，当前图纸用的是上一次的色板。请先到「优化颜色」运行一次。
+                还没有优化结果，请先到「优化颜色」运行一次。
               </Notice>
             </div>
           )}
@@ -358,11 +389,11 @@ export function PatternStep() {
           )}
 
           <div className="row tight">
-            <button className="btn sm ghost" onClick={() => setPasteOpen((v) => !v)}>
+            <button className="btn-flat btn-small waves-effect" onClick={() => setPasteOpen((v) => !v)}>
               粘贴色号
             </button>
             <button
-              className="btn sm ghost"
+              className="btn-flat btn-small waves-effect"
               onClick={() => setPaletteSource('library')}
             >
               用整本库
@@ -378,7 +409,7 @@ export function PatternStep() {
                 onChange={(e) => setPasteText(e.target.value)}
               />
               <button
-                className="btn sm primary"
+                className="btn btn-small waves-effect waves-light"
                 style={{ marginTop: 8 }}
                 onClick={() => {
                   const hexes = parsePaletteText(pasteText, libraryPalette, codeSystem)
@@ -539,10 +570,6 @@ export function PatternStep() {
             <Stat k="总豆数" v={totalBeads.toLocaleString()} small />
             <Stat k="用到色号" v={bom.length} small />
             <Stat k="色板总量" v={palette.length} small />
-          </div>
-          <div className="divider" />
-          <div className="tiny muted">
-            图纸是矢量 SVG：屏幕预览缩放、导出 PNG（最高 8×）以及导出 SVG 都是重新绘制，不会出现放大模糊。
           </div>
         </Panel>
       </div>

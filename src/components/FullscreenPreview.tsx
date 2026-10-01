@@ -20,9 +20,18 @@ export function FullscreenPreview({
   const renderOptions = useStudio((s) => s.renderOptions)
   const [zoom, setZoom] = useState(1)
   const [pan, setPan] = useState({ x: 0, y: 0 })
-  const [dragging, setDragging] = useState(false)
-  const last = useRef({ x: 0, y: 0 })
+  // 拖动状态放 ref：用 state 会因为更新时机和 pointercancel 漏掉，拖两下就断
+  const drag = useRef({ active: false, x: 0, y: 0 })
   const wakeLock = useRef<WakeLockSentinel | null>(null)
+
+  const endDrag = (e: React.PointerEvent<HTMLDivElement>) => {
+    drag.current.active = false
+    try {
+      e.currentTarget.releasePointerCapture(e.pointerId)
+    } catch {
+      // 指针已经不在捕获状态，忽略
+    }
+  }
 
   const pattern = useMemo(
     () =>
@@ -69,17 +78,17 @@ export function FullscreenPreview({
         <strong>图纸预览</strong>
         <span className="muted tiny">{label}</span>
         <span style={{ flex: 1 }} />
-        <button className="btn sm ghost" onClick={() => setZoom((z) => Math.max(0.2, z / 1.2))}>
-          −
+        <button className="btn-flat btn-small waves-effect" onClick={() => setZoom((z) => Math.max(0.2, z / 1.2))}>
+          <i className="material-icons sm">remove</i>
         </button>
         <span className="mono tiny" style={{ width: 56, textAlign: 'center' }}>
           {Math.round(zoom * 100)}%
         </span>
-        <button className="btn sm ghost" onClick={() => setZoom((z) => Math.min(16, z * 1.2))}>
-          ＋
+        <button className="btn-flat btn-small waves-effect" onClick={() => setZoom((z) => Math.min(16, z * 1.2))}>
+          <i className="material-icons sm">add</i>
         </button>
         <button
-          className="btn sm ghost"
+          className="btn-flat btn-small waves-effect"
           onClick={() => {
             setZoom(1)
             setPan({ x: 0, y: 0 })
@@ -87,7 +96,7 @@ export function FullscreenPreview({
         >
           重置
         </button>
-        <button className="btn sm primary" onClick={onClose}>
+        <button className="btn btn-small waves-effect waves-light" onClick={onClose}>
           退出 (Esc)
         </button>
       </div>
@@ -98,19 +107,24 @@ export function FullscreenPreview({
           setZoom((z) => Math.min(16, Math.max(0.2, z * (e.deltaY > 0 ? 0.9 : 1.1))))
         }}
         onPointerDown={(e) => {
-          setDragging(true)
-          last.current = { x: e.clientX, y: e.clientY }
-          e.currentTarget.setPointerCapture(e.pointerId)
+          if (e.pointerType === 'mouse' && e.button !== 0) return
+          drag.current = { active: true, x: e.clientX, y: e.clientY }
+          try {
+            e.currentTarget.setPointerCapture(e.pointerId)
+          } catch {
+            // 某些环境不支持捕获，退化成普通拖动
+          }
         }}
         onPointerMove={(e) => {
-          if (!dragging) return
-          setPan((p) => ({ x: p.x + e.clientX - last.current.x, y: p.y + e.clientY - last.current.y }))
-          last.current = { x: e.clientX, y: e.clientY }
+          if (!drag.current.active) return
+          const dx = e.clientX - drag.current.x
+          const dy = e.clientY - drag.current.y
+          drag.current.x = e.clientX
+          drag.current.y = e.clientY
+          setPan((p) => ({ x: p.x + dx, y: p.y + dy }))
         }}
-        onPointerUp={(e) => {
-          setDragging(false)
-          e.currentTarget.releasePointerCapture(e.pointerId)
-        }}
+        onPointerUp={endDrag}
+        onPointerCancel={endDrag}
       >
         <div
           className="pattern-svg"
@@ -133,7 +147,7 @@ export function FullscreenPreview({
           color: 'var(--muted-2)',
         }}
       >
-        滚轮缩放 · 按住拖动平移 · 屏幕保持常亮（Wake Lock） · 矢量绘制，放大到任意倍数都清晰
+        滚轮缩放 · 拖动平移 · 屏幕保持常亮
       </div>
     </div>
   )

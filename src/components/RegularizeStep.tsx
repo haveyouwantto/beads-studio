@@ -261,11 +261,11 @@ export function RegularizeStep({ onOpenFile }: { onOpenFile: () => void }) {
         <div className="stage-head">
           <div>
             <h1>① 规范化</h1>
-            <p>把任意图片变成「一个像素 = 一颗豆」的网格。三种输入方式任选：像素自动识别、四角变换、或直接上传已经画好的 1:1 像素图。</p>
+            <p>把任意图片变成「一个像素 = 一颗豆」的网格。</p>
           </div>
         </div>
-        <Empty icon="🖼️" title="先放入一张图片">
-          <button className="btn primary" onClick={onOpenFile} style={{ marginTop: 12 }}>
+        <Empty icon="image" title="先放入一张图片">
+          <button className="btn waves-effect waves-light" onClick={onOpenFile} style={{ marginTop: 12 }}>
             打开图片
           </button>
           <div style={{ marginTop: 8 }}>也可以直接把图片拖进来，或按 ⌘/Ctrl + V 粘贴截图</div>
@@ -280,10 +280,10 @@ export function RegularizeStep({ onOpenFile }: { onOpenFile: () => void }) {
         <div className="stage-head">
           <div>
             <h1>① 规范化</h1>
-            <p>把图片变成「一个像素 = 一颗豆」的网格。这是后面「优化颜色」和「转拼豆图纸」的唯一输入。</p>
+            <p>把图片变成「一个像素 = 一颗豆」的网格。</p>
           </div>
           <span className="grow" />
-          <button className="btn ghost sm" onClick={onOpenFile}>
+          <button className="btn-flat btn-small waves-effect" onClick={onOpenFile}>
             换一张
           </button>
         </div>
@@ -311,7 +311,7 @@ export function RegularizeStep({ onOpenFile }: { onOpenFile: () => void }) {
         </Panel>
 
         {alignmentMode === 'auto' && analysis && (
-          <Panel title="周期检测" hint="自相关峰列 → 基频 → 相位" tight>
+        <Panel title="周期检测" tight>
             <div className="row" style={{ gap: 12 }}>
               <div style={{ flex: '1 1 240px' }}>
                 <AutocorrelationChart
@@ -344,7 +344,7 @@ export function RegularizeStep({ onOpenFile }: { onOpenFile: () => void }) {
           title="规范化结果"
           hint={grid ? `${grid.width} × ${grid.height} 格` : '尚未生成'}
           actions={
-            <button className="btn primary sm" onClick={goNext} disabled={!grid}>
+            <button className="btn btn-small waves-effect waves-light" onClick={goNext} disabled={!grid}>
               下一步：优化颜色 →
             </button>
           }
@@ -363,10 +363,7 @@ export function RegularizeStep({ onOpenFile }: { onOpenFile: () => void }) {
               </div>
               {grid.width * grid.height > 200000 && (
                 <div style={{ marginTop: 12 }}>
-                  <Notice kind="warn">
-                    网格很大（{grid.width * grid.height} 格）。配色优化要处理的目标会很多，建议提高压缩倍数、
-                    或先降低分辨率再做优化与出图。
-                  </Notice>
+                  <Notice kind="warn">网格很大（{grid.width * grid.height} 格），优化和出图会比较慢。</Notice>
                 </div>
               )}
             </>
@@ -393,7 +390,7 @@ export function RegularizeStep({ onOpenFile }: { onOpenFile: () => void }) {
           {alignmentMode === 'auto' && (
             <>
               <div className="tiny muted" style={{ marginBottom: 12 }}>
-                适合：像素画截图、被放大的像素图、正对着拍的拼豆板。先自动检测像素周期与相位，再按格取样。
+                适合：像素画截图、被放大的像素图、正对着拍的拼豆板。
               </div>
               <Field label="格内取样方式">
                 <select value={sampleMode} onChange={(e) => setSampleMode(e.target.value as SampleMode)}>
@@ -444,7 +441,7 @@ export function RegularizeStep({ onOpenFile }: { onOpenFile: () => void }) {
                   onChange={(e) => setPhase('y', Number(e.target.value))}
                 />
               </Field>
-              <button className="btn" onClick={runAnalysis} style={{ width: '100%' }}>
+              <button className="btn waves-effect waves-light" onClick={runAnalysis} style={{ width: '100%' }}>
                 重新自动检测
               </button>
               {!analysis && <Notice kind="warn">没检测到可靠的周期，试试四角变换或直接 1:1。</Notice>}
@@ -454,7 +451,7 @@ export function RegularizeStep({ onOpenFile }: { onOpenFile: () => void }) {
           {alignmentMode === 'quad' && (
             <>
               <div className="tiny muted" style={{ marginBottom: 12 }}>
-                适合：斜着拍、有透视、有背景杂物或网格线的照片。拖动 4 个角点框住整块拼豆区域，行列数决定采样密度。
+                适合：斜着拍、有透视、有背景杂物的照片。拖动 4 个角点框住拼豆区域。
               </div>
               <Field label="列数（横向豆数）">
                 <input
@@ -472,11 +469,11 @@ export function RegularizeStep({ onOpenFile }: { onOpenFile: () => void }) {
                   onChange={(e) => setManualSize(manualCols, Number(e.target.value))}
                 />
               </Field>
-              <button className="btn" onClick={resetCorners} style={{ width: '100%' }}>
+              <button className="btn waves-effect waves-light" onClick={resetCorners} style={{ width: '100%' }}>
                 重置四角
               </button>
               <div className="tiny muted" style={{ marginTop: 10 }}>
-                提示：先用原图里可见的一行/一列豆子数出行列数，再对齐四角，结果最准。
+                提示：先用可见的一行/一列豆子数出行列数，再对齐四角。
               </div>
             </>
           )}
@@ -484,7 +481,7 @@ export function RegularizeStep({ onOpenFile }: { onOpenFile: () => void }) {
           {alignmentMode === 'direct' && (
             <>
               <div className="tiny muted" style={{ marginBottom: 12 }}>
-                适合：已经是 1 像素 = 1 颗豆的设计稿。图片会原样作为网格，不做任何重采样。
+                适合：已经是 1 像素 = 1 颗豆的设计稿。
               </div>
               <Notice kind="info">
                 已探测到原图可能是 <b>{directBlock}×</b> 整数倍放大。
@@ -501,7 +498,7 @@ export function RegularizeStep({ onOpenFile }: { onOpenFile: () => void }) {
                   onChange={(e) => setDirectBlock(Number(e.target.value))}
                 />
               </Field>
-              <button className="btn" onClick={detectDirectBlock} style={{ width: '100%' }}>
+              <button className="btn waves-effect waves-light" onClick={detectDirectBlock} style={{ width: '100%' }}>
                 重新探测放大倍数
               </button>
               <div style={{ marginTop: 10 }}>
@@ -521,7 +518,7 @@ export function RegularizeStep({ onOpenFile }: { onOpenFile: () => void }) {
             <Stat k="格式" v={alignmentMode === 'auto' ? '自动' : alignmentMode === 'quad' ? '四角' : '1:1'} small />
           </div>
           <div className="divider" />
-          <button className="btn" style={{ width: '100%' }} onClick={buildGrid}>
+          <button className="btn waves-effect waves-light" style={{ width: '100%' }} onClick={buildGrid}>
             重新生成网格
           </button>
         </Panel>

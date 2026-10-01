@@ -34,8 +34,8 @@ export function RecentProjectsDialog({ onClose }: { onClose: () => void }) {
   const openIds = new Set(tabs.map((t) => t.id))
 
   return (
-    <div className="modal-backdrop" onClick={onClose}>
-      <div className="modal" onClick={(e) => e.stopPropagation()}>
+    <div className="modal-overlay open" onClick={onClose}>
+      <div className="modal open" onClick={(e) => e.stopPropagation()}>
         <header className="modal-head">
           <div>
             <h2>最近项目</h2>
@@ -44,16 +44,16 @@ export function RecentProjectsDialog({ onClose }: { onClose: () => void }) {
             </p>
           </div>
           <span style={{ flex: 1 }} />
-          <button className="btn sm ghost" onClick={onClose}>
+          <button className="btn-flat btn-small waves-effect" onClick={onClose}>
             关闭 (Esc)
           </button>
         </header>
 
-        <div className="modal-body">
+        <div className="modal-content modal-body">
           {recent.length === 0 ? (
             <div className="empty" style={{ minHeight: 180 }}>
               <div>
-                <div className="big">🗂️</div>
+                <i className="material-icons lg empty-icon">folder_open</i>
                 <div style={{ fontWeight: 600, color: 'var(--text)' }}>还没有自动存档</div>
                 <div style={{ marginTop: 6 }}>
                   打开一张图片后，项目会自动存到这里；下次打开应用可以直接接着做。
@@ -84,7 +84,7 @@ export function RecentProjectsDialog({ onClose }: { onClose: () => void }) {
 
                   <div className="row tight">
                     <button
-                      className="btn sm primary"
+                      className="btn btn-small waves-effect waves-light"
                       onClick={async () => {
                         const ok = await openRecentProject(item.id)
                         if (ok) onClose()
@@ -94,7 +94,7 @@ export function RecentProjectsDialog({ onClose }: { onClose: () => void }) {
                     </button>
                     {confirmId === item.id ? (
                       <button
-                        className="btn sm danger"
+                        className="btn-flat btn-small waves-effect danger"
                         onClick={() => {
                           deleteRecentProject(item.id)
                           setUsage(estimateUsage())
@@ -104,7 +104,7 @@ export function RecentProjectsDialog({ onClose }: { onClose: () => void }) {
                         确认删除
                       </button>
                     ) : (
-                      <button className="btn sm ghost" onClick={() => setConfirmId(item.id)}>
+                      <button className="btn-flat btn-small waves-effect" onClick={() => setConfirmId(item.id)}>
                         删除
                       </button>
                     )}
@@ -120,7 +120,7 @@ export function RecentProjectsDialog({ onClose }: { onClose: () => void }) {
             自动保存到本机浏览器（关闭后只保留当前会话）
           </Check>
           <span style={{ flex: 1 }} />
-          <span className="tiny muted">图片不会上传，存档只在本机</span>
+          <span className="tiny muted">存档只在本机</span>
         </footer>
       </div>
     </div>

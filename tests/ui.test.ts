@@ -1,4 +1,4 @@
-﻿/**
+/**
  * 运行时冒烟测试：在 jsdom 里真正启动 React 应用，
  * 走一遍「规范化 → 优化颜色 → 转拼豆图纸」的完整流程。
  *
@@ -232,6 +232,16 @@ check('App 渲染无异常', bootError === null, bootError ?? '')
 check('渲染出品牌标题', container.textContent?.includes('Beads Studio') ?? false)
 check('左侧显示三个阶段', ['规范化', '优化颜色', '转拼豆图纸'].every((t) => container.textContent?.includes(t)))
 check('空态提示上传图片', container.textContent?.includes('先放入一张图片') ?? false)
+check(
+  '初始只有第一步算已访问',
+  JSON.stringify(useStudio.getState().visited) ===
+    JSON.stringify({ regularize: true, optimize: false, pattern: false }),
+  JSON.stringify(useStudio.getState().visited),
+)
+check(
+  '第三步一开始不打勾',
+  !(container.querySelectorAll('.rail-step')[2]?.className ?? '').includes('done'),
+)
 
 const bootRender = useStudio.getState().renderOptions
 check('默认图纸样式是带色号的方格', bootRender.style === 'flat' && bootRender.codes === true)
@@ -273,6 +283,11 @@ section('① 规范化 → 载入图片并自动识别')
   check('source 尺寸来自解码结果', st.source?.width === 96 && st.source?.height === 80)
   check('加载后没有错误', st.error === null, st.error ?? '')
   check('source 与之前不同', st.source !== before)
+  check(
+    '已有网格但没进过第三步时仍不打勾',
+    Boolean(st.grid) && !(container.querySelectorAll('.rail-step')[2]?.className ?? '').includes('done'),
+  )
+  check('第三步仍未标记为已访问', useStudio.getState().visited.pattern === false)
 }
 
 section('② 优化颜色')

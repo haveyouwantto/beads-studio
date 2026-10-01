@@ -1,20 +1,105 @@
 :root {
-  --bg: #0a0e15;
-  --panel: #121a26;
-  --panel-2: #172131;
-  --panel-3: #1e293b;
-  --border: #26313f;
-  --border-strong: #33415a;
-  --text: #e6edf7;
-  --muted: #93a4bb;
-  --muted-2: #6b7c93;
-  --accent: #4d9cf6;
-  --accent-2: #8b5cf6;
-  --ok: #34d399;
-  --warn: #f5a524;
-  --danger: #f05252;
-  --radius: 12px;
-  --radius-sm: 8px;
+  /* ========== Material Design 2 · 深色主题 · 颜色角色 ==========
+     MD 的配色不是「挑几个好看的颜色」，而是一组有语义的角色：
+     每个前景色都配套一个 on- 色，保证对比度达标。组件只能引用角色，不许写死颜色。 */
+
+  /* Primary（深色主题用浅色化变体） */
+  --md-primary: #90caf9;
+  --md-primary-variant: #64b5f6;
+  --md-on-primary: #06233c;
+
+  /* Secondary */
+  --md-secondary: #ce93d8;
+  --md-on-secondary: #2b0f35;
+
+  /* Background / Surface + elevation 覆盖层 */
+  --md-background: #121212;
+  --md-surface: #121212;
+  --md-surface-1: #1e1e1e;
+  --md-surface-2: #232323;
+  --md-surface-3: #272727;
+
+  /* On-surface 强调层级 */
+  --md-on-surface: rgba(255, 255, 255, 0.87);
+  --md-on-surface-medium: rgba(255, 255, 255, 0.6);
+  --md-on-surface-disabled: rgba(255, 255, 255, 0.38);
+
+  /* 分隔线 / 描边 */
+  --md-outline: rgba(255, 255, 255, 0.12);
+  --md-outline-strong: rgba(255, 255, 255, 0.24);
+
+  /* 状态语义色 */
+  --md-error: #cf6679;
+  --md-on-error: #000000;
+  --md-success: #81c784;
+  --md-warning: #ffb74d;
+
+  /* 状态层不透明度（MD 用叠加层表达 hover / focus / pressed） */
+  --md-state-hover: 0.04;
+  --md-state-focus: 0.12;
+  --md-state-pressed: 0.12;
+  --md-state-selected: 0.12;
+
+  /* 别名：组件样式里继续用短名字 */
+  --bg: var(--md-background);
+  --panel: var(--md-surface-1);
+  --panel-2: var(--md-surface-2);
+  --panel-3: var(--md-surface-3);
+  --text: var(--md-on-surface);
+  --muted: var(--md-on-surface-medium);
+  --muted-2: var(--md-on-surface-disabled);
+  --border: var(--md-outline);
+  --border-strong: var(--md-outline-strong);
+  --primary: var(--md-primary);
+  --primary-dark: var(--md-primary-variant);
+  --secondary: var(--md-secondary);
+  --accent: var(--md-primary);
+  --accent-2: var(--md-secondary);
+  --ok: var(--md-success);
+  --warn: var(--md-warning);
+  --error: var(--md-error);
+  --danger: var(--md-error);
+
+  /* MD2 类型比例（Roboto） */
+  --font-sans: 'Roboto', 'Helvetica Neue', 'PingFang SC', 'Microsoft YaHei', Arial, sans-serif;
+  --font-mono: var(--font-sans);
+
+  /* MD2 elevation（偏移、模糊、扩散都按规范） */
+  --elev-1: 0 1px 1px 0 rgba(0, 0, 0, 0.14), 0 2px 1px -1px rgba(0, 0, 0, 0.12),
+    0 1px 3px 0 rgba(0, 0, 0, 0.2);
+  --elev-2: 0 2px 2px 0 rgba(0, 0, 0, 0.14), 0 3px 1px -2px rgba(0, 0, 0, 0.12),
+    0 1px 5px 0 rgba(0, 0, 0, 0.2);
+  --elev-4: 0 4px 5px 0 rgba(0, 0, 0, 0.14), 0 1px 10px 0 rgba(0, 0, 0, 0.12),
+    0 2px 4px -1px rgba(0, 0, 0, 0.2);
+  --elev-8: 0 8px 10px 1px rgba(0, 0, 0, 0.14), 0 3px 14px 2px rgba(0, 0, 0, 0.12),
+    0 5px 5px -3px rgba(0, 0, 0, 0.2);
+  --elev-24: 0 24px 38px 3px rgba(0, 0, 0, 0.14), 0 9px 46px 8px rgba(0, 0, 0, 0.12),
+    0 11px 15px -7px rgba(0, 0, 0, 0.2);
+
+  /* MD2：按钮 / 卡片 / 输入框 / 对话框统一 4dp 圆角 */
+  --radius: 4px;
+  --radius-sm: 4px;
+  --radius-pill: 999px;
+
+  /* MD2 状态层不透明度 */
+  --state-hover: 0.04;
+  --state-pressed: 0.12;
+
+  /* 8dp 间距网格 */
+  --sp-1: 4px;
+  --sp-2: 8px;
+  --sp-3: 12px;
+  --sp-4: 16px;
+  --sp-6: 24px;
+  --sp-8: 32px;
+
+  /* MD 动效曲线与时长 */
+  --md-ease-standard: cubic-bezier(0.4, 0, 0.2, 1);
+  --md-ease-decelerate: cubic-bezier(0, 0, 0.2, 1);
+  --md-ease-accelerate: cubic-bezier(0.4, 0, 1, 1);
+  --md-dur-short: 150ms;
+  --md-dur-medium: 250ms;
+
   color-scheme: dark;
 }
 
@@ -32,10 +117,122 @@ body,
 body {
   background: var(--bg);
   color: var(--text);
-  font-family: 'Inter', 'Segoe UI', 'PingFang SC', 'Microsoft YaHei', system-ui, sans-serif;
+  font-family: var(--font-sans);
   font-size: 14px;
   line-height: 1.5;
   -webkit-font-smoothing: antialiased;
+}
+
+/* ---------- Materialize 深色覆盖 ----------
+   Materialize 自带浅色主题。它在 styles.css 之前加载，
+   这里把被它铺到的元素统一拉回深色，并保持 MD2 的观感。 */
+
+body,
+.card,
+.modal,
+.collection {
+  background-color: var(--bg);
+  color: var(--text);
+}
+
+h1,
+h2,
+h3,
+h4,
+h5,
+h6 {
+  color: var(--text);
+  font-weight: 500;
+  /* Materialize 默认字号极大（h1 4.2rem），这里压回正文尺度 */
+  font-size: 1rem;
+  line-height: 1.4;
+  margin: 0;
+}
+
+p {
+  color: inherit;
+  margin: 0;
+}
+
+a {
+  color: var(--accent);
+}
+
+input:not([type='checkbox']):not([type='radio']),
+select,
+textarea {
+  border: 1px solid var(--md-outline-strong) !important;
+  border-radius: var(--md-radius);
+  background-color: transparent;
+  color: var(--text);
+  box-shadow: none !important;
+  margin: 0;
+  height: auto;
+  padding: 7px 9px;
+}
+
+input:focus:not([type='checkbox']):not([type='radio']),
+select:focus,
+textarea:focus {
+  border-color: var(--accent) !important;
+  outline: none;
+  box-shadow: none !important;
+}
+
+select {
+  background-image: none;
+}
+
+option {
+  background: var(--panel);
+  color: var(--text);
+}
+
+table,
+table.striped > tbody > tr:nth-child(odd) {
+  background-color: transparent;
+}
+
+table.bom {
+  border: 0;
+}
+
+/* Materialize 的 .btn 有固定高度和 line-height，会把自定义按钮压扁 */
+.btn,
+.btn-large,
+.btn-small,
+.btn-flat {
+  background-color: var(--panel-3);
+  color: var(--text);
+  box-shadow: var(--elev-1);
+  border-radius: var(--radius-sm);
+  text-transform: none;
+  letter-spacing: 0.02em;
+  height: auto;
+  line-height: 1.4;
+  vertical-align: middle;
+}
+
+.btn .material-icons,
+.btn .material-icons.sm {
+  font-size: 17px;
+  vertical-align: -3px;
+  margin: 0;
+}
+
+/* Material Icons 的尺寸与基线对齐 */
+.material-icons {
+  font-size: 18px;
+  vertical-align: -3px;
+  user-select: none;
+}
+
+.material-icons.sm {
+  font-size: 15px;
+}
+
+.material-icons.lg {
+  font-size: 30px;
 }
 
 button {
@@ -56,10 +253,11 @@ button {
 .topbar {
   display: flex;
   align-items: center;
-  gap: 16px;
-  padding: 10px 18px;
-  background: linear-gradient(180deg, #131c2b, #101725);
-  border-bottom: 1px solid var(--border);
+  gap: var(--sp-4);
+  padding: 0 var(--sp-4);
+  min-height: 56px;
+  background-color: var(--md-surface-1);
+  border-bottom: 1px solid var(--md-outline);
   flex-wrap: wrap;
 }
 
@@ -75,11 +273,13 @@ button {
 .brand-mark {
   width: 26px;
   height: 26px;
-  border-radius: 8px;
-  background: linear-gradient(135deg, var(--accent), var(--accent-2));
+  border-radius: var(--radius-sm);
+  background-color: var(--md-primary);
+  color: var(--md-on-primary);
   display: grid;
   place-items: center;
   font-size: 14px;
+  box-shadow: none;
 }
 
 .brand small {
@@ -98,20 +298,20 @@ button {
 .tabstrip {
   display: flex;
   align-items: center;
-  gap: 4px;
+  gap: 0;
   min-width: 0;
   flex: 0 1 auto;
   max-width: 62vw;
+  align-self: stretch;
 }
 
 .tabstrip-scroll {
   display: flex;
-  align-items: center;
-  gap: 4px;
+  align-items: stretch;
+  gap: 0;
   overflow-x: auto;
   overflow-y: hidden;
   scrollbar-width: thin;
-  padding: 2px 0;
 }
 
 .tabstrip-scroll::-webkit-scrollbar {
@@ -123,41 +323,60 @@ button {
   border-radius: 999px;
 }
 
+/* MD Tabs：48dp 高、无圆角、激活项底部 2dp indicator */
 .tab {
+  position: relative;
   display: flex;
   align-items: center;
-  gap: 7px;
+  gap: var(--sp-2);
   flex: 0 0 auto;
   max-width: 220px;
-  padding: 5px 6px 5px 7px;
-  border-radius: 9px;
-  border: 1px solid transparent;
-  background: #0f1723;
-  color: var(--muted);
+  height: 48px;
+  padding: 0 var(--sp-3) 0 var(--sp-4);
+  border: 0;
+  border-radius: 0;
+  background-color: transparent;
+  color: var(--md-on-surface-medium);
   cursor: pointer;
   user-select: none;
-  transition: background 0.12s, color 0.12s, border-color 0.12s;
+  overflow: hidden;
+  transition: background-color var(--md-dur-short) var(--md-ease-standard),
+    color var(--md-dur-short) var(--md-ease-standard);
+}
+
+.tab::after {
+  content: '';
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  height: 2px;
+  background-color: var(--md-primary);
+  transform: scaleX(0);
+  transition: transform var(--md-dur-medium) var(--md-ease-standard);
 }
 
 .tab:hover {
-  background: var(--panel-2);
-  color: var(--text);
+  background-color: rgba(255, 255, 255, var(--md-state-hover));
+  color: var(--md-on-surface);
 }
 
 .tab.active {
-  background: var(--panel-3);
-  border-color: var(--border-strong);
-  color: var(--text);
-  box-shadow: inset 0 -2px 0 var(--accent);
+  color: var(--md-primary);
+  background-color: transparent;
+}
+
+.tab.active::after {
+  transform: scaleX(1);
 }
 
 .tab-thumb {
   width: 20px;
   height: 20px;
-  border-radius: 5px;
+  border-radius: 2px;
   object-fit: cover;
-  border: 1px solid var(--border-strong);
-  background: #0b1119;
+  border: 1px solid var(--md-outline);
+  background: var(--md-surface-2);
   image-rendering: pixelated;
   flex: 0 0 auto;
 }
@@ -165,13 +384,16 @@ button {
 .tab-blank {
   width: 20px;
   height: 20px;
-  border-radius: 5px;
-  border: 1px dashed var(--border-strong);
+  border-radius: 2px;
+  border: 1px dashed var(--md-outline-strong);
   flex: 0 0 auto;
 }
 
 .tab-name {
-  font-size: 12.5px;
+  font-family: var(--font-sans);
+  font-size: 14px;
+  font-weight: 500;
+  letter-spacing: 0.5px;
   max-width: 140px;
   overflow: hidden;
   text-overflow: ellipsis;
@@ -187,44 +409,44 @@ button {
 
 .tab-close {
   flex: 0 0 auto;
-  width: 18px;
-  height: 18px;
+  width: 24px;
+  height: 24px;
   display: grid;
   place-items: center;
   border: 0;
-  border-radius: 5px;
+  border-radius: var(--radius-pill);
   background: transparent;
-  color: var(--muted-2);
-  font-size: 15px;
+  color: inherit;
   line-height: 1;
 }
 
-.tab-close:hover {
-  background: rgba(240, 82, 82, 0.22);
-  color: #ffd0d0;
+.tab-close .material-icons {
+  font-size: 16px;
+  vertical-align: 0;
 }
 
-.tab.active .tab-close {
-  color: var(--muted);
+.tab-close:hover {
+  background-color: rgba(255, 255, 255, var(--md-state-pressed));
 }
 
 .tab-new {
   flex: 0 0 auto;
-  width: 28px;
-  height: 28px;
+  width: 40px;
+  height: 40px;
+  margin: 4px 0 4px 4px;
   display: grid;
   place-items: center;
-  border-radius: 8px;
-  border: 1px solid var(--border-strong);
-  background: var(--panel-2);
-  color: var(--muted);
+  border-radius: var(--radius-pill);
+  border: 0;
+  background-color: transparent;
+  color: var(--md-on-surface-medium);
   font-size: 15px;
   line-height: 1;
 }
 
 .tab-new:hover {
-  color: var(--text);
-  border-color: var(--accent);
+  background-color: rgba(255, 255, 255, var(--md-state-hover));
+  color: var(--md-on-surface);
 }
 
 .pill {
@@ -234,8 +456,8 @@ button {
   height: 18px;
   padding: 0 5px;
   border-radius: 999px;
-  background: var(--accent);
-  color: #fff;
+  background-color: var(--md-primary);
+  color: var(--md-on-primary);
   font-size: 11px;
   font-weight: 700;
   margin-left: 6px;
@@ -269,8 +491,8 @@ button {
 .modal-head {
   display: flex;
   align-items: center;
-  gap: 12px;
-  padding: 14px 16px;
+  gap: var(--sp-3);
+  padding: var(--sp-4);
   background: var(--panel-2);
   border-bottom: 1px solid var(--border);
 }
@@ -281,7 +503,7 @@ button {
 }
 
 .modal-body {
-  padding: 12px 16px;
+  padding: var(--sp-3) var(--sp-4);
   overflow-y: auto;
   flex: 1;
 }
@@ -289,8 +511,8 @@ button {
 .modal-foot {
   display: flex;
   align-items: center;
-  gap: 12px;
-  padding: 12px 16px;
+  gap: var(--sp-3);
+  padding: var(--sp-4);
   background: var(--panel-2);
   border-top: 1px solid var(--border);
 }
@@ -322,7 +544,7 @@ button {
   height: 52px;
   border-radius: 8px;
   object-fit: contain;
-  background: #0b1119;
+  background: var(--md-surface-2);
   border: 1px solid var(--border-strong);
   image-rendering: pixelated;
   flex: 0 0 auto;
@@ -347,11 +569,11 @@ button {
 
 .badge {
   margin-left: 8px;
-  padding: 1px 6px;
-  border-radius: 999px;
-  background: rgba(77, 156, 246, 0.18);
-  border: 1px solid rgba(77, 156, 246, 0.45);
-  color: #bcd8ff;
+  padding: 2px 8px;
+  border-radius: var(--md-radius);
+  background-color: rgba(144, 202, 249, var(--md-state-selected));
+  border: 0;
+  color: var(--md-primary);
   font-size: 10.5px;
   font-weight: 600;
 }
@@ -377,7 +599,7 @@ button {
 
 .series-name {
   font-size: 14px;
-  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-family: var(--font-sans); font-variant-numeric: tabular-nums;
   min-width: 22px;
 }
 
@@ -417,7 +639,7 @@ button {
 .candidate-code {
   font-size: 11px;
   font-weight: 700;
-  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-family: var(--font-sans); font-variant-numeric: tabular-nums;
 }
 
 .candidate-check {
@@ -442,10 +664,10 @@ button {
   flex-shrink: 0;
   background: var(--panel);
   border-right: 1px solid var(--border);
-  padding: 16px 12px;
+  padding: var(--sp-4) var(--sp-3);
   display: flex;
   flex-direction: column;
-  gap: 6px;
+  gap: var(--sp-1);
   overflow-y: auto;
 }
 
@@ -459,47 +681,54 @@ button {
 
 .rail-step {
   display: flex;
-  gap: 12px;
-  padding: 12px;
-  border-radius: var(--radius);
-  border: 1px solid transparent;
-  background: transparent;
+  gap: var(--sp-3);
+  padding: var(--sp-3) var(--sp-4);
+  border-radius: 0 var(--radius-pill) var(--radius-pill) 0;
+  border: 0;
+  background-color: transparent;
   text-align: left;
-  transition: background 0.15s, border-color 0.15s;
+  transition: background-color var(--md-dur-short) var(--md-ease-standard),
+    color var(--md-dur-short) var(--md-ease-standard);
   width: 100%;
 }
 
 .rail-step:hover {
-  background: var(--panel-2);
+  background-color: rgba(255, 255, 255, var(--md-state-hover));
 }
 
+/* MD2 导航项选中态：primary 文字 + primary 12% 底色 */
 .rail-step.active {
-  background: var(--panel-2);
-  border-color: var(--border-strong);
-  box-shadow: inset 2px 0 0 var(--accent);
+  background-color: rgba(144, 202, 249, var(--md-state-selected));
+}
+
+.rail-step.active .rail-label {
+  color: var(--md-primary);
 }
 
 .rail-num {
   width: 24px;
   height: 24px;
-  border-radius: 999px;
+  border-radius: var(--radius-pill);
+  border: 1px solid var(--md-outline-strong);
   display: grid;
   place-items: center;
   font-size: 12px;
-  font-weight: 700;
-  background: var(--panel-3);
-  color: var(--muted);
+  font-weight: 500;
+  background-color: transparent;
+  color: var(--md-on-surface-medium);
   flex-shrink: 0;
 }
 
 .rail-step.active .rail-num {
-  background: linear-gradient(135deg, var(--accent), var(--accent-2));
-  color: #fff;
+  background-color: var(--md-primary);
+  border-color: var(--md-primary);
+  color: var(--md-on-primary);
 }
 
 .rail-step.done .rail-num {
-  background: rgba(52, 211, 153, 0.18);
-  color: var(--ok);
+  background-color: transparent;
+  border-color: var(--md-primary);
+  color: var(--md-primary);
 }
 
 .rail-label {
@@ -529,7 +758,7 @@ button {
   flex: 1;
   min-width: 0;
   overflow-y: auto;
-  padding: 18px 20px 40px;
+  padding: var(--sp-4) var(--sp-4) var(--sp-8);
 }
 
 .stage-head {
@@ -558,7 +787,7 @@ button {
 
 .columns {
   display: grid;
-  gap: 16px;
+  gap: var(--sp-4);
   align-items: start;
 }
 
@@ -598,14 +827,14 @@ button {
 }
 
 .panel + .panel {
-  margin-top: 16px;
+  margin-top: var(--sp-4);
 }
 
 .panel-head {
   display: flex;
   align-items: center;
-  gap: 10px;
-  padding: 11px 14px;
+  gap: var(--sp-2);
+  padding: var(--sp-3) var(--sp-4);
   background: var(--panel-2);
   border-bottom: 1px solid var(--border);
   font-weight: 600;
@@ -623,18 +852,18 @@ button {
 }
 
 .panel-body {
-  padding: 14px;
+  padding: var(--sp-4);
 }
 
 .panel-body.tight {
-  padding: 10px 14px;
+  padding: var(--sp-3) var(--sp-4);
 }
 
 .field {
   display: flex;
   flex-direction: column;
-  gap: 6px;
-  margin-bottom: 14px;
+  gap: var(--sp-1);
+  margin-bottom: var(--sp-4);
 }
 
 .field:last-child {
@@ -653,7 +882,7 @@ button {
 
 .field-label b {
   color: var(--text);
-  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-family: var(--font-sans); font-variant-numeric: tabular-nums;
   font-size: 12px;
 }
 
@@ -661,7 +890,7 @@ input[type='number'],
 input[type='text'],
 select,
 textarea {
-  background: #0d141f;
+  background: transparent;
   color: var(--text);
   border: 1px solid var(--border-strong);
   border-radius: var(--radius-sm);
@@ -672,7 +901,7 @@ textarea {
 }
 
 textarea {
-  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-family: var(--font-sans); font-variant-numeric: tabular-nums;
   font-size: 12px;
   resize: vertical;
 }
@@ -686,9 +915,9 @@ input[type='color'] {
   width: 42px;
   height: 30px;
   padding: 2px;
-  background: #0d141f;
-  border: 1px solid var(--border-strong);
-  border-radius: var(--radius-sm);
+  background: transparent;
+  border: 1px solid var(--md-outline-strong);
+  border-radius: var(--md-radius);
 }
 
 input[type='checkbox'] {
@@ -723,20 +952,22 @@ input[type='checkbox'] {
 }
 
 .btn.primary {
-  background: linear-gradient(135deg, var(--accent), var(--accent-2));
-  color: #fff;
+  background-color: var(--md-primary);
+  color: var(--md-on-primary);
 }
 
 .btn.ghost {
-  background: transparent;
-  border-color: var(--border-strong);
-  color: var(--muted);
+  background-color: transparent;
+  border-color: var(--md-outline-strong);
+  color: var(--md-on-surface-medium);
+  box-shadow: none;
 }
 
 .btn.danger {
-  background: rgba(240, 82, 82, 0.16);
-  border-color: rgba(240, 82, 82, 0.45);
-  color: #ffb4b4;
+  background-color: transparent;
+  border-color: rgba(207, 102, 121, 0.6);
+  color: var(--md-error);
+  box-shadow: none;
 }
 
 .btn.sm {
@@ -757,28 +988,33 @@ input[type='checkbox'] {
 .segmented {
   display: flex;
   flex-wrap: wrap;
-  background: #0d141f;
-  border: 1px solid var(--border-strong);
-  border-radius: var(--radius-sm);
-  padding: 2px;
-  gap: 2px;
+  background-color: var(--md-surface-3);
+  border: 1px solid var(--md-outline);
+  border-radius: var(--md-radius);
+  padding: 0;
+  gap: 0;
 }
 
 .segmented button {
   flex: 1 1 auto;
   white-space: nowrap;
-  padding: 6px 8px;
+  height: 36px;
+  padding: 0 var(--sp-3);
   border: 0;
-  border-radius: 6px;
+  border-radius: 0;
   background: transparent;
-  color: var(--muted);
-  font-size: 12.5px;
-  font-weight: 600;
+  color: var(--md-on-surface-medium);
+  font-family: var(--font-sans);
+  font-size: 14px;
+  font-weight: 500;
+  letter-spacing: 0.5px;
+  transition: background-color var(--md-dur-short) var(--md-ease-standard),
+    color var(--md-dur-short) var(--md-ease-standard);
 }
 
 .segmented button.active {
-  background: var(--panel-3);
-  color: var(--text);
+  background-color: rgba(144, 202, 249, var(--md-state-selected));
+  color: var(--md-primary);
 }
 
 .check {
@@ -798,14 +1034,14 @@ input[type='checkbox'] {
 .stat-grid {
   display: grid;
   grid-template-columns: repeat(auto-fit, minmax(96px, 1fr));
-  gap: 8px;
+  gap: var(--sp-2);
 }
 
 .stat {
   background: var(--panel-2);
   border: 1px solid var(--border);
   border-radius: var(--radius-sm);
-  padding: 9px 10px;
+  padding: var(--sp-2) var(--sp-3);
 }
 
 .stat .k {
@@ -816,7 +1052,7 @@ input[type='checkbox'] {
 .stat .v {
   font-size: 17px;
   font-weight: 700;
-  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-family: var(--font-sans); font-variant-numeric: tabular-nums;
   margin-top: 2px;
 }
 
@@ -825,10 +1061,10 @@ input[type='checkbox'] {
 }
 
 .canvas-wrap {
-  background: repeating-conic-gradient(#0e141d 0% 25%, #101823 0% 50%) 50% / 18px 18px;
-  border: 1px solid var(--border);
-  border-radius: var(--radius-sm);
-  padding: 12px;
+  background-color: var(--md-surface-2);
+  border: 1px solid var(--md-outline);
+  border-radius: var(--md-radius);
+  padding: var(--sp-3);
   overflow: auto;
   display: grid;
   place-items: center;
@@ -847,6 +1083,22 @@ input[type='checkbox'] {
   width: auto;
 }
 
+.canvas-wrap {
+  box-shadow: inset 0 0 0 1px rgba(0, 0, 0, 0.25);
+}
+
+.panel {
+  box-shadow: var(--elev-1);
+}
+
+.modal {
+  box-shadow: var(--elev-8);
+}
+
+.btn.primary {
+  box-shadow: var(--elev-2);
+}
+
 /* 拼豆图纸是矢量 SVG：容器负责滚动，缩放只改变 CSS 尺寸，永远清晰 */
 .canvas-wrap.pattern-host {
   place-items: start;
@@ -857,6 +1109,9 @@ input[type='checkbox'] {
 .pattern-svg {
   line-height: 0;
   flex: 0 0 auto;
+  /* 图纸只用来照着摆豆子，选中文字反而干扰 */
+  user-select: none;
+  -webkit-user-select: none;
 }
 
 .pattern-svg svg {
@@ -890,18 +1145,18 @@ input[type='checkbox'] {
 .progress > i {
   display: block;
   height: 100%;
-  background: linear-gradient(90deg, var(--accent), var(--ok));
-  transition: width 0.15s linear;
+  background-color: var(--md-primary);
+  transition: width var(--md-dur-short) linear;
 }
 
 .log {
-  background: #0b1119;
+  background-color: var(--md-background);
   border: 1px solid var(--border);
   border-radius: var(--radius-sm);
   padding: 10px;
   max-height: 180px;
   overflow-y: auto;
-  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-family: var(--font-sans); font-variant-numeric: tabular-nums;
   font-size: 11.5px;
   color: var(--muted);
   line-height: 1.7;
@@ -950,14 +1205,14 @@ input[type='checkbox'] {
 .swatch .code {
   font-size: 11px;
   font-weight: 700;
-  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-family: var(--font-sans); font-variant-numeric: tabular-nums;
   line-height: 1.25;
 }
 
 .swatch .hex {
   font-size: 9.5px;
   opacity: 0.75;
-  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-family: var(--font-sans); font-variant-numeric: tabular-nums;
 }
 
 .swatch .count {
@@ -977,7 +1232,13 @@ input[type='checkbox'] {
   position: absolute;
   top: 3px;
   left: 5px;
-  font-size: 10px;
+}
+
+.swatch .lock .material-icons {
+  font-size: 13px;
+  vertical-align: 0;
+  color: #fff;
+  text-shadow: 0 1px 2px rgba(0, 0, 0, 0.8);
 }
 
 .swatch.dimmed {
@@ -1027,7 +1288,7 @@ table.bom th {
 
 table.bom td.num {
   text-align: right;
-  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-family: var(--font-sans); font-variant-numeric: tabular-nums;
 }
 
 table.bom .chip {
@@ -1058,22 +1319,27 @@ table.bom .chip {
   border: 1px solid;
 }
 
+.notice .material-icons {
+  flex: 0 0 auto;
+  margin-top: 1px;
+}
+
 .notice.info {
-  background: rgba(77, 156, 246, 0.09);
-  border-color: rgba(77, 156, 246, 0.35);
-  color: #bcd8ff;
+  background-color: rgba(144, 202, 249, 0.08);
+  border-color: rgba(144, 202, 249, 0.32);
+  color: var(--md-primary);
 }
 
 .notice.warn {
-  background: rgba(245, 165, 36, 0.09);
-  border-color: rgba(245, 165, 36, 0.35);
-  color: #ffdca8;
+  background-color: rgba(255, 183, 77, 0.08);
+  border-color: rgba(255, 183, 77, 0.32);
+  color: var(--md-warning);
 }
 
 .notice.error {
-  background: rgba(240, 82, 82, 0.1);
-  border-color: rgba(240, 82, 82, 0.4);
-  color: #ffc0c0;
+  background-color: rgba(207, 102, 121, 0.08);
+  border-color: rgba(207, 102, 121, 0.32);
+  color: var(--md-error);
 }
 
 .empty {
@@ -1088,9 +1354,10 @@ table.bom .chip {
   background: var(--panel);
 }
 
-.empty .big {
-  font-size: 30px;
-  margin-bottom: 8px;
+.empty-icon {
+  display: block;
+  margin: 0 auto 10px;
+  color: var(--muted-2);
 }
 
 .drop-active {
@@ -1099,7 +1366,7 @@ table.bom .chip {
 }
 
 .mono {
-  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-family: var(--font-sans); font-variant-numeric: tabular-nums;
 }
 
 .muted {
@@ -1120,7 +1387,7 @@ table.bom .chip {
 .fullscreen-stage {
   position: fixed;
   inset: 0;
-  background: #05080d;
+  background-color: #000000;
   z-index: 200;
   display: flex;
   flex-direction: column;
@@ -1141,9 +1408,761 @@ table.bom .chip {
   display: grid;
   place-items: center;
   cursor: grab;
-  background: repeating-conic-gradient(#0a0f16 0% 25%, #0d131c 0% 50%) 50% / 22px 22px;
+  background-color: #000000;
+}
+
+/* 图纸预览：比容器大时按住鼠标拖动平移 */
+.canvas-wrap.pattern-host {
+  cursor: grab;
+}
+
+.canvas-wrap.pattern-host.dragging {
+  cursor: grabbing;
+  user-select: none;
 }
 
 .fullscreen-stage .fs-canvas:active {
   cursor: grabbing;
+}
+
+.fullscreen-stage .fs-canvas {
+  /* 触屏/触控板上必须声明，否则浏览器会把拖动当成滚动手势并打断 pointer 事件 */
+  touch-action: none;
+}
+
+/* ==========================================================================
+   MD 按钮：状态层 + elevation 变化 + 涟漪
+   MD 的按钮反馈不是「变个颜色」，而是：
+   hover 叠 4% 状态层、按下叠 12%、阴影随高度变化、点击处扩散涟漪。
+   ========================================================================== */
+
+.btn,
+.tab,
+.rail-step,
+.tab-new,
+.tab-close,
+.swatch,
+.candidate,
+.segmented button {
+  position: relative;
+  overflow: hidden;
+  -webkit-tap-highlight-color: transparent;
+}
+
+.md-ripple {
+  position: absolute;
+  border-radius: 50%;
+  transform: scale(0);
+  background-color: currentColor;
+  opacity: 0.24;
+  pointer-events: none;
+  animation: md-ripple-expand 500ms var(--md-ease-decelerate) forwards;
+}
+
+@keyframes md-ripple-expand {
+  to {
+    transform: scale(2.4);
+    opacity: 0;
+  }
+}
+
+/* 实心按钮：抬起 2dp，hover 4dp，按下 8dp */
+.btn {
+  transition: box-shadow var(--md-dur-short) var(--md-ease-standard),
+    background-color var(--md-dur-short) var(--md-ease-standard);
+}
+
+.btn:hover:not(:disabled) {
+  box-shadow: var(--elev-4);
+}
+
+.btn:active:not(:disabled) {
+  box-shadow: var(--elev-8);
+}
+
+.btn:focus-visible,
+.tab:focus-visible,
+.rail-step:focus-visible,
+.tab-new:focus-visible,
+.swatch:focus-visible {
+  outline: 2px solid var(--md-primary);
+  outline-offset: 2px;
+}
+
+/* 文字/描边按钮不抬升，只叠状态层 */
+.btn.ghost,
+.btn.danger {
+  box-shadow: none;
+}
+
+.btn.ghost:hover:not(:disabled),
+.btn.danger:hover:not(:disabled) {
+  box-shadow: none;
+  background-color: rgba(255, 255, 255, var(--md-state-hover));
+}
+
+.btn:disabled {
+  opacity: 1;
+  cursor: not-allowed;
+  box-shadow: none;
+}
+
+/* 尊重系统的「减少动态效果」 */
+@media (prefers-reduced-motion: reduce) {
+  .md-ripple {
+    animation: none;
+    display: none;
+  }
+
+  * {
+    transition-duration: 0.01ms !important;
+    animation-duration: 0.01ms !important;
+  }
+}
+
+/* ==========================================================================
+   Materialize 冲突修正
+   Materialize 是通用框架，有些选择器会误伤自定义组件。
+   这一段放在最后，靠「更靠后 + 同级或更高优先级」覆盖掉它。
+   ========================================================================== */
+
+/* Materialize: nav{...height:56px;line-height:56px} —— 会把侧边步骤栏压成 56px */
+nav.rail {
+  height: auto;
+  min-height: 0;
+  line-height: 1.5;
+  color: var(--text);
+  background-color: var(--panel);
+  box-shadow: none;
+}
+
+/* Materialize: .modal{position:fixed;left:0;right:0;margin:auto;...}
+   我们的对话框是用 grid 居中的，要把它拉回普通流 */
+.modal-backdrop .modal {
+  position: relative;
+  top: auto;
+  right: auto;
+  bottom: auto;
+  left: auto;
+  margin: 0;
+  border-radius: var(--radius);
+  background-color: var(--panel);
+  transform: none;
+  will-change: auto;
+}
+
+/* Materialize: [type=checkbox]+span:not(.lever){padding-left:35px;height:25px;...}
+   会给复选框后面的文字强行加 35px 缩进，还会用 ::before 再画一个假勾选框 */
+.check input[type='checkbox'] + span,
+.check input[type='radio'] + span {
+  display: inline;
+  height: auto;
+  min-height: 0;
+  padding-left: 0;
+  line-height: inherit;
+  font-size: inherit;
+  cursor: inherit;
+}
+
+.check input[type='checkbox'] + span::before,
+.check input[type='checkbox'] + span::after,
+.check input[type='radio'] + span::before,
+.check input[type='radio'] + span::after {
+  display: none;
+  content: none;
+}
+
+/* Materialize: span.badge{float:right;height:22px;min-width:3rem;color:#757575}
+   我们的 .badge 是行内小标签，不要让它浮动 */
+span.badge {
+  float: none;
+  height: auto;
+  min-width: 0;
+  margin: 0 0 0 8px;
+  padding: 2px 8px;
+  line-height: 16px;
+}
+
+/* Materialize 的栅格给 .row 加了负 margin */
+.row {
+  margin: 0;
+}
+
+/* 通用防御：Materialize 的按钮/卡片默认浅色 */
+.card,
+.collection,
+.collection-item {
+  background-color: var(--panel);
+  color: var(--text);
+}
+
+/* ==========================================================================
+   Materialize 组件主题
+   以下控件全部用 Materialize 自己的组件与类名，这里只负责深色主题化：
+   .tabs / .card / .card-panel / .collection / .btn / .btn-flat /
+   .btn-small / .btn-floating / .modal / .waves-effect
+   ========================================================================== */
+
+/* ---------- Tabs（.tabs > .tab > a，激活项 .active + .indicator）---------- */
+
+.tabs {
+  height: 48px;
+  background-color: transparent;
+  border-bottom: 1px solid var(--md-outline);
+}
+
+.tabs .tab {
+  height: 48px;
+  line-height: 48px;
+  text-transform: none;
+}
+
+.tabs .tab a {
+  color: var(--md-on-surface-medium);
+  font-family: var(--font-sans);
+  font-size: 14px;
+  font-weight: 500;
+  letter-spacing: 0.5px;
+  padding: 0 var(--sp-3);
+  transition: color var(--md-dur-short) var(--md-ease-standard),
+    background-color var(--md-dur-short) var(--md-ease-standard);
+}
+
+.tabs .tab a:hover {
+  background-color: rgba(255, 255, 255, var(--md-state-hover));
+  color: var(--md-on-surface);
+}
+
+.tabs .tab a.active {
+  color: var(--md-primary);
+  background-color: transparent;
+}
+
+.tabs .indicator {
+  height: 2px;
+  background-color: var(--md-primary);
+  transition: left var(--md-dur-medium) var(--md-ease-standard),
+    width var(--md-dur-medium) var(--md-ease-standard);
+}
+
+/* 侧栏里的分段选择：窄一点，允许换行 */
+.tabs.segmented {
+  height: auto;
+  min-height: 36px;
+  flex-wrap: wrap;
+  overflow: visible;
+}
+
+.tabs.segmented .tab {
+  height: 36px;
+  line-height: 36px;
+}
+
+.tabs.segmented .tab a {
+  padding: 0 var(--sp-2);
+}
+
+/* ---------- Card / Card panel / Collection ---------- */
+
+.card {
+  margin: 0;
+  border-radius: var(--md-radius);
+  background-color: var(--md-surface-1);
+  box-shadow: var(--elev-1);
+  transition: box-shadow var(--md-dur-medium) var(--md-ease-standard);
+}
+
+.card-content,
+.card .card-title {
+  padding: var(--sp-4);
+  color: var(--md-on-surface);
+}
+
+.card .card-title {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-2);
+  font-size: 14px;
+  font-weight: 500;
+  line-height: 24px;
+  letter-spacing: 0.1px;
+  border-bottom: 1px solid var(--md-outline);
+  background-color: var(--md-surface-2);
+  padding: var(--sp-3) var(--sp-4);
+}
+
+.card-panel {
+  margin: 0;
+  border-radius: var(--md-radius);
+  background-color: var(--md-surface-2);
+  color: var(--md-on-surface);
+  box-shadow: none;
+}
+
+.collection {
+  margin: 0;
+  border: 0;
+  border-radius: 0;
+  background-color: transparent;
+}
+
+.collection .collection-item {
+  background-color: transparent;
+  border-bottom: 0;
+  color: var(--md-on-surface-medium);
+}
+
+/* 侧边步骤栏：Materialize 的 collection + collection-item，选中态用 primary */
+.rail {
+  border: 0;
+  border-radius: 0;
+}
+
+.rail .collection-item {
+  width: 100%;
+  padding: var(--sp-3) var(--sp-4);
+  color: var(--md-on-surface-medium);
+}
+
+.rail .collection-item.active {
+  background-color: rgba(144, 202, 249, var(--md-state-selected));
+  color: var(--md-primary);
+}
+
+/* ---------- Buttons ---------- */
+
+.btn,
+.btn-large,
+.btn-small {
+  background-color: var(--md-primary);
+  color: var(--md-on-primary);
+  border-radius: var(--md-radius);
+  box-shadow: var(--elev-2);
+  font-family: var(--font-sans);
+  font-weight: 500;
+  text-transform: uppercase;
+  letter-spacing: 1.25px;
+  transition: background-color var(--md-dur-short) var(--md-ease-standard),
+    box-shadow var(--md-dur-short) var(--md-ease-standard);
+}
+
+.btn:hover,
+.btn-large:hover,
+.btn-small:hover {
+  background-color: var(--md-primary);
+}
+
+.btn-small {
+  height: 32px;
+  line-height: 32px;
+  padding: 0 var(--sp-3);
+  font-size: 13px;
+}
+
+.btn-flat {
+  background-color: transparent;
+  color: var(--md-on-surface-medium);
+  border-radius: var(--md-radius);
+  box-shadow: none;
+  font-family: var(--font-sans);
+  font-weight: 500;
+  text-transform: uppercase;
+  letter-spacing: 1.25px;
+}
+
+.btn-flat:hover {
+  background-color: rgba(255, 255, 255, var(--md-state-hover));
+  color: var(--md-on-surface);
+}
+
+.btn-flat.danger {
+  color: var(--md-error);
+}
+
+.btn-flat.danger:hover {
+  background-color: rgba(207, 102, 121, 0.12);
+}
+
+.btn-floating {
+  background-color: transparent;
+  color: var(--md-on-surface-medium);
+  box-shadow: none;
+}
+
+.btn-floating:hover {
+  background-color: rgba(255, 255, 255, var(--md-state-hover));
+  color: var(--md-on-surface);
+}
+
+.btn i.material-icons,
+.btn-small i.material-icons,
+.btn-flat i.material-icons {
+  font-size: 18px;
+  line-height: inherit;
+  vertical-align: -4px;
+}
+
+.btn.disabled,
+.btn:disabled,
+button:disabled {
+  background-color: rgba(255, 255, 255, 0.12);
+  color: var(--md-on-surface-disabled);
+  box-shadow: none;
+}
+
+.btn-flat:disabled {
+  background-color: transparent;
+}
+
+/* ---------- Modal ----------
+   Materialize 的弹窗默认由它的 JS 打开（display:none → 内联样式）。
+   这里是 React 控制显隐，所以补上 .open 状态；其余布局仍走它自己的规则。 */
+
+.modal-overlay.open {
+  display: block;
+  background-color: rgba(0, 0, 0, 0.6);
+}
+
+.modal.open {
+  /* 自己接管布局：固定头尾 + 中间内容区滚动。
+     否则继承来的 max-height 和 overflow:hidden 会把内容裁掉，底部按钮再也看不到 */
+  display: flex;
+  flex-direction: column;
+  max-height: 80vh;
+  overflow: hidden;
+  top: 10%;
+  background-color: var(--md-surface-2);
+  border-radius: var(--md-radius);
+  color: var(--md-on-surface);
+  box-shadow: var(--elev-24);
+}
+
+.modal.modal-wide {
+  width: min(920px, 92%);
+}
+
+.modal .modal-content {
+  flex: 1 1 auto;
+  min-height: 0;
+  overflow-y: auto;
+  padding: var(--sp-6);
+}
+
+.modal .modal-head,
+.modal .modal-foot {
+  flex: 0 0 auto;
+}
+
+.modal .modal-footer {
+  background-color: var(--md-surface-2);
+  border-top: 1px solid var(--md-outline);
+  height: auto;
+  padding: var(--sp-3) var(--sp-4);
+}
+
+/* ==========================================================================
+   MD2 规格对齐
+   ========================================================================== */
+
+/* ---------- Materialize 的“等它的 JS”行为补偿 ----------
+   Materialize 有两处默认行为是留给它自己的 JS 完成的；
+   我们不用它的 JS（它会改 DOM，和 React 受控渲染冲突），所以要自己补上。 */
+
+/* 1) 原生 select 被 display:none 隐藏，等 M.FormSelect 生成 .select-wrapper。
+      这里放回来，做成 MD2 的描边输入框。 */
+select {
+  display: inline-block;
+  width: 100%;
+  height: auto;
+  padding: var(--sp-2) var(--sp-3);
+  /* 用长写属性：简写里带 var() 在部分解析器上会被整条丢弃 */
+  border-width: 1px;
+  border-style: solid;
+  border-color: var(--md-outline-strong);
+  border-radius: var(--md-radius);
+  background-color: transparent;
+  color: var(--md-on-surface);
+  font-family: var(--font-sans);
+  font-size: 14px;
+  line-height: 20px;
+  appearance: auto;
+}
+
+select:focus {
+  outline: none;
+  border-color: var(--md-primary);
+}
+
+select option {
+  background-color: var(--md-surface-2);
+  color: var(--md-on-surface);
+}
+
+/* 2) .tabs 默认是 inline-block 排布（只有 .tabs-fixed-width 才是 flex），
+      等宽并不可靠。这里改用 grid：无论换几行，每一项宽度都完全相等。 */
+.tabs.segmented {
+  /* 强制单行 + 等分：每项 flex:1 1 0，宽度完全相等且绝不换行 */
+  display: flex;
+  flex-wrap: nowrap;
+  height: auto;
+  overflow: visible;
+}
+
+.tabs.segmented .tab {
+  /* 用长写属性：flex 简写在部分解析器上不会展开成 flex-grow 等 */
+  flex-grow: 1;
+  flex-shrink: 1;
+  flex-basis: 0;
+  min-width: 0;
+  width: 100%;
+}
+
+.tabs.segmented .tab a {
+  padding: 0 var(--sp-1);
+  font-size: 13px;
+  letter-spacing: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+/* ---------- 细节对齐 ---------- */
+
+/* 步骤栏序号里的对勾要垂直居中（图标默认 vertical-align:-3px 会偏下） */
+.rail-num {
+  line-height: 1;
+}
+
+.rail-num .material-icons {
+  font-size: 15px;
+  line-height: 1;
+  vertical-align: middle;
+}
+
+/* 「最近项目」上的计数气泡：按钮 line-height 是 36px，会把它顶歪 */
+.btn .pill,
+.btn-flat .pill {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  height: 18px;
+  min-width: 18px;
+  padding: 0 5px;
+  margin-left: var(--sp-2);
+  line-height: 1;
+  vertical-align: middle;
+  letter-spacing: 0;
+}
+
+/* ---------- 项目标签页 ----------
+   Materialize 的 .tabs .tab（0,2,0）优先级高于我的 .tab（0,1,0），
+   会把 padding 清零、display 改成 inline-block、加 text-transform:uppercase，
+   标签页因此被压得过窄。这里提到同等优先级并补上最小宽度。 */
+
+.tabstrip .tabs,
+.tabstrip-scroll.tabs {
+  background-color: transparent;
+  border-bottom: 0;
+  height: auto;
+  overflow-x: auto;
+}
+
+.tabstrip .tabstrip-scroll .tab {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-2);
+  flex: 0 0 auto;
+  min-width: 132px;
+  max-width: 220px;
+  height: 48px;
+  padding: 0 var(--sp-2) 0 var(--sp-4);
+  line-height: 1.4;
+  text-align: left;
+  text-transform: none;
+  white-space: nowrap;
+}
+
+.tabstrip .tabstrip-scroll .tab .tab-name {
+  flex: 1 1 auto;
+  min-width: 0;
+}
+
+.tabstrip .tabstrip-scroll .tab .tab-close {
+  flex: 0 0 auto;
+}
+
+/* 按钮：36dp 高、4dp 圆角、min-width 64dp、14sp/500、全大写 + 1.25 字距 */
+.btn,
+.btn-large,
+.btn-flat {
+  height: 36px;
+  min-width: 64px;
+  padding: 0 16px;
+  border-radius: var(--radius);
+  font-family: var(--font-sans);
+  font-size: 14px;
+  font-weight: 500;
+  line-height: 36px;
+  letter-spacing: 1.25px;
+  text-transform: uppercase;
+  transition: background-color 0.15s ease, box-shadow 0.15s ease;
+}
+
+.btn-small {
+  height: 32px;
+  min-width: 48px;
+  padding: 0 var(--sp-3);
+  font-size: 13px;
+  line-height: 32px;
+  letter-spacing: 1px;
+}
+
+/* 紧凑尺寸（表格行内、工具栏）用 dense 变体：32dp */
+.btn.sm {
+  height: 32px;
+  min-width: 48px;
+  padding: 0 12px;
+  font-size: 13px;
+  line-height: 32px;
+  letter-spacing: 1px;
+}
+
+.btn i.material-icons,
+.btn .material-icons {
+  font-size: 18px;
+  line-height: 1;
+  vertical-align: -4px;
+}
+
+.btn.sm .material-icons {
+  font-size: 16px;
+  vertical-align: -4px;
+}
+
+/* 实心按钮用深色主题的 primary 变体，保证白字对比度 */
+.btn.primary {
+  background-color: var(--primary-dark);
+  color: #fff;
+  box-shadow: var(--elev-2);
+}
+
+.btn.primary:hover:not(:disabled) {
+  background-color: #1565c0;
+  filter: none;
+}
+
+.btn.primary:disabled {
+  background-color: rgba(255, 255, 255, 0.12);
+  color: rgba(255, 255, 255, 0.38);
+  box-shadow: none;
+}
+
+.btn.ghost {
+  background-color: transparent;
+  border-color: var(--border-strong);
+  color: var(--muted);
+  box-shadow: none;
+}
+
+.btn.ghost:hover:not(:disabled) {
+  background-color: rgba(255, 255, 255, var(--state-hover));
+  color: var(--text);
+}
+
+.btn.danger {
+  background-color: transparent;
+  border-color: rgba(207, 102, 121, 0.6);
+  color: var(--error);
+  box-shadow: none;
+}
+
+.btn.danger:hover:not(:disabled) {
+  background-color: rgba(207, 102, 121, 0.12);
+}
+
+/* Materialize 的 button:disabled 会把禁用按钮刷成浅灰 */
+button:disabled {
+  background-color: var(--panel-3);
+  color: var(--muted-2);
+  box-shadow: none;
+}
+
+/* 文字层级按 MD2 类型比例（用长写属性，避免 font 简写与 var() 的兼容坑） */
+
+/* Headline 6 · 20/32 · Medium */
+.stage-head h1 {
+  font-family: var(--font-sans);
+  font-size: 20px;
+  font-weight: 500;
+  line-height: 32px;
+  letter-spacing: 0.15px;
+}
+
+/* Body 2 · 14/20 · Regular */
+.stage-head p {
+  font-family: var(--font-sans);
+  font-size: 14px;
+  font-weight: 400;
+  line-height: 20px;
+  letter-spacing: 0.25px;
+  color: var(--muted);
+}
+
+/* Subtitle 2 · 14/24 · Medium */
+.panel-head,
+.rail-label {
+  font-family: var(--font-sans);
+  font-size: 14px;
+  font-weight: 500;
+  line-height: 24px;
+  letter-spacing: 0.1px;
+}
+
+/* Caption · 12/16 · Regular */
+.rail-desc,
+.tiny,
+.stat .k {
+  font-family: var(--font-sans);
+  font-size: 12px;
+  font-weight: 400;
+  line-height: 16px;
+  letter-spacing: 0.4px;
+}
+
+/* Overline · 10/16 · Medium · 全大写 */
+.rail-title,
+.bom th {
+  font-family: var(--font-sans);
+  font-size: 10px;
+  font-weight: 500;
+  line-height: 16px;
+  letter-spacing: 1.5px;
+  text-transform: uppercase;
+}
+
+/* Headline 6 · 20/32 · Medium（数值统计） */
+.stat .v {
+  font-family: var(--font-sans);
+  font-size: 20px;
+  font-weight: 500;
+  line-height: 32px;
+  letter-spacing: 0.15px;
+  font-variant-numeric: tabular-nums;
+}
+
+/* Subtitle 2 · 14/24 · Medium（紧凑统计） */
+.stat .v.sm {
+  font-size: 14px;
+  font-weight: 500;
+  line-height: 24px;
+}
+
+/* 图标按钮：24dp 图标 + 足够大的点击区域 */
+.tab-close {
+  width: 24px;
+  height: 24px;
+  border-radius: var(--radius-pill);
+}
+
+.tab-close:hover {
+  background-color: rgba(255, 255, 255, var(--state-pressed));
 }

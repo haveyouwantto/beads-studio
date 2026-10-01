@@ -28,6 +28,7 @@ import {
   buildPatternSvg,
   clampPreviewCellSize,
   estimateSvgSize,
+  SVG_FONT,
   DEFAULT_RENDER_OPTIONS,
   type RenderOptions,
 } from '../src/core/svg.ts'
@@ -480,6 +481,9 @@ section('③ 转拼豆图纸 · 矢量 SVG')
 
   check('格子用 crispEdges 避免抗锯齿缝隙', out.svg.includes('shape-rendering="crispEdges"'))
   check('色号以 <text> 输出', /<text[^>]*>[A-Z]{1,2}\d{1,2}<\/text>/.test(out.svg))
+  check('图纸用无衬线字体（与界面一致）', SVG_FONT.includes('Roboto') && SVG_FONT.includes('sans-serif'))
+  check('图纸字体不是等宽', !SVG_FONT.includes('monospace'))
+  check('SVG 根节点带上了这个字体', out.svg.includes(`font-family="${SVG_FONT}"`))
 
   const noCodes = buildPatternSvg(png, palette, { ...opts, codes: false })
   check('关掉色号后没有 <text>', !noCodes.svg.includes('<text'))

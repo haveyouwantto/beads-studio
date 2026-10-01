@@ -73,10 +73,10 @@ export function OptimizeStep() {
             <p>以「规范化」产出的网格作为优化目标，从色号库里挑出最合适的 N 种颜色。</p>
           </div>
         </div>
-        <Empty icon="🎯" title="还没有可以优化的目标">
+        <Empty icon="palette" title="还没有可以优化的目标">
           需要先在「规范化」里生成 1 像素 = 1 颗豆的网格。
           <div style={{ marginTop: 12 }}>
-            <button className="btn primary" onClick={goPrev}>
+            <button className="btn waves-effect waves-light" onClick={goPrev}>
               回到规范化
             </button>
           </div>
@@ -91,13 +91,10 @@ export function OptimizeStep() {
         <div className="stage-head">
           <div>
             <h1>② 优化颜色</h1>
-            <p>
-              优化目标 = 规范化结果里的每一格颜色（按出现次数加权）。算法在这张图里找一组最能代表它的色号，
-              结果直接决定「转拼豆图纸」用哪些豆子。
-            </p>
+            <p>优化目标取自规范化结果里每一格的颜色，按出现次数加权。</p>
           </div>
           <span className="grow" />
-          <button className="btn ghost sm" onClick={goPrev}>
+          <button className="btn-flat btn-small waves-effect" onClick={goPrev}>
             ← 规范化
           </button>
         </div>
@@ -134,12 +131,12 @@ export function OptimizeStep() {
               <div className="tiny muted">
                 {targetMode === 'grid' ? (
                   targetInfo?.bucket && targetInfo.bucket > 0 ? (
-                    <>颜色过多，已按 {targetInfo.bucket} 级分桶合并到 {targetCount} 个目标色（权重仍按真实出现次数统计）。</>
+                    <>颜色过多，已合并到 {targetCount} 个目标色。</>
                   ) : (
-                    <>每个目标色带一个权重（它在图案里出现的次数），所以优化会优先保证大面积颜色准确。</>
+                    <>{targetCount} 个目标色，出现越多权重越高。</>
                   )
                 ) : (
-                  <>把整本色号库自己当作目标，得到一组「通用配色」，适合先定色板再画图。</>
+                  <>以整本色号库为目标，得到一组通用配色。</>
                 )}
               </div>
             </div>
@@ -151,11 +148,11 @@ export function OptimizeStep() {
           hint={run.reason}
           actions={
             <>
-              <button className="btn sm ghost" onClick={copyResult} disabled={!sortedResult.length}>
+              <button className="btn-flat btn-small waves-effect" onClick={copyResult} disabled={!sortedResult.length}>
                 {copied ? '已复制' : '复制色号'}
               </button>
               <button
-                className="btn primary sm"
+                className="btn btn-small waves-effect waves-light"
                 onClick={applyOptimizedPalette}
                 disabled={!sortedResult.length}
               >
@@ -186,7 +183,11 @@ export function OptimizeStep() {
                     style={{ background: e.hex, color: text }}
                     title={`${codeOf(e, codeSystem)} · ${e.hex}`}
                   >
-                    {mandatory && <span className="lock">🔒</span>}
+                    {mandatory && (
+                      <span className="lock">
+                        <i className="material-icons sm">lock</i>
+                      </span>
+                    )}
                     <div className="code">{codeOf(e, codeSystem)}</div>
                     <div className="hex">{e.hex}</div>
                   </div>
@@ -195,7 +196,7 @@ export function OptimizeStep() {
             </div>
           ) : (
             <Notice kind="info">
-              还没运行优化。设好颜料预算后点「开始优化」；或者直接跳到「转拼豆图纸」用整本色号库出图。
+              还没运行优化。
             </Notice>
           )}
 
@@ -204,15 +205,15 @@ export function OptimizeStep() {
               <div className="divider" />
               <div className="row tight">
                 <button
-                  className="btn sm ghost"
+                  className="btn-flat btn-small waves-effect"
                   onClick={() => downloadExport(sortedResult, codeSystem, 'json')}
                 >
                   导出 JSON
                 </button>
-                <button className="btn sm ghost" onClick={() => downloadExport(sortedResult, codeSystem, 'hex')}>
+                <button className="btn-flat btn-small waves-effect" onClick={() => downloadExport(sortedResult, codeSystem, 'hex')}>
                   导出 HEX 列表
                 </button>
-                <button className="btn sm ghost" onClick={() => downloadExport(sortedResult, codeSystem, 'code')}>
+                <button className="btn-flat btn-small waves-effect" onClick={() => downloadExport(sortedResult, codeSystem, 'code')}>
                   导出色号列表
                 </button>
               </div>
@@ -228,7 +229,7 @@ export function OptimizeStep() {
             value={`${candidateCount} / ${libraryPalette.length}`}
             hint="优化只会从勾选的颜色里挑；默认整本色号库都可选"
           >
-            <button className="btn" style={{ width: '100%' }} onClick={() => setShowCandidates(true)}>
+            <button className="btn waves-effect waves-light" style={{ width: '100%' }} onClick={() => setShowCandidates(true)}>
               选择候选色…
             </button>
           </Field>
@@ -354,7 +355,7 @@ export function OptimizeStep() {
           {run.status === 'done' && (
             <>
               <div className="divider" />
-              <button className="btn primary" style={{ width: '100%' }} onClick={goNext}>
+              <button className="btn waves-effect waves-light" style={{ width: '100%' }} onClick={goNext}>
                 前往「转拼豆图纸」→
               </button>
             </>

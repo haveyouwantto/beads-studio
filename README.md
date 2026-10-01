@@ -95,9 +95,10 @@ localStorage 通常只有 5MB，原图 PNG 很容易撑爆，所以存不下时�
 测试：
 
 ```bash
-npm test           # 核心算法自检（73 项，走 Node，无需浏览器）
-npm run test:ui    # 运行时冒烟测试（104 项，jsdom 里真正启动 React 应用跑完整流程）
-npm run test:all   # 两个都跑
+npm test           # 核心算法自检（76 项，走 Node，无需浏览器）
+npm run test:css   # CSS 层叠自检（37 项，把 materialize + styles.css 灌进 jsdom 算 computed style）
+npm run test:ui    # 运行时冒烟测试（108 项，jsdom 里真正启动 React 应用跑完整流程）
+npm run test:all   # 三个都跑
 ```
 
 `npm test` 会用一张「12×10 像素画被 8 倍放大成 96×80」的合成图验证整条链路：
@@ -109,6 +110,11 @@ npm run test:all   # 两个都跑
 并验证图纸确实是挂在 DOM 上的 SVG、自动保存写进了 localStorage、标签页切换/关闭不丢状态、
 关闭后再从「最近项目」打开能完整还原、以及重启后会话能恢复；
 也覆盖了「切到别的色板来源再切回优化结果，颜色必须原样还在」和候选色筛选真的收窄了优化范围。
+
+`npm run test:css` 是为了防一类算法测试抓不到的问题：**框架 CSS 误伤自定义组件**。
+比如 Materialize 的 `nav{height:56px;line-height:56px}` 曾把侧边步骤栏直接压成 56px 高。
+它把框架样式和应用样式一起灌进 jsdom，按真实层叠算 `getComputedStyle`，
+同时锁住 MD2 的规格值（按钮 36dp/4dp/全大写、类型比例、深色主题色板、elevation、8dp 间距）。
 
 另外两个可选的核对工具：
 
@@ -123,7 +129,33 @@ npm i -D sharp && npm run verify:svg
 ## 技术栈
 
 Vite + React 19 + TypeScript（`strict` + `erasableSyntaxOnly`）+ zustand。
-没有 UI 框架，样式是手写 CSS（暗色主题）。
+
+界面按 **Material Design 2** 的观感来做，直接用了 Google 那一套：
+
+- `materialize-css` 作为基础层（按钮、输入、卡片、涟漪、阴影）
+- **Roboto**（`@fontsource/roboto`，自带 woff2，不依赖外网）
+- **Material Icons**（`material-icons`，只用 filled 一套，避免把 5 个变体全打进包里）
+
+Materialize 只有浅色主题，所以 `styles.css` 在它之后加载，把它铺到的元素统一覆盖成深色，
+并按 MD2 规范重写了设计变量：
+
+| 项目 | 取值 |
+| --- | --- |
+| Surface | `#121212`，面板用 1dp/2dp/4dp 覆盖层 `#1e1e1e / #232323 / #272727` |
+| 文字 | 87% / 60% / 38% 白（正文 / 次要 / 禁用） |
+| Primary | `#90caf9`（深色主题要浅色化），实心按钮用 `#1976d2` + 白字 |
+| Error | `#cf6679` |
+| 类型比例 | Headline6 20/32·500、Subtitle2 14/24·500、Body2 14/20·400、Caption 12/16、Overline 10/16·500 |
+| 按钮 | 36dp 高、4dp 圆角、min-width 64dp、14sp·500、全大写 + 1.25 字距；紧凑变体 32dp |
+| 圆角 | 按钮 / 卡片 / 输入框 / 对话框统一 4dp |
+| 间距 | 8dp 网格（4/8/12/16/24/32） |
+| elevation | 按规范的 1/2/4/8/24dp 三层阴影 |
+
+全站（含图纸 SVG）统一用 Roboto 无衬线字体，数字用 `tabular-nums` 对齐。
+
+> 关于 Materialize 的 JS：只用它的 CSS，没有调 `M.AutoInit()`。
+> 这个应用是 React 受控的，Materialize 的 JS 组件（select、modal 等）会改写 DOM 结构，
+> 和 React 的受控节点冲突（例如 `FormSelect` 会把 `<select>` 包进 `.select-wrapper`，React 随即失去节点引用）。
 
 核心算法与 DOM 解耦，全部放在 `src/core/`，只操作朴素的
 `{ width, height, data: Uint8ClampedArray }`，所以同一套代码既能在浏览器里跑，也能在 Node 里直接测。

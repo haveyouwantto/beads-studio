@@ -39,6 +39,10 @@ export const DEFAULT_RENDER_OPTIONS: RenderOptions = {
 const THIN_WIDTH = 0.05
 const THICK_WIDTH = 0.18
 
+/** 和界面一致的 Roboto 无衬线字体栈 */
+export const SVG_FONT =
+  "Roboto, 'Segoe UI', 'PingFang SC', 'Microsoft YaHei', system-ui, sans-serif"
+
 /** 格子太多时不再逐格写色号，否则 SVG 会大到浏览器吃不消 */
 const CODE_CELL_LIMIT = 12000
 /** 珠子样式逐颗绘制，元素数量大，超过这个规模建议用方格 */
@@ -126,7 +130,7 @@ export function buildPatternSvg(
 
   const parts: string[] = []
   parts.push(
-    `<svg xmlns="http://www.w3.org/2000/svg" width="${outW}" height="${outH}" viewBox="0 0 ${n(vbW)} ${n(vbH)}" font-family="ui-monospace, SFMono-Regular, Menlo, monospace">`,
+    `<svg xmlns="http://www.w3.org/2000/svg" width="${outW}" height="${outH}" viewBox="0 0 ${n(vbW)} ${n(vbH)}" font-family="${SVG_FONT}">`,
   )
   parts.push(`<rect x="0" y="0" width="${n(vbW)}" height="${n(vbH)}" fill="${escapeAttr(background)}"/>`)
 

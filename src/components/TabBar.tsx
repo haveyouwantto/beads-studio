@@ -25,7 +25,7 @@ export function TabBar({ onRequestFile }: { onRequestFile: () => void }) {
 
   return (
     <div className="tabstrip">
-      <div className="tabstrip-scroll">
+      <div className="tabstrip-scroll tabs">
         {tabs.map((tab) => {
           const active = tab.id === activeTabId
           const preview = tab.thumb ?? (active ? source?.url : getTabSnapshot(tab.id)?.source?.url)
@@ -72,7 +72,7 @@ export function TabBar({ onRequestFile }: { onRequestFile: () => void }) {
                   closeTab(tab.id)
                 }}
               >
-                ×
+                <i className="material-icons sm">close</i>
               </button>
             </div>
           )
@@ -80,14 +80,14 @@ export function TabBar({ onRequestFile }: { onRequestFile: () => void }) {
       </div>
 
       <button
-        className="tab-new"
+        className="tab-new btn-floating btn-small waves-effect"
         title="新建标签页并打开图片"
         onClick={() => {
           newTab()
           onRequestFile()
         }}
       >
-        ＋
+        <i className="material-icons sm">add</i>
       </button>
     </div>
   )

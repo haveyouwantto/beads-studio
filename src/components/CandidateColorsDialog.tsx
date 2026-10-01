@@ -67,8 +67,8 @@ export function CandidateColorsDialog({ onClose }: { onClose: () => void }) {
   }
 
   return (
-    <div className="modal-backdrop" onClick={onClose}>
-      <div className="modal modal-wide" onClick={(e) => e.stopPropagation()}>
+    <div className="modal-overlay open" onClick={onClose}>
+      <div className="modal open modal-wide" onClick={(e) => e.stopPropagation()}>
         <header className="modal-head">
           <div>
             <h2>选择候选色</h2>
@@ -78,14 +78,14 @@ export function CandidateColorsDialog({ onClose }: { onClose: () => void }) {
             </p>
           </div>
           <span style={{ flex: 1 }} />
-          <button className="btn sm ghost" onClick={() => setSelected(new Set(libraryPalette.map((e) => e.hex)))}>
+          <button className="btn-flat btn-small waves-effect" onClick={() => setSelected(new Set(libraryPalette.map((e) => e.hex)))}>
             全选
           </button>
-          <button className="btn sm ghost" onClick={() => setSelected(new Set())}>
+          <button className="btn-flat btn-small waves-effect" onClick={() => setSelected(new Set())}>
             全不选
           </button>
           <button
-            className="btn sm ghost"
+            className="btn-flat btn-small waves-effect"
             onClick={() =>
               setSelected((prev) => {
                 const next = new Set<string>()
@@ -98,7 +98,7 @@ export function CandidateColorsDialog({ onClose }: { onClose: () => void }) {
           </button>
         </header>
 
-        <div className="modal-body">
+        <div className="modal-content modal-body">
           {groups.map(([series, entries]) => {
             const on = entries.filter((e) => selected.has(e.hex)).length
             return (
@@ -109,10 +109,10 @@ export function CandidateColorsDialog({ onClose }: { onClose: () => void }) {
                     {on} / {entries.length}
                   </span>
                   <span style={{ flex: 1 }} />
-                  <button className="btn sm ghost" onClick={() => setSeries(series, true)}>
+                  <button className="btn-flat btn-small waves-effect" onClick={() => setSeries(series, true)}>
                     全选
                   </button>
-                  <button className="btn sm ghost" onClick={() => setSeries(series, false)}>
+                  <button className="btn-flat btn-small waves-effect" onClick={() => setSeries(series, false)}>
                     清空
                   </button>
                 </header>
@@ -141,15 +141,13 @@ export function CandidateColorsDialog({ onClose }: { onClose: () => void }) {
         </div>
 
         <footer className="modal-foot">
-          <span className="tiny muted">
-            提示：候选色越多，可选空间越大但搜索越慢；通常按项目需要圈定几个系列就够。
-          </span>
+          <span className="tiny muted">候选色越多，优化越慢</span>
           <span style={{ flex: 1 }} />
-          <button className="btn ghost" onClick={onClose}>
+          <button className="btn-flat waves-effect" onClick={onClose}>
             取消
           </button>
           <button
-            className="btn primary"
+            className="btn waves-effect waves-light"
             disabled={selectedCount === 0}
             onClick={() => {
               const all = selectedCount === total
