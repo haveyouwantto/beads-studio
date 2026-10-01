@@ -512,7 +512,13 @@ section('候选色筛选')
   await useStudio.getState().runOptimizer()
   await flush(50)
   const run = useStudio.getState()
-  check('优化用的是筛选后的候选数', run.optimizeRun.candidates === hHexes.length, `${run.optimizeRun.candidates}`)
+  // H 系列 23 色，但 H01 是透明豆：默认白底图纸上它和 H02 纯白看不出区别，
+  // 会被排除在匹配之外（详见 core 测试里的「白底上 H01 不参与匹配」）
+  check(
+    '优化用的是筛选后的候选数（透明的 H01 除外）',
+    run.optimizeRun.candidates === hHexes.length - 1,
+    `${run.optimizeRun.candidates} / 期望 ${hHexes.length - 1}`,
+  )
   check(
     '选出来的颜色都在筛选范围内',
     run.optimizedPalette.every((e) => (e.codes.MARD ?? '').startsWith('H')),

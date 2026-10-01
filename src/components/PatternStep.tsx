@@ -16,7 +16,9 @@ import {
   METRIC_LABELS,
   PALETTE_SOURCE_LABELS,
   parsePaletteText,
+  applyBeadAlpha,
   KIT_SIZES,
+  swatchHex,
   VISIBLE_PALETTE_SOURCES,
   type CodeSystem,
   type DistanceMetric,
@@ -137,12 +139,15 @@ export function PatternStep({ onOpenFullscreen }: { onOpenFullscreen: () => void
 
   const exportPixelPng = () => {
     if (!result) return
+    // 半透明豆（H01 这类）导出成真正的 RGBA（#FFFFFF40），
+    // 而不是它叠在图纸背景上的观感色 —— 换工具再用时透明度还在。
+    const withAlpha = applyBeadAlpha(result, palette)
     const canvas = document.createElement('canvas')
     canvas.width = result.width
     canvas.height = result.height
     const ctx = canvas.getContext('2d')
     if (!ctx) return
-    ctx.putImageData(new ImageData(new Uint8ClampedArray(result.data), result.width, result.height), 0, 0)
+    ctx.putImageData(new ImageData(new Uint8ClampedArray(withAlpha.data), result.width, result.height), 0, 0)
     canvas.toBlob((blob) => {
       if (blob) downloadBlob(blob, 'beads-pixel-1x1.png')
     }, 'image/png')
@@ -491,7 +496,7 @@ export function PatternStep({ onOpenFullscreen }: { onOpenFullscreen: () => void
                   <div
                     key={e.hex}
                     className={`swatch static ${used ? '' : 'dimmed'}`}
-                    style={{ background: e.hex, color: idealTextColor(e.rgb) }}
+                    style={{ background: swatchHex(e), color: idealTextColor(e.rgb) }}
                     title={`${codeOf(e, codeSystem)} · ${e.hex} · ${count} 颗`}
                   >
                     {count > 0 && <span className="count">{count}</span>}

@@ -13,15 +13,19 @@ import {
   type PaletteEntry,
 } from '../src/core/palette.ts'
 import {
+  applyBeadAlpha,
+  appearanceRgb,
   buildKitPalette,
   buildWplacePalette,
   KIT_MARD,
   KIT_SIZES,
+  matchPalette,
   PALETTE_SOURCE_LABELS,
+  swatchHex,
   VISIBLE_PALETTE_SOURCES,
 } from '../src/core/palette.ts'
 import { PaletteOptimizer, targetsFromPixmap, DEFAULT_OPTIMIZE_CONFIG } from '../src/core/optimize.ts'
-import { deltaE, hexToRgb, rgbToLab } from '../src/core/color.ts'
+import { deltaE, hexToRgb, rgbToHex, rgbToLab } from '../src/core/color.ts'
 import {
   buildPatternSvg,
   clampPreviewCellSize,
@@ -270,6 +274,61 @@ section('基础 24 / 48 色与 wplace 色板')
     p120.map((e) => e.codes.MARD).join() ===
       [...p120.map((e) => e.codes.MARD)].sort((a, b) => a.localeCompare(b, undefined, { numeric: true })).join(),
   )
+
+  // H01 是透明塑料豆：等效 #FFFFFF40（白色 25% 不透明），不能当实心白用
+  const h01 = palette.find((e) => e.codes.MARD === 'H01')
+  const h02 = palette.find((e) => e.codes.MARD === 'H02')
+  check('H01 在标准色板里', Boolean(h01))
+  check('H01 带 0x40 的透明度', Math.abs((h01?.alpha ?? 1) - 0x40 / 255) < 1e-6, String(h01?.alpha))
+  check('H02 是实心白（没有 alpha）', h02?.alpha === undefined, String(h02?.alpha))
+  check('H01 的实色仍是色卡上的 #FDFBFF', h01?.hex === '#FDFBFF', h01?.hex)
+
+  // 观感 = 叠在背景上；匹配用的是观感色
+  const overWhite = appearanceRgb(h01!, '#FFFFFF')
+  check('H01 叠在白底上就是白色', overWhite.join() === '255,255,255', overWhite.join())
+  const overDark = appearanceRgb(h01!, '#121212')
+  check(
+    'H01 叠在深色图纸背景上是不透明的浅灰',
+    overDark[0] < 120 && overDark[0] > 60 && Math.abs(overDark[0] - overDark[2]) <= 1,
+    overDark.join(),
+  )
+  check('实心色叠背景后不变', appearanceRgb(h02!, '#121212').join() === h02!.rgb.join())
+  const darkMatch = matchPalette(palette, '#121212')
+  const h01InMatch = darkMatch.find((e) => e.codes.MARD === 'H01')
+  check('匹配用的调色板里 H01 换成观感色', h01InMatch?.rgb.join() === overDark.join(), h01InMatch?.rgb.join())
+  check('匹配用调色板不改变色号', h01InMatch?.hex === '#FDFBFF' && h01InMatch?.codes.MARD === 'H01')
+
+  // 纯白的目标色不该再被 H01 抢走
+  const whiteTarget: Pixmap = { width: 1, height: 1, data: new Uint8ClampedArray([255, 255, 255, 255]) }
+  const whiteHit = quantizeToPalette(whiteTarget, darkMatch, { metric: 'lab', quantize: true, dither: 'none' })
+  const whiteHex = rgbToHex([whiteHit.data[0], whiteHit.data[1], whiteHit.data[2]])
+  check('深色背景：纯白像素匹配到 H02', whiteHex === h02?.hex, `${whiteHex}（H01=${h01?.hex}）`)
+
+  // 白底上 H01 的观感和 H02 没区别 → 直接不参与匹配，免得顶替白色
+  const whiteMatch = matchPalette(palette, '#FFFFFF')
+  check('白底上 H01 不参与匹配', !whiteMatch.some((e) => e.codes.MARD === 'H01'))
+  const whiteOnWhite = quantizeToPalette(whiteTarget, whiteMatch, { metric: 'lab', quantize: true, dither: 'none' })
+  check(
+    '白底：纯白像素同样匹配到 H02',
+    rgbToHex([whiteOnWhite.data[0], whiteOnWhite.data[1], whiteOnWhite.data[2]]) === h02?.hex,
+  )
+  // 深色底上 H01 是明显的浅灰，该留着（真要用透明豆时能选到）
+  check('深色底上 H01 仍在候选里', darkMatch.some((e) => e.codes.MARD === 'H01'))
+  const swatch = swatchHex(h01!)
+  check('色块界面色是叠在深色面板上的观感', swatch !== h01!.hex && swatch.startsWith('#'), `${swatch}`)
+
+  // 导出 1:1 像素图：H01 的格子写成真·半透明 (#FFFFFF40)
+  const h01Hex = h01!.hex
+  const h01Rgb = hexToRgb(h01Hex)
+  const alphaPixmap: Pixmap = { width: 1, height: 1, data: new Uint8ClampedArray([...h01Rgb, 255]) }
+  const withAlpha = applyBeadAlpha(alphaPixmap, palette)
+  check(
+    '导出的 H01 是 #FFFFFF40',
+    withAlpha.data[0] === 255 && withAlpha.data[1] === 255 && withAlpha.data[2] === 255 && withAlpha.data[3] === 0x40,
+    [...withAlpha.data].join(),
+  )
+  const solidPixmap: Pixmap = { width: 1, height: 1, data: new Uint8ClampedArray([...h02!.rgb, 255]) }
+  check('实心豆导出不受影响', applyBeadAlpha(solidPixmap, palette).data[3] === 255)
 
   // wplace 色板：不是拼豆颜色，保留在代码里但从界面隐藏
   const wplace = buildWplacePalette()

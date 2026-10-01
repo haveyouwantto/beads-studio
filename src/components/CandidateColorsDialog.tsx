@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from 'react'
 import { useStudio } from '../store/studio.ts'
-import { codeOf, mardSeries, type PaletteEntry } from '../core/palette.ts'
+import { codeOf, mardSeries, swatchHex, type PaletteEntry } from '../core/palette.ts'
 import { idealTextColor } from '../core/color.ts'
 import { formatTime } from '../core/storage.ts'
 
@@ -197,7 +197,7 @@ export function CandidateColorsDialog({ onClose }: { onClose: () => void }) {
                         key={entry.hex}
                         type="button"
                         className={active ? 'candidate on' : 'candidate'}
-                        style={{ background: entry.hex, color: idealTextColor(entry.rgb) }}
+                        style={{ background: swatchHex(entry), color: idealTextColor(entry.rgb) }}
                         onClick={() => toggleOne(entry.hex)}
                         title={`${codeOf(entry, codeSystem)} · ${entry.hex}`}
                       >

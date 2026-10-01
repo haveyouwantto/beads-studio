@@ -1,5 +1,6 @@
 import type { DistanceMetric, PaletteEntry } from './palette.ts'
 import { nearestIndex } from './palette.ts'
+import { hexToRgb } from './color.ts'
 import type { Pixmap } from './types.ts'
 
 export interface QuantizeOptions {
@@ -51,6 +52,11 @@ export function quantizeToPalette(
     return { width: w, height: h, data }
   }
 
+  // 结果里写「豆子本身的颜色」——调色板可能是「半透明豆已换成叠在背景上的观感色」的版本
+  // （H01 匹配时是浅灰），但图纸上要记的是那颗豆，所以输出一律按 hex 取色，
+  // 否则后面按 hex 查色号会全部落空。
+  const outRgb = palette.map((entry) => hexToRgb(entry.hex))
+
   if (options.dither === 'floyd-steinberg') {
     for (let y = 0; y < h; y++) {
       for (let x = 0; x < w; x++) {
@@ -60,7 +66,7 @@ export function quantizeToPalette(
         const oldB = data[i + 2]
 
         const idx = nearestIndex(oldR, oldG, oldB, palette, options.metric)
-        const target = palette[idx].rgb
+        const target = outRgb[idx]
 
         data[i] = target[0]
         data[i + 1] = target[1]
@@ -81,7 +87,7 @@ export function quantizeToPalette(
 
   for (let i = 0; i < data.length; i += 4) {
     const idx = nearestIndex(data[i], data[i + 1], data[i + 2], palette, options.metric)
-    const target = palette[idx].rgb
+    const target = outRgb[idx]
     data[i] = target[0]
     data[i + 1] = target[1]
     data[i + 2] = target[2]

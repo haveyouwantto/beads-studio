@@ -1,6 +1,6 @@
 import { luminance } from './color.ts'
-import { codeOf, type CodeSystem, type PaletteEntry } from './palette.ts'
-import type { Pixmap } from './types.ts'
+import { blendOver, codeOf, type CodeSystem, type PaletteEntry } from './palette.ts'
+import type { Pixmap, RGB } from './types.ts'
 
 export interface RenderOptions {
   /** 'flat' 方格图纸；'beads' 圆形珠子预览 */
@@ -110,6 +110,24 @@ export function buildPatternSvg(
   const lookup = new Map<string, PaletteEntry>()
   for (const e of palette) lookup.set(e.hex, e)
 
+  /** 半透明豆画的是它的颜料色（H01 = 纯白），透明度由 fill-opacity 表达 */
+  const pigmentOf = (entry: PaletteEntry) => entry.pigmentHex ?? entry.hex
+
+  // 半透明豆（H01 这种透明塑料）：出图按真·半透明画，
+  // 也就是那颗豆的实色 + fill-opacity，背景会从底下透出来。
+  // 按「颜色 + 透明度」分组，避免给每个格子单独写属性。
+  const groupKey = (hex: string) => {
+    const entry = lookup.get(hex)
+    if (!entry?.alpha || entry.alpha >= 1) return hex
+    return `${pigmentOf(entry)}|${entry.alpha}`
+  }
+  const groupFill = (key: string) => {
+    const sep = key.indexOf('|')
+    const hex = sep < 0 ? key : key.slice(0, sep)
+    const alpha = sep < 0 ? 1 : Number(key.slice(sep + 1))
+    return `fill="${escapeAttr(hex)}"${alpha < 1 ? ` fill-opacity="${n(alpha)}"` : ''}`
+  }
+
   const totalCells = W * H
   const beads = style === 'beads' && totalCells <= BEAD_CELL_LIMIT
   const beadSuppressed = style === 'beads' && !beads
@@ -143,16 +161,17 @@ export function buildPatternSvg(
         const hex = hexOf(data, (y * W + x) * 4)
         const cx = n(pad + x + 0.5)
         const cy = n(pad + y + 0.5)
-        let list = byColor.get(hex)
+        const key = groupKey(hex)
+        let list = byColor.get(key)
         if (!list) {
           list = []
-          byColor.set(hex, list)
+          byColor.set(key, list)
         }
         list.push(`<circle cx="${cx}" cy="${cy}" r="${n(radius)}"/>`)
       }
     }
-    for (const [hex, circles] of byColor) {
-      parts.push(`<g fill="${escapeAttr(hex)}">${circles.join('')}</g>`)
+    for (const [key, circles] of byColor) {
+      parts.push(`<g ${groupFill(key)}>${circles.join('')}</g>`)
     }
     // 高光：统一一层，透明度固定，不再逐颗写属性
     parts.push(`<g fill="#ffffff" fill-opacity="0.26">`)
@@ -171,17 +190,18 @@ export function buildPatternSvg(
     for (let y = 0; y < H; y++) {
       for (let x = 0; x < W; x++) {
         const hex = hexOf(data, (y * W + x) * 4)
-        let list = byColor.get(hex)
+        const key = groupKey(hex)
+        let list = byColor.get(key)
         if (!list) {
           list = []
-          byColor.set(hex, list)
+          byColor.set(key, list)
         }
         list.push(`M${x} ${y}h1v1h-1z`)
       }
     }
-    for (const [hex, rects] of byColor) {
+    for (const [key, rects] of byColor) {
       parts.push(
-        `<path transform="translate(${n(pad)} ${n(pad)})" d="${rects.join('')}" fill="${escapeAttr(hex)}" shape-rendering="crispEdges"/>`,
+        `<path transform="translate(${n(pad)} ${n(pad)})" d="${rects.join('')}" ${groupFill(key)} shape-rendering="crispEdges"/>`,
       )
     }
   }
@@ -225,7 +245,12 @@ export function buildPatternSvg(
         const label = entry ? codeOf(entry, codeSystem) : ''
         if (!label) continue
         // 按文字颜色分组，避免每格都写一遍 fill
-        const dark = luminance([data[i], data[i + 1], data[i + 2]]) < 0.55
+        // 半透明豆的色号写在「叠在背景上的观感」上，所以对比度要按观感算
+        const shown =
+          entry && entry.alpha && entry.alpha < 1
+            ? blendOver(hexToRgbSafe(pigmentOf(entry)), entry.alpha, hexToRgbSafe(background))
+            : ([data[i], data[i + 1], data[i + 2]] as RGB)
+        const dark = luminance(shown) < 0.55
         let list = groups.get(dark ? 'light' : 'dark')
         if (!list) {
           list = []

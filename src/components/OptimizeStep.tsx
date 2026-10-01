@@ -2,7 +2,7 @@ import { useEffect, useMemo, useRef, useState } from 'react'
 import { useStudio } from '../store/studio.ts'
 import { Check, Empty, Field, Notice, Panel, Segmented, Stat } from './ui.tsx'
 import { targetsFromPixmap } from '../core/optimize.ts'
-import { CODE_SYSTEMS, codeOf, compareByCode, type CodeSystem, type PaletteEntry } from '../core/palette.ts'
+import { CODE_SYSTEMS, codeOf, compareByCode, swatchHex, type CodeSystem, type PaletteEntry } from '../core/palette.ts'
 import { buildPaletteExport, downloadText } from '../core/export.ts'
 import { idealTextColor } from '../core/color.ts'
 import { drawPixmap } from '../core/render.ts'
@@ -176,7 +176,7 @@ export function OptimizeStep() {
                   <div
                     key={e.hex}
                     className="swatch static"
-                    style={{ background: e.hex, color: text }}
+                    style={{ background: swatchHex(e), color: text }}
                     title={`${codeOf(e, codeSystem)} · ${e.hex}`}
                   >
                     {mandatory && (

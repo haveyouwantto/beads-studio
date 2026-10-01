@@ -1,6 +1,6 @@
 import { BEAD_COLOR_DATA } from '../data/beadColors.ts'
 import { deltaE, hexToRgb, rgbToLab, rgbToHex, weightedRgbDistance } from './color.ts'
-import type { RGB } from './types.ts'
+import type { Pixmap, RGB } from './types.ts'
 
 export interface PaletteEntry {
   /** 归一化大写 HEX */
@@ -9,6 +9,95 @@ export interface PaletteEntry {
   lab: RGB
   /** 各品牌色号，例如 MARD: "A01" */
   codes: Record<string, string>
+  /** 不透明度（0–1）。只有半透明豆才有，缺省表示实心 */
+  alpha?: number
+  /** 半透明豆的颜料色（H01 = 纯白）：画图与匹配用它，hex 仍是色号对应的实色 */
+  pigmentHex?: string
+}
+
+/**
+ * 半透明豆。
+ *
+ * 这些色号现实中是透明塑料做的，色卡上的颜色只是它盖在白底上扫描出来的近似值，
+ * 不能当实心色用 —— 否则「匹配」会把大片白色区域都算到它头上，出图也会画成纯白。
+ * 物理上它是「纯白颜料 + 25% 不透明度」：H01 = `#FFFFFF40`（0x40/255）。
+ *
+ * 单一来源：用户实测（手上的 H01 是透明塑料）。
+ */
+export const TRANSLUCENT_MARD: Record<string, { hex: string; alpha: number }> = {
+  H01: { hex: '#FFFFFF', alpha: 0x40 / 255 },
+}
+
+/** 按 alpha 把前景色叠到背景色上，得到「看起来是什么颜色」 */
+export function blendOver(fore: RGB, alpha: number, back: RGB): RGB {
+  const a = Math.min(1, Math.max(0, alpha))
+  return [
+    Math.round(fore[0] * a + back[0] * (1 - a)),
+    Math.round(fore[1] * a + back[1] * (1 - a)),
+    Math.round(fore[2] * a + back[2] * (1 - a)),
+  ]
+}
+
+/** 某个色号叠在给定背景上的实际观感色（实心色就是它自己） */
+export function appearanceRgb(entry: PaletteEntry, backgroundHex: string): RGB {
+  if (!entry.alpha || entry.alpha >= 1) return entry.rgb
+  return blendOver(hexToRgb(entry.pigmentHex ?? entry.hex), entry.alpha, hexToRgb(backgroundHex))
+}
+
+/**
+ * 界面上画色块用的颜色：半透明豆按叠在面板底色上的观感画，
+ * 否则它看起来和 H02 纯白一模一样，没人知道那是颗透明豆。
+ */
+export function swatchHex(entry: PaletteEntry, panelHex = '#232323'): string {
+  if (!entry.alpha || entry.alpha >= 1) return entry.hex
+  return rgbToHex(appearanceRgb(entry, panelHex))
+}
+
+/**
+ * 把半透明豆的透明度写进像素（导出 1:1 像素图用）：
+ * H01 的格子会变成 #FFFFFF40，而不是它盖在背景上的观感色，换工具再用时透明度还在。
+ */
+export function applyBeadAlpha(img: Pixmap, palette: PaletteEntry[]): Pixmap {
+  const alphaOf = new Map(palette.filter((e) => e.alpha && e.alpha < 1).map((e) => [e.hex, e]))
+  if (!alphaOf.size) return img
+  const data = new Uint8ClampedArray(img.data)
+  for (let i = 0; i < data.length; i += 4) {
+    const entry = alphaOf.get(rgbToHex([data[i], data[i + 1], data[i + 2]]))
+    if (!entry || !entry.alpha) continue
+    const pigment = hexToRgb(entry.pigmentHex ?? entry.hex)
+    data[i] = pigment[0]
+    data[i + 1] = pigment[1]
+    data[i + 2] = pigment[2]
+    data[i + 3] = Math.round(entry.alpha * 255)
+  }
+  return { width: img.width, height: img.height, data }
+}
+
+/**
+ * 供「颜色匹配」用的调色板。
+ *
+ * 1. 半透明豆换成它叠在图纸背景上的观感色（hex / codes 不动，它仍是那颗豆）；
+ * 2. 如果它的观感和某个实心豆几乎一样，就直接不参与匹配 ——
+ *    比如白底上的 H01（25% 白）看起来和 H02 纯白没区别，但现实里透明豆是专门买的，
+ *    不该悄悄顶替白色格子。差异要超过 `redundantWithin` 个 ΔE 才留着。
+ */
+export function matchPalette(palette: PaletteEntry[], backgroundHex: string, redundantWithin = 3): PaletteEntry[] {
+  const translucent = palette.filter((e) => e.alpha && e.alpha < 1)
+  if (!translucent.length) return palette
+
+  const solids = palette.filter((e) => !e.alpha || e.alpha >= 1)
+  const out: PaletteEntry[] = []
+  for (const entry of palette) {
+    if (!entry.alpha || entry.alpha >= 1) {
+      out.push(entry)
+      continue
+    }
+    const rgb = appearanceRgb(entry, backgroundHex)
+    const lab = rgbToLab(rgb)
+    const redundant = solids.some((solid) => deltaE(lab, solid.lab) <= redundantWithin)
+    if (!redundant) out.push({ ...entry, rgb, lab })
+  }
+  return out
 }
 
 /**
@@ -30,7 +119,13 @@ export const WPLACE_COLORS: RGB[] = [
 
 export function makeEntry(hex: string, codes: Record<string, string> = {}): PaletteEntry {
   const rgb = hexToRgb(hex)
-  return { hex: rgbToHex(rgb), rgb, lab: rgbToLab(rgb), codes }
+  const translucent = TRANSLUCENT_MARD[(codes.MARD ?? '').toUpperCase()]
+  const entry: PaletteEntry = { hex: rgbToHex(rgb), rgb, lab: rgbToLab(rgb), codes }
+  if (translucent) {
+    entry.alpha = translucent.alpha
+    entry.pigmentHex = rgbToHex(hexToRgb(translucent.hex))
+  }
+  return entry
 }
 
 /** MARD 色号的系列字母（A–H / M / P / Q / R / T / Y / ZG…） */

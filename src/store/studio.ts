@@ -4,6 +4,7 @@ import {
   buildLibraryPalette,
   buildWplacePalette,
   KIT_SIZES,
+  matchPalette,
   type KitSize,
   type CodeSystem,
   type PaletteEntry,
@@ -841,18 +842,22 @@ export const useStudio = create<StudioState>((set, get) => ({
   },
 
   setRenderOptions: (patch) => {
-    set({ renderOptions: { ...get().renderOptions, ...patch } })
+    const before = get().renderOptions
+    set({ renderOptions: { ...before, ...patch } })
+    // 背景色会影响半透明豆（H01 这类）的观感，观感又参与颜色匹配，所以要重算
+    if (patch.background !== undefined && patch.background !== before.background) get().recomputeResult()
   },
 
   setCodeSystem: (s) => set({ codeSystem: s }),
 
   recomputeResult: () => {
-    const { grid, palette, quantizeOptions } = get()
+    const { grid, palette, quantizeOptions, renderOptions } = get()
     if (!grid) {
       set({ result: null })
       return
     }
-    set({ result: quantizeToPalette(grid, palette, quantizeOptions) })
+    // 半透明豆按叠在图纸背景上的观感参与匹配（结果里仍存它自己的 hex）
+    set({ result: quantizeToPalette(grid, matchPalette(palette, renderOptions.background), quantizeOptions) })
   },
 
   setOptimizeConfig: (patch) => set({ optimizeConfig: { ...get().optimizeConfig, ...patch } }),
@@ -870,9 +875,11 @@ export const useStudio = create<StudioState>((set, get) => ({
 
     // 候选色 = 用户在「选择候选色」里勾选过的子集；没筛过就用整本色号库
     const allowed = state.candidateHex.length ? new Set(state.candidateHex) : null
-    const candidates = allowed
+    const picked = allowed
       ? state.libraryPalette.filter((e) => allowed.has(e.hex))
       : state.libraryPalette
+    // 和出图保持一致：半透明豆按叠在图纸背景上的观感参与选色
+    const candidates = matchPalette(picked, state.renderOptions.background)
     if (!candidates.length) {
       set({
         error: allowed
