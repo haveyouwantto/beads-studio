@@ -54,7 +54,6 @@ export function PatternStep({ onOpenFullscreen }: { onOpenFullscreen: () => void
   const optimizedPalette = useStudio((s) => s.optimizedPalette)
   const libraryPalette = useStudio((s) => s.libraryPalette)
 
-  const [pasteOpen, setPasteOpen] = useState(false)
   const [pasteText, setPasteText] = useState('')
   const [exportScale, setExportScale] = useState(2)
   const [busy, setBusy] = useState(false)
@@ -91,6 +90,14 @@ export function PatternStep({ onOpenFullscreen }: { onOpenFullscreen: () => void
     kit: '套装',
     custom: '自定义',
   }
+  // 每个来源一句话说明它是干什么的
+  const PALETTE_HINT: Partial<Record<typeof paletteSource, string>> = {
+    optimized: '刚才找到的颜色方案',
+    library: 'MARD 全 221 色',
+    kit: '网上流行的套装',
+    custom: '输入自己的 #RGB 值，一行一个',
+  }
+
   const paletteOptions = VISIBLE_PALETTE_SOURCES.map((value) => ({
     value,
     label: PALETTE_SHORT[value] ?? PALETTE_SOURCE_LABELS[value],
@@ -288,7 +295,7 @@ export function PatternStep({ onOpenFullscreen }: { onOpenFullscreen: () => void
 
       <div>
         <Panel title="色板来源">
-          <Field label="用哪套颜色">
+          <Field label="用哪套颜色" hint={PALETTE_HINT[paletteSource]}>
             <Segmented
               value={paletteSource}
               onChange={(v) => setPaletteSource(v)}
@@ -328,17 +335,11 @@ export function PatternStep({ onOpenFullscreen }: { onOpenFullscreen: () => void
             </div>
           )}
 
-          <div className="row tight">
-            <button className="btn-flat btn-small waves-effect" onClick={() => setPasteOpen((v) => !v)}>
-              粘贴色号
-            </button>
-          </div>
-
-          {pasteOpen && (
-            <div style={{ marginTop: 10 }}>
+          {paletteSource === 'custom' && (
+            <div style={{ marginBottom: 12 }}>
               <textarea
                 rows={4}
-                placeholder="每行一个色号或 HEX，例如 A01 / #FAF4C8"
+                placeholder="一行一个，例如 #FAF4C8 或 A01"
                 value={pasteText}
                 onChange={(e) => setPasteText(e.target.value)}
               />
@@ -353,8 +354,6 @@ export function PatternStep({ onOpenFullscreen }: { onOpenFullscreen: () => void
                   }
                   const map = new Map(libraryPalette.map((e) => [e.hex, e]))
                   setPalette(hexes.map((h) => map.get(h)).filter((e): e is NonNullable<typeof e> => Boolean(e)))
-                  setPasteOpen(false)
-                  setPasteText('')
                 }}
               >
                 应用（{parsePaletteText(pasteText, libraryPalette, codeSystem).length} 个）
