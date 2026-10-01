@@ -618,7 +618,14 @@ section('最近项目弹窗')
   const dialogRoot = createRoot(host)
   let dialogError: string | null = null
   try {
-    dialogRoot.render(React.createElement(RecentProjectsDialog, { onClose: () => undefined }))
+    dialogRoot.render(
+      React.createElement(RecentProjectsDialog, {
+        onClose: () => undefined,
+        onExportProject: () => undefined,
+        onImportProject: () => undefined,
+        hasGrid: Boolean(useStudio.getState().grid),
+      }),
+    )
     await flush()
   } catch (err) {
     dialogError = err instanceof Error ? err.message : String(err)
@@ -626,6 +633,9 @@ section('最近项目弹窗')
   check('弹窗渲染无异常', dialogError === null, dialogError ?? '')
   check('弹窗列出了存档项目', (host.querySelectorAll('.recent-item').length ?? 0) > 0)
   check('弹窗显示占用空间', (host.textContent ?? '').includes('占用'))
+  // 窄屏顶栏会把「导出/导入项目文件」收进这个弹窗，所以这里必须有入口
+  check('弹窗提供导出项目文件入口', (host.textContent ?? '').includes('导出当前项目'))
+  check('弹窗提供导入项目文件入口', (host.textContent ?? '').includes('导入项目文件'))
 
   dialogRoot.unmount()
   await flush()

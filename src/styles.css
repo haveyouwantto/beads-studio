@@ -805,17 +805,8 @@ button {
   }
 }
 
-@media (max-width: 900px) {
-  .rail {
-    width: 76px;
-  }
-  .rail-label,
-  .rail-desc,
-  .rail-title,
-  .rail-foot {
-    display: none;
-  }
-}
+/* 窄屏的具体断点规则集中在文件末尾的「响应式布局」一节，
+   那里位于 Materialize 覆盖之后，能稳定压过框架样式。 */
 
 /* ---------- 面板与控件 ---------- */
 
@@ -1536,6 +1527,15 @@ nav.rail {
   box-shadow: none;
 }
 
+/* Materialize: input[type=text|number|...]{box-sizing:content-box;width:100%}
+   结果是输入框比容器宽出一圈「内边距 + 边框」（实测 20px），
+   窄屏上直接顶出横向滚动条。拉回 border-box。 */
+input:not([type='checkbox']):not([type='radio']),
+select,
+textarea {
+  box-sizing: border-box;
+}
+
 /* Materialize: .modal{position:fixed;left:0;right:0;margin:auto;...}
    我们的对话框是用 grid 居中的，要把它拉回普通流 */
 .modal-backdrop .modal {
@@ -2165,4 +2165,363 @@ button:disabled {
 
 .tab-close:hover {
   background-color: rgba(255, 255, 255, var(--state-pressed));
+}
+
+/* ==========================================================================
+   响应式布局
+   --------------------------------------------------------------------------
+   断点：
+     ≤1180px  主区两栏并成一栏（见上文 .columns.viewer）
+     ≤900px   步骤栏从左侧竖排改成顶部横排，顶栏拆成两行
+     ≤600px   顶栏只留主操作 + 图标按钮，项目文件收进「最近项目」
+   ========================================================================== */
+
+/* grid / flex 子项的 min-width 默认是 auto，会被内容顶宽。
+   图纸 SVG 是固定像素宽，最容易被这一步撑出横向滚动条。
+   统一放开，让内部的滚动容器去接管。 */
+.columns > * {
+  min-width: 0;
+}
+
+/* 顶栏在窄屏才长得下图标；宽屏保持纯文字按钮 */
+.topbar-actions .material-icons {
+  display: none;
+}
+
+.topbar {
+  flex-shrink: 0;
+}
+
+.brand-text {
+  display: flex;
+  flex-direction: column;
+  line-height: 1.2;
+}
+
+.brand-name {
+  font-size: 16px;
+  font-weight: 700;
+  letter-spacing: 0.2px;
+}
+
+/* 按钮不要被同一行里的其他元素挤扁——挤扁的结果是文字被裁掉 */
+.btn,
+.btn-flat,
+.btn-small {
+  flex-shrink: 0;
+}
+
+/* 面板标题里放了动作按钮；空间不够时让动作换行，不要溢出 */
+.panel-head {
+  flex-wrap: wrap;
+  row-gap: var(--sp-2);
+}
+
+.panel-head .hint {
+  min-width: 0;
+}
+
+/* 标签 + 数值挤在一起时允许换行 */
+.field-label {
+  flex-wrap: wrap;
+}
+
+/* 用料清单在窄屏可能比容器宽，交给它自己横向滚动 */
+.bom-wrap {
+  overflow-x: auto;
+}
+
+.project-file-row {
+  margin-bottom: 0;
+}
+
+/* 规范化预览：画布按源图比例绘制，但上限是 760×540 的固定像素。
+   窄屏会超出容器，宽屏则被 max-height 压成不等比。
+   改成「host 跟着画布走 + 画布等比缩进容器」：
+   覆盖层是绝对定位 inset:0，只有 host 和画布严丝合缝时，
+   四角控制点的坐标换算才对得上。 */
+.canvas-wrap.fit {
+  grid-template-columns: minmax(0, 1fr);
+}
+
+.canvas-wrap.fit .overlay-host,
+.canvas-wrap.fit .overlay-host > canvas:not(.handle-layer) {
+  width: auto !important;
+  height: auto !important;
+  max-width: 100% !important;
+  max-height: 58vh !important;
+}
+
+@media (max-width: 900px) {
+  /* ---------- 步骤栏：左侧竖排 → 顶部横排 ---------- */
+
+  .body {
+    flex-direction: column;
+  }
+
+  /* nav.rail 是为了压过上面 Materialize 的 nav{height:56px} 修正 */
+  nav.rail {
+    width: 100%;
+    height: auto;
+    flex-direction: row;
+    align-items: center;
+    gap: var(--sp-1);
+    padding: 6px var(--sp-2);
+    border-right: 0;
+    border-bottom: 1px solid var(--md-outline);
+    background-color: var(--md-surface-1);
+    overflow-x: auto;
+    overflow-y: hidden;
+  }
+
+  .rail-title,
+  .rail-desc,
+  .rail-foot {
+    display: none;
+  }
+
+  .rail-step {
+    flex-grow: 1;
+    flex-shrink: 1;
+    flex-basis: 0;
+    min-width: 0;
+    height: 40px;
+    align-items: center;
+    justify-content: center;
+    gap: var(--sp-2);
+    padding: 0 var(--sp-3);
+    border-radius: var(--radius-pill);
+  }
+
+  .rail-label {
+    display: block;
+    font-size: 13px;
+    font-weight: 500;
+    line-height: 1.2;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+
+  .rail-num {
+    width: 22px;
+    height: 22px;
+    font-size: 12px;
+  }
+
+  /* ---------- 顶栏：品牌 + 操作一行，标签栏单独一行 ---------- */
+
+  .topbar {
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 0;
+    padding: 0;
+  }
+
+  .brand {
+    order: 1;
+    min-height: 56px;
+    padding: 0 var(--sp-2) 0 var(--sp-4);
+  }
+
+  .topbar-spacer {
+    order: 2;
+  }
+
+  .topbar-actions {
+    order: 3;
+    flex-wrap: wrap;
+    justify-content: flex-end;
+    padding-right: var(--sp-2);
+  }
+
+  .topbar-actions > * {
+    flex-grow: 0;
+    flex-shrink: 0;
+    flex-basis: auto;
+  }
+
+  .tabstrip {
+    order: 4;
+    flex-basis: 100%;
+    max-width: 100%;
+    padding-left: var(--sp-2);
+    border-top: 1px solid var(--md-outline);
+  }
+
+  /* ---------- 主区留白收一点，给内容让出宽度 ---------- */
+
+  .main {
+    padding: var(--sp-3) var(--sp-3) var(--sp-8);
+  }
+
+  .stage-head {
+    margin-bottom: var(--sp-3);
+  }
+
+  .modal.open {
+    top: 5%;
+    max-height: 90vh;
+  }
+
+  .modal .modal-content {
+    padding: var(--sp-4) var(--sp-3);
+  }
+
+  .modal .modal-head,
+  .modal .modal-foot {
+    padding: var(--sp-3);
+  }
+
+  /* 存档列表：按钮挪到第二行，别把项目名挤没 */
+  .recent-item {
+    flex-wrap: wrap;
+  }
+
+  .recent-item .row {
+    width: 100%;
+    justify-content: flex-end;
+  }
+}
+
+@media (max-width: 600px) {
+  .brand small {
+    display: none;
+  }
+
+  /* 手机顶栏用两列网格：
+     品牌占剩下的宽度（不够就省略号），操作按钮按自身宽度靠右，
+     永远不会因为差几个像素就被挤到第二行去。 */
+  .topbar {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) auto;
+    grid-template-areas:
+      'brand actions'
+      'tabs tabs';
+    align-items: center;
+    padding: 0;
+  }
+
+  .brand {
+    grid-area: brand;
+    min-height: 56px;
+    padding: 0 var(--sp-2) 0 var(--sp-3);
+    overflow: hidden;
+  }
+
+  .brand-text {
+    min-width: 0;
+  }
+
+  .brand-name {
+    font-size: 15px;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+
+  .topbar-spacer {
+    display: none;
+  }
+
+  .topbar-actions {
+    grid-area: actions;
+    flex-wrap: nowrap;
+    padding-right: var(--sp-2);
+  }
+
+  .tabstrip {
+    grid-area: tabs;
+    padding-left: 0;
+  }
+
+  /* 文字按钮收成图标按钮；主按钮留文字，图标反而占宽 */
+  .topbar-actions .material-icons {
+    display: inline-block;
+  }
+
+  .topbar-actions .btn .material-icons {
+    display: none;
+  }
+
+  .topbar-actions .btn-flat {
+    min-width: 44px;
+    padding: 0 10px;
+  }
+
+  .topbar-actions .btn-flat .btn-label {
+    display: none;
+  }
+
+  /* 项目文件的导入导出移进「最近项目」弹窗 */
+  .topbar-file {
+    display: none;
+  }
+
+  .tabstrip .tabstrip-scroll .tab {
+    min-width: 118px;
+  }
+
+  .modal,
+  .modal.modal-wide {
+    width: calc(100% - 16px);
+  }
+
+  .modal.open {
+    top: 2%;
+    max-height: 96vh;
+  }
+
+  .stage-head h1 {
+    font-size: 18px;
+    line-height: 28px;
+  }
+
+  /* 步骤栏三个标题要放得下，别触发省略号 */
+  .rail-step {
+    padding: 0 var(--sp-2);
+    gap: var(--sp-2);
+  }
+
+  .rail-label {
+    font-size: 12.5px;
+  }
+
+  /* 全屏看图：工具栏换成两行，缩放按钮一个都不少，尺寸说明让位 */
+  .fullscreen-stage .fs-bar {
+    flex-wrap: wrap;
+    row-gap: var(--sp-2);
+    padding: var(--sp-2) var(--sp-3);
+  }
+
+  .fullscreen-stage .fs-label {
+    display: none;
+  }
+
+  .fullscreen-stage .fs-bar .btn,
+  .fullscreen-stage .fs-bar .btn-flat {
+    min-width: 40px;
+    padding: 0 var(--sp-2);
+  }
+
+  .kbd-hint {
+    display: none;
+  }
+}
+
+/* 小屏：分段控件的标签（例如「优化结果 / 基础 48 色」）放不下就压字号，
+   宁可紧一点也不要被裁成省略号 */
+@media (max-width: 400px) {
+  .tabs.segmented .tab a {
+    font-size: 12px;
+    letter-spacing: 0;
+    padding: 0;
+  }
+}
+
+/* 极窄机型（320~360px）：品牌只留图标，给操作按钮让位 */
+@media (max-width: 374px) {
+  .brand-text {
+    display: none;
+  }
 }

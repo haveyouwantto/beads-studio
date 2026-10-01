@@ -75,8 +75,8 @@ export function FullscreenPreview({
   return (
     <div className="fullscreen-stage">
       <div className="fs-bar">
-        <strong>图纸预览</strong>
-        <span className="muted tiny">{label}</span>
+        <strong className="fs-title">图纸预览</strong>
+        <span className="muted tiny fs-label">{label}</span>
         <span style={{ flex: 1 }} />
         <button className="btn-flat btn-small waves-effect" onClick={() => setZoom((z) => Math.max(0.2, z / 1.2))}>
           <i className="material-icons sm">remove</i>
@@ -97,7 +97,7 @@ export function FullscreenPreview({
           重置
         </button>
         <button className="btn btn-small waves-effect waves-light" onClick={onClose}>
-          退出 (Esc)
+          退出<span className="kbd-hint"> (Esc)</span>
         </button>
       </div>
 
@@ -147,7 +147,7 @@ export function FullscreenPreview({
           color: 'var(--muted-2)',
         }}
       >
-        滚轮缩放 · 拖动平移 · 屏幕保持常亮
+        拖动平移 · 滚轮或 +/- 缩放 · 屏幕保持常亮
       </div>
     </div>
   )

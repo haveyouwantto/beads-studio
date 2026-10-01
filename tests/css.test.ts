@@ -52,6 +52,7 @@ const markup = [
   '<button class="btn waves-effect waves-light">开始优化</button>',
   '<button class="btn-flat btn-small waves-effect">重来</button>',
   '<select id="metric"><option>Lab ΔE</option></select>',
+  '<input type="number" value="12"><input type="text" value="名字">',
   '<span class="btn-flat"><span class="pill">3</span></span>',
   '<ul class="tabs tabs-fixed-width segmented"><li class="tab"><a class="active">色号库</a></li><li class="indicator"></li></ul>',
   '<div class="row"><span>a</span></div>',
@@ -124,6 +125,10 @@ section('Materialize 不再误伤自定义组件')
   check('原生下拉框没有被隐藏', style('select', 'display') === 'inline-block', style('select', 'display'))
   check('下拉框边框可见', style('select', 'border-top-width') === '1px', style('select', 'border-top-width'))
 
+  // Materialize 给文本框写的是 content-box，宽 100% 会多出一圈内边距 + 边框
+  check('输入框用 border-box', style('input[type=number]', 'box-sizing') === 'border-box', style('input[type=number]', 'box-sizing'))
+  check('文本框用 border-box', style('input[type=text]', 'box-sizing') === 'border-box', style('input[type=text]', 'box-sizing'))
+
   // 分段选择必须等宽：Materialize 的 .tabs 默认不是 flex，靠不住
   check('分段选择强制单行', style('.tabs.segmented', 'flex-wrap') === 'nowrap', style('.tabs.segmented', 'flex-wrap'))
   check('分段选择每项等分宽度', style('.tabs.segmented .tab', 'flex-grow') === '1', style('.tabs.segmented .tab', 'flex-grow'))
@@ -190,6 +195,83 @@ section('字体与图纸预览')
   check('正文用 Roboto 无衬线', norm(style('body', 'font-family')).includes('Roboto'), norm(style('body', 'font-family')))
   check('字体栈里没有等宽', !rootVar('--font-sans').includes('monospace'))
   check('图纸预览禁止选中文字', style('.pattern-svg', 'user-select') === 'none', style('.pattern-svg', 'user-select'))
+}
+
+// 媒体查询在 jsdom 里算不出 computed style（它不做视口匹配），
+// 所以窄屏规则改成直接读 CSSOM：确认断点存在、且写的是预期的声明。
+// 真实布局由浏览器实测验证，这里只做「别被删掉/写错」的回归网。
+section('响应式断点')
+{
+  type RuleInfo = { media: string; selector: string; style: CSSStyleDeclaration }
+
+  function collectRules(sheet: CSSStyleSheet, media = ''): RuleInfo[] {
+    const out: RuleInfo[] = []
+    for (const rule of Array.from(sheet.cssRules) as (CSSRule & {
+      // jsdom 用 media.mediaText 表示 @media 条件，标准里是 conditionText
+      conditionText?: string
+      media?: { mediaText?: string }
+      cssRules?: CSSRuleList
+      selectorText?: string
+      style?: CSSStyleDeclaration
+    })[]) {
+      const condition = rule.conditionText ?? rule.media?.mediaText
+      if (rule.cssRules && typeof condition === 'string') {
+        out.push(...collectRules(rule as unknown as CSSStyleSheet, condition.replace(/^\(|\)$/g, '').trim()))
+      } else if (rule.selectorText && rule.style) {
+        out.push({ media, selector: rule.selectorText, style: rule.style })
+      }
+    }
+    return out
+  }
+
+  const sheets = Array.from(win.document.styleSheets) as CSSStyleSheet[]
+  const ours = sheets[sheets.length - 1]
+  const rules = collectRules(ours)
+  // 取最后一条匹配：同优先级下靠后的声明才是生效的那个
+  const at = (media: string, selector: string) =>
+    [...rules]
+      .reverse()
+      .find((r) => r.media === media && r.selector.split(',').map((s) => s.trim()).includes(selector))
+  const value = (media: string, selector: string, prop: string) => at(media, selector)?.style.getPropertyValue(prop).trim() ?? ''
+
+  const narrow = 'max-width: 900px'
+  const phone = 'max-width: 600px'
+
+  check('存在 ≤900px 断点', rules.some((r) => r.media === narrow))
+  check('存在 ≤600px 断点', rules.some((r) => r.media === phone))
+
+  // 步骤栏：左侧竖排 → 顶部横排，让出主区整个宽度
+  check('窄屏步骤栏横排', value(narrow, 'nav.rail', 'flex-direction') === 'row', value(narrow, 'nav.rail', 'flex-direction'))
+  check('窄屏步骤栏占满宽度', value(narrow, 'nav.rail', 'width') === '100%', value(narrow, 'nav.rail', 'width'))
+  check('窄屏主体改成纵向堆叠', value(narrow, '.body', 'flex-direction') === 'column', value(narrow, '.body', 'flex-direction'))
+  check(
+    '窄屏步骤项等分宽度',
+    ['0', '0px'].includes(value(narrow, '.rail-step', 'flex-basis')),
+    value(narrow, '.rail-step', 'flex-basis'),
+  )
+  check('窄屏步骤项保留标题', value(narrow, '.rail-label', 'display') === 'block', value(narrow, '.rail-label', 'display'))
+  check('窄屏隐藏步骤栏说明', value(narrow, '.rail-desc', 'display') === 'none', value(narrow, '.rail-desc', 'display'))
+
+  // 顶栏：标签栏独占一行，不然会和按钮挤在一起
+  check('窄屏标签栏独占一行', value(narrow, '.tabstrip', 'flex-basis') === '100%', value(narrow, '.tabstrip', 'flex-basis'))
+  check('窄屏标签栏不限宽（原来的 62vw 会截断）', value(narrow, '.tabstrip', 'max-width') === '100%', value(narrow, '.tabstrip', 'max-width'))
+  check('窄屏顶栏用两列网格', value(phone, '.topbar', 'display') === 'grid', value(phone, '.topbar', 'display'))
+  check('手机顶栏收成图标按钮', value(phone, '.topbar-actions .btn-flat .btn-label', 'display') === 'none')
+  check('手机隐藏项目文件按钮', value(phone, '.topbar-file', 'display') === 'none', value(phone, '.topbar-file', 'display'))
+  check('手机顶栏按钮不被挤扁', value(narrow, '.topbar-actions > *', 'flex-shrink') === '0')
+
+  // 溢出根源：网格子项的 min-width:auto 会被内容顶宽
+  check(
+    '网格子项允许收缩',
+    ['0', '0px'].includes(value('', '.columns > *', 'min-width')),
+    value('', '.columns > *', 'min-width'),
+  )
+  check('预览画布等比缩进容器', value('', '.canvas-wrap.fit .overlay-host', 'max-width') === '100%')
+  check('预览容器只有一列', value('', '.canvas-wrap.fit', 'grid-template-columns') === 'minmax(0, 1fr)')
+  check('面板标题允许换行', value('', '.panel-head', 'flex-wrap') === 'wrap', value('', '.panel-head', 'flex-wrap'))
+  check('用料清单可横向滚动', value('', '.bom-wrap', 'overflow-x') === 'auto', value('', '.bom-wrap', 'overflow-x'))
+  check('手机弹窗留出边距', value(phone, '.modal', 'width') === 'calc(100% - 16px)', value(phone, '.modal', 'width'))
+  check('手机全屏工具栏换行', value(phone, '.fullscreen-stage .fs-bar', 'flex-wrap') === 'wrap')
 }
 
 console.log(`\n${'─'.repeat(52)}`)

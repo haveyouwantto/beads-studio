@@ -7,7 +7,17 @@ import { Check } from './ui.tsx'
  * 「最近项目」弹窗：列出 localStorage 里自动存档的项目，可以打开或删除。
  * 索引里只存缩略图和元信息，所以打开这个弹窗不会去解析上兆的项目正文。
  */
-export function RecentProjectsDialog({ onClose }: { onClose: () => void }) {
+export function RecentProjectsDialog({
+  onClose,
+  onExportProject,
+  onImportProject,
+  hasGrid,
+}: {
+  onClose: () => void
+  onExportProject: () => void
+  onImportProject: () => void
+  hasGrid: boolean
+}) {
   const recent = useStudio((s) => s.recent)
   const refreshRecent = useStudio((s) => s.refreshRecent)
   const openRecentProject = useStudio((s) => s.openRecentProject)
@@ -50,6 +60,27 @@ export function RecentProjectsDialog({ onClose }: { onClose: () => void }) {
         </header>
 
         <div className="modal-content modal-body">
+          <div className="row tight project-file-row">
+            <button
+              className="btn-flat btn-small waves-effect"
+              onClick={onExportProject}
+              disabled={!hasGrid}
+              title="把当前项目导出成文件"
+            >
+              <i className="material-icons sm">download</i>
+              <span className="btn-label">导出当前项目</span>
+            </button>
+            <button
+              className="btn-flat btn-small waves-effect"
+              onClick={onImportProject}
+              title="从项目文件导入"
+            >
+              <i className="material-icons sm">upload</i>
+              <span className="btn-label">导入项目文件</span>
+            </button>
+          </div>
+          <div className="divider" />
+
           {recent.length === 0 ? (
             <div className="empty" style={{ minHeight: 180 }}>
               <div>

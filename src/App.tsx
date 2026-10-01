@@ -187,9 +187,8 @@ export default function App() {
           <span className="brand-mark">
             <i className="material-icons sm">blur_on</i>
           </span>
-          <div>
-            Beads Studio
-            <br />
+          <div className="brand-text">
+            <span className="brand-name">Beads Studio</span>
             <small>拼豆工作流工作室</small>
           </div>
         </div>
@@ -198,21 +197,41 @@ export default function App() {
 
         <span className="topbar-spacer" />
 
-        <div className="row tight">
+        <div className="row tight topbar-actions">
           <button className="btn waves-effect waves-light" onClick={openFile} disabled={loading}>
-            {loading ? '载入中…' : source ? '更换图片' : '打开图片'}
+            <i className="material-icons sm">add_photo_alternate</i>
+            <span className="btn-label">{loading ? '载入中…' : source ? '更换图片' : '打开图片'}</span>
           </button>
-          <button className="btn-flat waves-effect" onClick={() => setShowFullscreen(true)} disabled={!result}>
-            全屏预览
+          <button
+            className="btn-flat waves-effect"
+            onClick={() => setShowFullscreen(true)}
+            disabled={!result}
+            title="全屏预览"
+            aria-label="全屏预览"
+          >
+            <i className="material-icons sm">fullscreen</i>
+            <span className="btn-label">全屏预览</span>
           </button>
-          <button className="btn-flat waves-effect" onClick={saveProject} disabled={!grid} title="导出成项目文件">
-            导出文件
+          <button
+            className="btn-flat waves-effect topbar-file"
+            onClick={saveProject}
+            disabled={!grid}
+            title="导出成项目文件"
+          >
+            <i className="material-icons sm">download</i>
+            <span className="btn-label">导出文件</span>
           </button>
-          <button className="btn-flat waves-effect" onClick={() => projectRef.current?.click()} title="从项目文件导入">
-            导入文件
+          <button
+            className="btn-flat waves-effect topbar-file"
+            onClick={() => projectRef.current?.click()}
+            title="从项目文件导入"
+          >
+            <i className="material-icons sm">upload</i>
+            <span className="btn-label">导入文件</span>
           </button>
-          <button className="btn-flat waves-effect" onClick={() => setShowRecent(true)}>
-            最近项目
+          <button className="btn-flat waves-effect" onClick={() => setShowRecent(true)} title="最近项目" aria-label="最近项目">
+            <i className="material-icons sm">folder_open</i>
+            <span className="btn-label">最近项目</span>
             {recentCount > 0 && <span className="pill">{recentCount}</span>}
           </button>
         </div>
@@ -318,7 +337,14 @@ export default function App() {
         />
       )}
 
-      {showRecent && <RecentProjectsDialog onClose={() => setShowRecent(false)} />}
+      {showRecent && (
+        <RecentProjectsDialog
+          onClose={() => setShowRecent(false)}
+          onExportProject={saveProject}
+          onImportProject={() => projectRef.current?.click()}
+          hasGrid={Boolean(grid)}
+        />
+      )}
     </div>
   )
 }
