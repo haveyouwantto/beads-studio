@@ -94,6 +94,22 @@ npm run dev -- --host
 > 服务器**写死绑 IPv4 的 127.0.0.1**：默认的 `localhost` 会解析到 IPv6 的 `::1`，
 > 而浏览器打开 `localhost` 走的是 IPv4，于是会出现「终端显示 ready、浏览器说拒绝连接」。
 
+## 装成 App / 离线使用（PWA）
+
+构建产物是完整的 PWA：`manifest.webmanifest` + Service Worker + 各尺寸图标，
+浏览器地址栏会出现「安装」按钮，装到桌面或手机主屏后按应用窗口打开（`display: standalone`）。
+
+- **离线可用**：Service Worker 在安装时把 `index.html`、带 hash 的 JS/CSS、字体、图标全部预缓存
+  （hash 文件名是从 `index.html` 里解析出来的，改一次构建自动跟上）。
+  之后断网、甚至把服务器关掉，打开照样能跑完整流程 —— 反正所有计算本来就在本地。
+- **导航走网络优先**：联网时每次进应用都拿最新的 `index.html`，离线才回退到缓存；换版本会清掉旧缓存。
+- **开发模式不注册**：`import.meta.env.PROD` 才注册，否则会把 Vite 的模块缓存住，改代码看不到效果。
+  想验证 PWA 行为要跑 `npm run build && npm run preview`。
+
+```bash
+npm run test:pwa   # PWA 静态自检：manifest 字段、图标尺寸、SW 事件、index.html 引用
+```
+
 ## 标签页与自动保存
 
 - **标签页**：顶栏是浏览器式的项目标签。每个标签是一个独立项目（各自的图、网格、色板、配色结果），
@@ -117,7 +133,8 @@ localStorage 通常只有 5MB，原图 PNG 很容易撑爆，所以存不下时�
 npm test           # 核心算法自检（93 项，走 Node，无需浏览器）
 npm run test:css   # CSS 层叠自检（82 项，把 materialize + styles.css 灌进 jsdom 算 computed style）
 npm run test:ui    # 运行时冒烟测试（130 项，jsdom 里真正启动 React 应用跑完整流程）
-npm run test:all   # 三个都跑
+npm run test:pwa   # PWA 静态自检（38 项，manifest / 图标 / Service Worker）
+npm run test:all   # 四个都跑
 ```
 
 `npm test` 会用一张「12×10 像素画被 8 倍放大成 96×80」的合成图验证整条链路：

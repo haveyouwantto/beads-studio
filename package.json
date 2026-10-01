@@ -10,8 +10,9 @@
     "preview": "vite preview",
     "typecheck": "tsc -b --force",
     "test": "node --experimental-strip-types tests/core.test.ts",
+    "test:pwa": "node --experimental-strip-types tests/pwa.test.ts",
     "test:ui": "tsx --tsconfig tsconfig.app.json tests/ui.test.ts",
-    "test:all": "npm run test && npm run test:css && npm run test:ui",
+    "test:all": "npm run test && npm run test:css && npm run test:pwa && npm run test:ui",
     "sample:svg": "tsx --tsconfig tsconfig.app.json tests/sample-svg.gen.ts",
     "verify:svg": "tsx --tsconfig tsconfig.app.json tests/svg-pixels.verify.ts",
     "test:css": "node --experimental-strip-types tests/css.test.ts"

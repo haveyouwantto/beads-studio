@@ -8,6 +8,7 @@ import { TabBar } from './components/TabBar.tsx'
 import { RecentProjectsDialog } from './components/RecentProjectsDialog.tsx'
 import { MenuDrawer, type DrawerItem } from './components/MenuDrawer.tsx'
 import { STAGE_META, STAGE_ORDER } from './components/stages.ts'
+import { BeadLogo } from './components/BeadLogo.tsx'
 import { Notice, useMaterialRipple } from './components/ui.tsx'
 import { packPixels, unpackPixels, downloadText, type ProjectFile } from './core/export.ts'
 import { formatTime } from './core/storage.ts'
@@ -200,7 +201,7 @@ export default function App() {
 
         <div className="brand">
           <span className="brand-mark">
-            <i className="material-icons sm">blur_on</i>
+            <BeadLogo />
           </span>
           <div className="brand-text">
             <span className="brand-name">Beads Studio</span>

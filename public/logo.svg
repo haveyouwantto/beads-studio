@@ -1,0 +1,41 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 108 108" width="108" height="108" role="img" aria-label="Beads Studio">
+  <!-- 应用图标：机械臂把一颗拼豆放进环形拼豆里，旁边是齿轮环与 AI 闪光 -->
+  <rect width="108" height="108" rx="24" fill="#90caf9"/>
+  <g transform="translate(54 54) scale(1.5) translate(-52.3 -49.8)" stroke="#06233c" fill="#06233c">
+    <g fill="none" stroke-width="2.2">
+      <circle cx="39" cy="53" r="2.6"/>
+      <circle cx="49" cy="53" r="2.6"/>
+      <circle cx="69" cy="53" r="2.6"/>
+      <circle cx="39" cy="63" r="2.6"/>
+      <circle cx="49" cy="63" r="2.6"/>
+      <circle cx="59" cy="63" r="2.6"/>
+      <circle cx="69" cy="63" r="2.6"/>
+      <circle cx="39" cy="73" r="2.6"/>
+      <circle cx="49" cy="73" r="2.6"/>
+      <circle cx="59" cy="73" r="2.6"/>
+      <circle cx="69" cy="73" r="2.6"/>
+      <circle cx="59" cy="40" r="2.6"/>
+      <circle cx="34" cy="42" r="4.5" stroke-width="2.5"/>
+    </g>
+    <g fill="none" stroke-linecap="round" stroke-linejoin="round">
+      <path d="M37.9,37.4 L46,28" stroke-width="4.5"/>
+      <path d="M46,28 L59,28" stroke-width="4"/>
+      <path d="M55.5,32 L53,37.5 L55,43 M62.5,32 L65,37.5 L63,43" stroke-width="2.2"/>
+    </g>
+    <circle cx="59" cy="53" r="1"/>
+    <g transform="translate(34 42)">
+      <rect x="-1.5" y="-7.5" width="3" height="2.5"/>
+      <rect x="-1.5" y="-7.5" width="3" height="2.5" transform="rotate(45)"/>
+      <rect x="-1.5" y="-7.5" width="3" height="2.5" transform="rotate(90)"/>
+      <rect x="-1.5" y="-7.5" width="3" height="2.5" transform="rotate(135)"/>
+      <rect x="-1.5" y="-7.5" width="3" height="2.5" transform="rotate(180)"/>
+      <rect x="-1.5" y="-7.5" width="3" height="2.5" transform="rotate(225)"/>
+      <rect x="-1.5" y="-7.5" width="3" height="2.5" transform="rotate(270)"/>
+      <rect x="-1.5" y="-7.5" width="3" height="2.5" transform="rotate(315)"/>
+    </g>
+    <circle cx="46" cy="28" r="3.5"/>
+    <rect x="53" y="26" width="12" height="6" rx="2"/>
+    <path d="M73,35 C73.6,38.6 74.4,39.4 78,40 C74.4,40.6 73.6,41.4 73,45 C72.4,41.4 71.6,40.6 68,40 C71.6,39.4 72.4,38.6 73,35Z"/>
+    <path d="M70,28.5 C70.3,30.3 70.7,30.7 72.5,31 C70.7,31.3 70.3,31.7 70,33.5 C69.7,31.7 69.3,31.3 67.5,31 C69.3,30.7 69.7,30.3 70,28.5Z"/>
+  </g>
+</svg>

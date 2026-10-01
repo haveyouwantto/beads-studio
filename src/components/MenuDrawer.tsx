@@ -1,4 +1,5 @@
 import { useEffect } from 'react'
+import { BeadLogo } from './BeadLogo.tsx'
 
 export interface DrawerItem {
   icon: string
@@ -27,7 +28,7 @@ export function MenuDrawer({ items, onClose }: { items: DrawerItem[]; onClose: (
       <aside className="drawer" role="navigation">
         <div className="drawer-head">
           <span className="brand-mark">
-            <i className="material-icons sm">blur_on</i>
+            <BeadLogo />
           </span>
           <span className="drawer-title">Beads Studio</span>
         </div>

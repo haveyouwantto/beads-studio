@@ -271,15 +271,22 @@ button {
 }
 
 .brand-mark {
-  width: 26px;
-  height: 26px;
-  border-radius: var(--radius-sm);
+  width: 28px;
+  height: 28px;
+  border-radius: 6px;
   background-color: var(--md-primary);
+  /* logo 用 currentColor 描边，跟随这个颜色 */
   color: var(--md-on-primary);
   display: grid;
   place-items: center;
-  font-size: 14px;
+  flex-shrink: 0;
   box-shadow: none;
+}
+
+.brand-mark svg {
+  display: block;
+  width: 24px;
+  height: 24px;
 }
 
 .brand small {

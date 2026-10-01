@@ -18,3 +18,11 @@ createRoot(document.getElementById('root') as HTMLElement).render(
     <App />
   </StrictMode>,
 )
+
+// PWA：把应用外壳缓存进 Service Worker，装到桌面/主屏后可以完全离线用。
+// 只在构建产物里注册 —— 开发时注册会缓存 Vite 的模块，改代码看不到效果。
+if (import.meta.env.PROD && 'serviceWorker' in navigator) {
+  window.addEventListener('load', () => {
+    void navigator.serviceWorker.register(`${import.meta.env.BASE_URL}sw.js`).catch(() => undefined)
+  })
+}
