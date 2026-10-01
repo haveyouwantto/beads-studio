@@ -317,7 +317,8 @@ export function RegularizeStep({ onOpenFile }: { onOpenFile: () => void }) {
           hint={grid ? `${grid.width} × ${grid.height} 格` : '尚未生成'}
           actions={
             <button className="btn btn-small waves-effect waves-light" onClick={goNext} disabled={!grid}>
-              下一步：优化颜色 →
+              下一步：优化颜色
+              <i className="material-icons sm">arrow_forward</i>
             </button>
           }
           tight

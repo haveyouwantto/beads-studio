@@ -158,7 +158,8 @@ export function PatternStep({ onOpenFullscreen }: { onOpenFullscreen: () => void
         <Empty icon="grid_on" title="还没有网格">
           <div style={{ marginTop: 12 }}>
             <button className="btn waves-effect waves-light" onClick={goPrev}>
-              ← 回到规范化
+              <i className="material-icons sm">arrow_back</i>
+              回到规范化
             </button>
           </div>
         </Empty>
@@ -179,7 +180,8 @@ export function PatternStep({ onOpenFullscreen }: { onOpenFullscreen: () => void
           </div>
           <span className="grow" />
           <button className="btn-flat btn-small waves-effect" onClick={goPrev}>
-            ← 优化颜色
+            <i className="material-icons sm">arrow_back</i>
+            优化颜色
           </button>
         </div>
 

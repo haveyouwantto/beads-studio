@@ -40,7 +40,8 @@ const markup = [
   `<style>${mine}</style>`,
   '</head><body>',
   '<nav class="rail">',
-  '<button class="rail-step collection-item active"><span class="rail-num">1</span>',
+  '<button class="rail-step collection-item active"><span class="rail-num">',
+  '<i class="material-icons sm">palette</i></span>',
   '<span class="rail-label">规范化</span></button></nav>',
   '<label class="check"><input type="checkbox" checked><span>包含扩展色号</span></label>',
   '<span class="badge">已打开</span>',
@@ -146,6 +147,10 @@ section('Materialize 不再误伤自定义组件')
 
   // 步骤栏对勾垂直居中
   check('步骤序号行高归零对齐', style('.rail-num', 'line-height') === '1', style('.rail-num', 'line-height'))
+  // Materialize 的 nav i.material-icons{height:56px} 会把图标盒子撑高，导致看着没居中
+  // （jsdom 不会把 em 解析成 px，这里比的是「哪条规则赢了」）
+  check('步骤图标高度不被 nav 规则撑成 56px', style('.rail-num .material-icons', 'height') === '1em', style('.rail-num .material-icons', 'height'))
+  check('步骤图标宽度锁成 1em', style('.rail-num .material-icons', 'width') === '1em', style('.rail-num .material-icons', 'width'))
   // 计数气泡不被按钮的 36px 行高顶歪
   check('计数气泡行高独立', style('.pill', 'line-height') === '1', style('.pill', 'line-height'))
 }

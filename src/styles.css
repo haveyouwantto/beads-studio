@@ -701,7 +701,7 @@ button {
   width: 24px;
   height: 24px;
   border-radius: var(--radius-pill);
-  border: 1px solid var(--md-outline-strong);
+  border: 0;
   display: grid;
   place-items: center;
   font-size: 12px;
@@ -713,13 +713,11 @@ button {
 
 .rail-step.active .rail-num {
   background-color: var(--md-primary);
-  border-color: var(--md-primary);
   color: var(--md-on-primary);
 }
 
 .rail-step.done .rail-num {
   background-color: transparent;
-  border-color: var(--md-primary);
   color: var(--md-primary);
 }
 
@@ -1759,6 +1757,11 @@ span.badge {
   font-weight: 500;
   text-transform: uppercase;
   letter-spacing: 1.25px;
+  /* 文字按钮里也会放图标（箭头）：和 .btn 一样用 flex 排，间距才一致 */
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
 }
 
 .btn-flat:hover {
@@ -1923,7 +1926,12 @@ select option {
   line-height: 1;
 }
 
+/* Materialize: nav i.material-icons{display:block;height:56px;line-height:56px}
+   侧边栏正好是 nav，图标盒子会被撑成 56px 高 —— 看着就像没居中。
+   这里把盒子锁成 1em 见方，交给 .rail-num 的 place-items 居中。 */
 .rail-num .material-icons {
+  width: 1em;
+  height: 1em;
   font-size: 16px;
   line-height: 1;
   vertical-align: middle;

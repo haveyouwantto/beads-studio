@@ -76,7 +76,8 @@ export function OptimizeStep() {
         <Empty icon="palette" title="还没有可优化的网格">
           <div style={{ marginTop: 12 }}>
             <button className="btn waves-effect waves-light" onClick={goPrev}>
-              ← 回到规范化
+              <i className="material-icons sm">arrow_back</i>
+              回到规范化
             </button>
           </div>
         </Empty>
@@ -93,7 +94,8 @@ export function OptimizeStep() {
           </div>
           <span className="grow" />
           <button className="btn-flat btn-small waves-effect" onClick={goPrev}>
-            ← 规范化
+            <i className="material-icons sm">arrow_back</i>
+            规范化
           </button>
         </div>
 
@@ -142,7 +144,8 @@ export function OptimizeStep() {
                 onClick={applyOptimizedPalette}
                 disabled={!sortedResult.length}
               >
-                用这套颜色出图纸 →
+                用这套颜色出图纸
+                <i className="material-icons sm">arrow_forward</i>
               </button>
             </>
           }
@@ -350,7 +353,8 @@ export function OptimizeStep() {
             <>
               <div className="divider" />
               <button className="btn waves-effect waves-light" style={{ width: '100%' }} onClick={goNext}>
-                前往「转拼豆图纸」→
+                前往「转拼豆图纸」
+                <i className="material-icons sm">arrow_forward</i>
               </button>
             </>
           )}
