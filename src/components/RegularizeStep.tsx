@@ -366,7 +366,7 @@ export function RegularizeStep({ onOpenFile }: { onOpenFile: () => void }) {
               </div>
               {grid.width * grid.height > 200000 && (
                 <div style={{ marginTop: 12 }}>
-                  <Notice kind="warn">网格很大（{grid.width * grid.height} 格），优化和出图会比较慢。</Notice>
+                  <Notice kind="warn">网格太大，后面的优化和出图会比较慢。</Notice>
                 </div>
               )}
             </>

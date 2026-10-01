@@ -156,8 +156,9 @@ export function PatternStep({ onOpenFullscreen }: { onOpenFullscreen: () => void
     )
   }
 
-  const previewCellSize = previewOptions.cellSize
-  const shrinkNote = preview && previewCellSize < renderOptions.cellSize
+  // 预览为超大图纸自动降档 / 省略色号 / 退回方格，原因对用户来说只有一条：图纸太大
+  const previewSimplified =
+    preview && (previewOptions.cellSize < renderOptions.cellSize || preview.codesSuppressed || preview.beadSuppressed)
 
   return (
     <div className="columns viewer">
@@ -177,15 +178,6 @@ export function PatternStep({ onOpenFullscreen }: { onOpenFullscreen: () => void
           hint={`${result?.width ?? 0} × ${result?.height ?? 0} 格 · ${bom.length} 个色号 · ${totalBeads.toLocaleString()} 颗豆`}
           actions={
             <>
-              <button
-                className="btn-flat btn-small icon-only waves-effect"
-                onClick={onOpenFullscreen}
-                title="全屏看图"
-                aria-label="全屏看图"
-              >
-                <i className="material-icons sm">fullscreen</i>
-              </button>
-              <span className="grow" />
               <span className="tiny muted">导出倍数</span>
               <select
                 value={exportScale}
@@ -225,17 +217,9 @@ export function PatternStep({ onOpenFullscreen }: { onOpenFullscreen: () => void
                 </button>
               </div>
 
-              {(shrinkNote || preview.codesSuppressed || preview.beadSuppressed) && (
+              {previewSimplified && (
                 <div style={{ marginTop: 10 }}>
-                  <Notice kind="info">
-                    {shrinkNote && (
-                      <>
-                        图纸较大，预览已缩到 {previewCellSize} px/格；导出仍按 {renderOptions.cellSize} px/格。
-                      </>
-                    )}
-                    {preview.codesSuppressed && <>格子太多，已省略色号。</>}
-                    {preview.beadSuppressed && <>格子太多，珠子样式已退回方格。</>}
-                  </Notice>
+                  <Notice kind="warn">图纸太大，预览已简化以保证流畅。</Notice>
                 </div>
               )}
             </>

@@ -210,6 +210,27 @@ export function OptimizeStep() {
 
       <div>
         <Panel title="优化设置">
+          {/* 运行放最前面：改完参数不用滚到面板底部（样式和其他高亮按钮一致） */}
+          <button
+            className="btn waves-effect waves-light"
+            style={{ width: '100%' }}
+            onClick={() => (running ? stopOptimizer() : void runOptimizer())}
+          >
+            {running ? '停止优化' : '开始优化'}
+          </button>
+
+          <div className="progress">
+            <i style={{ width: `${run.progress}%` }} />
+          </div>
+          <div className="row" style={{ justifyContent: 'space-between' }}>
+            <span className="tiny muted">{run.status === 'idle' ? '待运行' : `${run.progress.toFixed(1)}%`}</span>
+            <span className="tiny muted">
+              {run.step.toLocaleString()} / {config.steps.toLocaleString()} 步
+            </span>
+          </div>
+
+          <div className="divider" />
+
           <Field
             label="候选色"
             value={`${candidateCount} / ${libraryPalette.length}`}
@@ -316,27 +337,6 @@ export function OptimizeStep() {
             </Check>
           </div>
 
-          <div className="divider" />
-
-          <div className="row tight">
-            <button
-              className={running ? 'btn danger' : 'btn primary'}
-              style={{ flex: 1 }}
-              onClick={() => (running ? stopOptimizer() : void runOptimizer())}
-            >
-              {running ? '停止优化' : '开始优化'}
-            </button>
-          </div>
-
-          <div className="progress">
-            <i style={{ width: `${run.progress}%` }} />
-          </div>
-          <div className="row" style={{ justifyContent: 'space-between' }}>
-            <span className="tiny muted">{run.status === 'idle' ? '待运行' : `${run.progress.toFixed(1)}%`}</span>
-            <span className="tiny muted">
-              {run.step.toLocaleString()} / {config.steps.toLocaleString()} 步
-            </span>
-          </div>
         </Panel>
 
         <Panel title="运行信息">

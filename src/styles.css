@@ -942,11 +942,6 @@ input[type='checkbox'] {
   cursor: not-allowed;
 }
 
-.btn.primary {
-  background-color: var(--md-primary);
-  color: var(--md-on-primary);
-}
-
 .btn.ghost {
   background-color: transparent;
   border-color: var(--md-outline-strong);
@@ -1084,10 +1079,6 @@ input[type='checkbox'] {
 
 .modal {
   box-shadow: var(--elev-8);
-}
-
-.btn.primary {
-  box-shadow: var(--elev-2);
 }
 
 /* 拼豆图纸是矢量 SVG：容器负责滚动，缩放只改变 CSS 尺寸，永远清晰 */
@@ -2054,24 +2045,6 @@ select option {
 .btn.sm .material-icons {
   font-size: 16px;
   vertical-align: -4px;
-}
-
-/* 实心按钮用深色主题的 primary 变体，保证白字对比度 */
-.btn.primary {
-  background-color: var(--primary-dark);
-  color: #fff;
-  box-shadow: var(--elev-2);
-}
-
-.btn.primary:hover:not(:disabled) {
-  background-color: #1565c0;
-  filter: none;
-}
-
-.btn.primary:disabled {
-  background-color: rgba(255, 255, 255, 0.12);
-  color: rgba(255, 255, 255, 0.38);
-  box-shadow: none;
 }
 
 .btn.ghost {
