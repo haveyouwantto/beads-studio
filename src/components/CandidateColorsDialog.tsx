@@ -108,7 +108,6 @@ export function CandidateColorsDialog({ onClose }: { onClose: () => void }) {
           <section className="set-block">
             <header className="series-head">
               <b className="series-name">方案</b>
-              <span className="tiny muted">当前选中 {selectedCount} 色</span>
               <span style={{ flex: 1 }} />
               <input
                 className="set-name"

@@ -304,7 +304,7 @@ export function PatternStep({ onOpenFullscreen }: { onOpenFullscreen: () => void
           </Field>
 
           {paletteSource === 'kit' && (
-            <Field label="套装规模" value={`${palette.length} 色`}>
+            <Field label="套装规模">
               <Segmented
                 value={String(kitSize)}
                 onChange={(v) => setKitSize(Number(v) as KitSize)}
