@@ -11,10 +11,10 @@ import { Notice, useMaterialRipple } from './components/ui.tsx'
 import { packPixels, unpackPixels, downloadText, type ProjectFile } from './core/export.ts'
 import { formatTime } from './core/storage.ts'
 
-const STAGES: { id: StageId; label: string }[] = [
-  { id: 'regularize', label: '规范化' },
-  { id: 'optimize', label: '优化颜色' },
-  { id: 'pattern', label: '转拼豆图纸' },
+const STAGES: { id: StageId; label: string; icon: string }[] = [
+  { id: 'regularize', label: '规范化', icon: 'center_focus_strong' },
+  { id: 'optimize', label: '优化颜色', icon: 'palette' },
+  { id: 'pattern', label: '转拼豆图纸', icon: 'grid_on' },
 ]
 
 export default function App() {
@@ -256,14 +256,14 @@ export default function App() {
 
       <div className="body">
         <nav className="rail collection">
-          {STAGES.map((s, i) => (
+          {STAGES.map((s) => (
             <button
               key={s.id}
               className={`rail-step collection-item ${activeStage === s.id ? 'active' : ''} ${stageDone[s.id] ? 'done' : ''}`}
               onClick={() => setStage(s.id)}
             >
               <span className="rail-num">
-                {stageDone[s.id] ? <i className="material-icons sm">check</i> : i + 1}
+                <i className="material-icons sm">{stageDone[s.id] ? 'check' : s.icon}</i>
               </span>
               <span className="rail-label">{s.label}</span>
             </button>
