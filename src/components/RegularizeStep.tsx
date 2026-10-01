@@ -312,8 +312,34 @@ export function RegularizeStep({ onOpenFile }: { onOpenFile: () => void }) {
           </div>
         </Panel>
 
+        <Panel
+          title="规范化结果"
+          hint={grid ? `${grid.width} × ${grid.height} 格` : '尚未生成'}
+          actions={
+            <button className="btn btn-small waves-effect waves-light" onClick={goNext} disabled={!grid}>
+              下一步：优化颜色 →
+            </button>
+          }
+          tight
+        >
+          {grid ? (
+            <>
+              <div className="canvas-wrap">
+                <canvas ref={gridRef} />
+              </div>
+              {grid.width * grid.height > 200000 && (
+                <div style={{ marginTop: 12 }}>
+                  <Notice kind="warn">网格太大，后面的优化和出图会比较慢。</Notice>
+                </div>
+              )}
+            </>
+          ) : (
+            <Notice kind="warn">还没有生成网格。</Notice>
+          )}
+        </Panel>
+
         {alignmentMode === 'auto' && analysis && (
-        <Panel title="周期检测" tight>
+          <Panel title="周期检测" tight>
             <div className="row" style={{ gap: 12 }}>
               <div style={{ flex: '1 1 240px' }}>
                 <AutocorrelationChart
@@ -341,32 +367,6 @@ export function RegularizeStep({ onOpenFile }: { onOpenFile: () => void }) {
             </div>
           </Panel>
         )}
-
-        <Panel
-          title="规范化结果"
-          hint={grid ? `${grid.width} × ${grid.height} 格` : '尚未生成'}
-          actions={
-            <button className="btn btn-small waves-effect waves-light" onClick={goNext} disabled={!grid}>
-              下一步：优化颜色 →
-            </button>
-          }
-          tight
-        >
-          {grid ? (
-            <>
-              <div className="canvas-wrap">
-                <canvas ref={gridRef} />
-              </div>
-              {grid.width * grid.height > 200000 && (
-                <div style={{ marginTop: 12 }}>
-                  <Notice kind="warn">网格太大，后面的优化和出图会比较慢。</Notice>
-                </div>
-              )}
-            </>
-          ) : (
-            <Notice kind="warn">还没有生成网格。</Notice>
-          )}
-        </Panel>
       </div>
 
       <div>
