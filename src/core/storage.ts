@@ -127,6 +127,8 @@ export interface PersistedProject {
   manualRows: number
   directBlock: number
   paletteSource: string
+  /** 选了「套装」色板时用哪一档（24/48/72/96/120）；老存档没有这个字段 */
+  kitSize?: number
   /** 配色优化的候选色；空数组 = 全库参与 */
   candidateHex?: string[]
   includeExtended: boolean

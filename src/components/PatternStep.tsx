@@ -16,9 +16,11 @@ import {
   METRIC_LABELS,
   PALETTE_SOURCE_LABELS,
   parsePaletteText,
+  KIT_SIZES,
   VISIBLE_PALETTE_SOURCES,
   type CodeSystem,
   type DistanceMetric,
+  type KitSize,
 } from '../core/palette.ts'
 import {
   buildBom,
@@ -38,6 +40,8 @@ export function PatternStep({ onOpenFullscreen }: { onOpenFullscreen: () => void
   const palette = useStudio((s) => s.palette)
   const paletteSource = useStudio((s) => s.paletteSource)
   const setPaletteSource = useStudio((s) => s.setPaletteSource)
+  const kitSize = useStudio((s) => s.kitSize)
+  const setKitSize = useStudio((s) => s.setKitSize)
   const setPalette = useStudio((s) => s.setPalette)
   const includeExtended = useStudio((s) => s.includeExtended)
   const setIncludeExtended = useStudio((s) => s.setIncludeExtended)
@@ -84,8 +88,7 @@ export function PatternStep({ onOpenFullscreen }: { onOpenFullscreen: () => void
   const PALETTE_SHORT: Partial<Record<typeof paletteSource, string>> = {
     optimized: '优化结果',
     library: '全色',
-    basic24: '24色',
-    basic48: '48色',
+    kit: '套装',
     custom: '自定义',
   }
   const paletteOptions = VISIBLE_PALETTE_SOURCES.map((value) => ({
@@ -292,6 +295,16 @@ export function PatternStep({ onOpenFullscreen }: { onOpenFullscreen: () => void
               options={paletteOptions}
             />
           </Field>
+
+          {paletteSource === 'kit' && (
+            <Field label="套装规模" value={`${palette.length} 色`}>
+              <Segmented
+                value={String(kitSize)}
+                onChange={(v) => setKitSize(Number(v) as KitSize)}
+                options={KIT_SIZES.map((n) => ({ value: String(n), label: `${n}` }))}
+              />
+            </Field>
+          )}
 
           {optimizedPalette.length === 0 && paletteSource !== 'optimized' && (
             <div style={{ marginBottom: 12 }}>

@@ -1,9 +1,10 @@
 import { create } from 'zustand'
 import {
-  buildBasic24Palette,
-  buildBasic48Palette,
+  buildKitPalette,
   buildLibraryPalette,
   buildWplacePalette,
+  KIT_SIZES,
+  type KitSize,
   type CodeSystem,
   type PaletteEntry,
   type PaletteSource,
@@ -124,6 +125,7 @@ const PROJECT_KEYS = [
   'directBlock',
   'grid',
   'paletteSource',
+  'kitSize',
   'candidateHex',
   'includeExtended',
   'palette',
@@ -170,6 +172,8 @@ interface StudioState {
 
   // --- 阶段 3：转拼豆图纸 ---
   paletteSource: PaletteSource
+  /** 选了「套装」时用哪一档：24 / 48 / 72 / 96 / 120 */
+  kitSize: KitSize
   /**
    * 参与配色优化的候选色（HEX 列表）。
    * 空数组 = 未筛选，表示色号库全部参与。
@@ -215,6 +219,7 @@ interface StudioState {
   buildGrid: () => void
 
   setPaletteSource: (s: PaletteSource) => void
+  setKitSize: (size: KitSize) => void
   /** 设置配色优化的候选色（传空数组 = 全部参与） */
   setCandidateHex: (hexes: string[]) => void
   /** 候选色方案：保存 / 套用 / 删除，存在本地，跨项目可用 */
@@ -287,6 +292,7 @@ function freshProject(): ProjectState {
     directBlock: 1,
     grid: null,
     paletteSource: 'library',
+    kitSize: 24,
     candidateHex: [],
     includeExtended: false,
     palette: library,
@@ -331,10 +337,8 @@ function resolvePaletteForSource(source: PaletteSource, s: StudioState): Palette
       return s.optimizedPalette.length ? s.optimizedPalette : null
     case 'library':
       return s.libraryPalette
-    case 'basic24':
-      return buildBasic24Palette()
-    case 'basic48':
-      return buildBasic48Palette()
+    case 'kit':
+      return buildKitPalette(s.kitSize)
     case 'wplace':
       return buildWplacePalette()
     case 'custom':
@@ -456,6 +460,7 @@ function serializeProject(s: StudioState): PersistedProject {
     manualRows: s.manualRows,
     directBlock: s.directBlock,
     paletteSource: s.paletteSource,
+    kitSize: s.kitSize,
     candidateHex: [...s.candidateHex],
     includeExtended: s.includeExtended,
     paletteHex: s.palette.map((e) => e.hex),
@@ -469,6 +474,17 @@ function serializeProject(s: StudioState): PersistedProject {
     sourceOmitted: false,
     grid: encodeGrid(s),
   }
+}
+
+/**
+ * 存档里的色板来源 → 当前来源 + 套装档位。
+ * 老存档里的「基础24色 / 基础48色」已经合并成「套装」+ 档位，这里做一次迁移。
+ */
+function resolveStoredPaletteSource(p: PersistedProject): { paletteSource: PaletteSource; kitSize: KitSize } {
+  if (p.paletteSource === 'basic24') return { paletteSource: 'kit', kitSize: 24 }
+  if (p.paletteSource === 'basic48') return { paletteSource: 'kit', kitSize: 48 }
+  const size = (KIT_SIZES as readonly number[]).includes(Number(p.kitSize)) ? (Number(p.kitSize) as KitSize) : 24
+  return { paletteSource: p.paletteSource as PaletteSource, kitSize: size }
 }
 
 /** 存档读回 store 可用的项目状态（需要解码原图，所以是异步的） */
@@ -511,7 +527,7 @@ async function deserializeProject(p: PersistedProject): Promise<ProjectState> {
     manualRows: p.manualRows,
     directBlock: p.directBlock,
     grid,
-    paletteSource: p.paletteSource as PaletteSource,
+    ...resolveStoredPaletteSource(p),
     candidateHex: Array.isArray(p.candidateHex) ? [...p.candidateHex] : [],
     includeExtended: p.includeExtended,
     palette: resolve(p.paletteHex).length ? resolve(p.paletteHex) : library,
@@ -750,6 +766,15 @@ export const useStudio = create<StudioState>((set, get) => ({
     }
     set({ paletteSource: s, palette: resolved, notice: null })
     get().recomputeResult()
+  },
+
+  setKitSize: (size) => {
+    const state = get()
+    const next: Partial<StudioState> = { kitSize: size }
+    // 正在用套装当色板时，换档位要立刻换色板
+    if (state.paletteSource === 'kit') next.palette = buildKitPalette(size)
+    set(next)
+    if (state.paletteSource === 'kit') get().recomputeResult()
   },
 
   setCandidateHex: (hexes) => {

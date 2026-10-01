@@ -70,35 +70,57 @@ export function buildWplacePalette(): PaletteEntry[] {
 }
 
 /**
- * 基础 24 色 / 48 色：都用 MARD 色号定义。
- * 24 色是精简起步色；48 色 = 24 色 + 另外 24 个（补齐各系列过渡色）。
+ * MARD 零售套装：24 / 48 / 72 / 96 / 120，每档比上一档多 24 色，且严格包含上一档。
+ *
+ * 色号取自公开色卡（拼豆Pic 与 FuseBeadsHub 两家逐色一致），全部落在 MARD 标准 221 色内。
+ * 电商上还有「144 色」套装和 144 张色号贴纸，但那是商家自己配的，没有公开统一的色号表，
+ * 而且卖家之间不一样，所以这里不收录 —— 需要的话按 120 色再加自己手里多出来的 24 色即可。
  */
-export const BASIC_24_MARD = [
-  'B03', 'B05', 'B08',
-  'C03', 'C05', 'C08',
-  'D09', 'D06', 'D07',
-  'E02', 'E04',
-  'F05',
-  'G01', 'G05', 'G07',
-  'A04', 'A06', 'A07',
-  'H01', 'H02', 'H03', 'H04', 'H05', 'H07',
-] as const
+export const KIT_SIZES = [24, 48, 72, 96, 120] as const
+export type KitSize = (typeof KIT_SIZES)[number]
 
-/** 在 24 色基础上追加的 24 个色号 */
-export const BASIC_48_EXTRA_MARD = [
-  'C02', 'C10', 'C11',
-  'B12',
-  'C13', 'C06', 'C07',
-  'D03', 'D19', 'D18', 'D21', 'D15',
-  'E08', 'E03',
-  'D13', 'E07',
-  'A13', 'A10',
-  'F13', 'F08',
-  'A11',
-  'G09', 'G13', 'G08',
-] as const
-
-export const BASIC_48_MARD = [...BASIC_24_MARD, ...BASIC_48_EXTRA_MARD] as const
+export const KIT_MARD: Record<KitSize, readonly string[]> = {
+  24: [
+    'A04', 'A06', 'A07', 'B03', 'B05', 'B08', 'C03', 'C05', 'C08', 'D06', 'D07', 'D09', 'E02',
+    'E04', 'F05', 'G01', 'G05', 'G07', 'H01', 'H02', 'H03', 'H04', 'H05', 'H07',
+  ],
+  48: [
+    'A04', 'A06', 'A07', 'A10', 'A11', 'A13', 'B03', 'B05', 'B08', 'B12', 'C02', 'C03', 'C05',
+    'C06', 'C07', 'C08', 'C10', 'C11', 'C13', 'D03', 'D06', 'D07', 'D09', 'D13', 'D15', 'D18',
+    'D19', 'D21', 'E02', 'E03', 'E04', 'E07', 'E08', 'F05', 'F08', 'F13', 'G01', 'G05', 'G07',
+    'G08', 'G09', 'G13', 'H01', 'H02', 'H03', 'H04', 'H05', 'H07',
+  ],
+  72: [
+    'A03', 'A04', 'A06', 'A07', 'A10', 'A11', 'A13', 'B03', 'B05', 'B07', 'B08', 'B10', 'B12',
+    'B14', 'B17', 'B18', 'B19', 'B20', 'C02', 'C03', 'C05', 'C06', 'C07', 'C08', 'C10', 'C11',
+    'C13', 'C16', 'D02', 'D03', 'D06', 'D07', 'D08', 'D09', 'D11', 'D12', 'D13', 'D14', 'D15',
+    'D16', 'D18', 'D19', 'D20', 'D21', 'E01', 'E02', 'E03', 'E04', 'E05', 'E07', 'E08', 'E12',
+    'E13', 'F05', 'F07', 'F08', 'F10', 'F13', 'G01', 'G02', 'G03', 'G05', 'G07', 'G08', 'G09',
+    'G13', 'H01', 'H02', 'H03', 'H04', 'H05', 'H07',
+  ],
+  96: [
+    'A03', 'A04', 'A06', 'A07', 'A10', 'A11', 'A13', 'A14', 'B03', 'B05', 'B07', 'B08', 'B10',
+    'B12', 'B14', 'B17', 'B18', 'B19', 'B20', 'C02', 'C03', 'C05', 'C06', 'C07', 'C08', 'C10',
+    'C11', 'C13', 'C16', 'D02', 'D03', 'D05', 'D06', 'D07', 'D08', 'D09', 'D11', 'D12', 'D13',
+    'D14', 'D15', 'D16', 'D18', 'D19', 'D20', 'D21', 'E01', 'E02', 'E03', 'E04', 'E05', 'E06',
+    'E07', 'E08', 'E09', 'E10', 'E11', 'E12', 'E13', 'E14', 'E15', 'F01', 'F02', 'F03', 'F04',
+    'F05', 'F06', 'F07', 'F08', 'F09', 'F10', 'F11', 'F12', 'F13', 'F14', 'G01', 'G02', 'G03',
+    'G05', 'G07', 'G08', 'G09', 'G13', 'G14', 'G17', 'H01', 'H02', 'H03', 'H04', 'H05', 'H06',
+    'H07', 'M05', 'M06', 'M09', 'M12',
+  ],
+  120: [
+    'A01', 'A03', 'A04', 'A05', 'A06', 'A07', 'A08', 'A09', 'A10', 'A11', 'A12', 'A13', 'A14',
+    'A15', 'B01', 'B02', 'B03', 'B04', 'B05', 'B06', 'B07', 'B08', 'B10', 'B11', 'B12', 'B13',
+    'B14', 'B15', 'B16', 'B17', 'B18', 'B19', 'B20', 'C01', 'C02', 'C03', 'C04', 'C05', 'C06',
+    'C07', 'C08', 'C09', 'C10', 'C11', 'C13', 'C14', 'C15', 'C16', 'C17', 'D01', 'D02', 'D03',
+    'D05', 'D06', 'D07', 'D08', 'D09', 'D11', 'D12', 'D13', 'D14', 'D15', 'D16', 'D17', 'D18',
+    'D19', 'D20', 'D21', 'E01', 'E02', 'E03', 'E04', 'E05', 'E06', 'E07', 'E08', 'E09', 'E10',
+    'E11', 'E12', 'E13', 'E14', 'E15', 'F01', 'F02', 'F03', 'F04', 'F05', 'F06', 'F07', 'F08',
+    'F09', 'F10', 'F11', 'F12', 'F13', 'F14', 'G01', 'G02', 'G03', 'G05', 'G06', 'G07', 'G08',
+    'G09', 'G13', 'G14', 'G17', 'H01', 'H02', 'H03', 'H04', 'H05', 'H06', 'H07', 'H12', 'M05',
+    'M06', 'M09', 'M12',
+  ],
+}
 
 /** 按 MARD 色号取颜色，返回按色号排序的色板 */
 export function paletteFromMard(codes: readonly string[], library: PaletteEntry[]): PaletteEntry[] {
@@ -122,27 +144,24 @@ function compareByCodeMard(a: PaletteEntry, b: PaletteEntry): number {
   })
 }
 
-export function buildBasic24Palette(): PaletteEntry[] {
-  return paletteFromMard(BASIC_24_MARD, buildLibraryPalette({ includeExtended: true }))
+/** 按套装规模取色板；套装色号全部在标准 221 色内，所以用标准色号库解析 */
+export function buildKitPalette(size: KitSize = 24): PaletteEntry[] {
+  const codes = KIT_MARD[size] ?? KIT_MARD[24]
+  return paletteFromMard(codes, buildLibraryPalette({ includeExtended: false }))
 }
 
-export function buildBasic48Palette(): PaletteEntry[] {
-  return paletteFromMard(BASIC_48_MARD, buildLibraryPalette({ includeExtended: true }))
-}
-
-export type PaletteSource = 'library' | 'optimized' | 'basic24' | 'basic48' | 'custom' | 'wplace'
+export type PaletteSource = 'library' | 'optimized' | 'kit' | 'custom' | 'wplace'
 
 export const PALETTE_SOURCE_LABELS: Record<PaletteSource, string> = {
   optimized: '优化结果',
   library: '全色',
-  basic24: '基础24色',
-  basic48: '基础48色',
+  kit: '套装',
   custom: '自定义',
   wplace: 'wplace 色板',
 }
 
 /** 界面上可见的色板来源（wplace 色板不是拼豆颜色，已隐藏） */
-export const VISIBLE_PALETTE_SOURCES: PaletteSource[] = ['optimized', 'library', 'basic24', 'basic48', 'custom']
+export const VISIBLE_PALETTE_SOURCES: PaletteSource[] = ['optimized', 'library', 'kit', 'custom']
 
 /** 色号体系（对应旧工具的 code-type） */
 export const CODE_SYSTEMS = ['MARD', 'COCO', '漫漫', '盼盼', '咪小窝'] as const

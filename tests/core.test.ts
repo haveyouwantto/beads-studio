@@ -13,12 +13,10 @@ import {
   type PaletteEntry,
 } from '../src/core/palette.ts'
 import {
-  BASIC_24_MARD,
-  BASIC_48_EXTRA_MARD,
-  BASIC_48_MARD,
-  buildBasic24Palette,
-  buildBasic48Palette,
+  buildKitPalette,
   buildWplacePalette,
+  KIT_MARD,
+  KIT_SIZES,
   PALETTE_SOURCE_LABELS,
   VISIBLE_PALETTE_SOURCES,
 } from '../src/core/palette.ts'
@@ -244,25 +242,33 @@ section('基础 24 / 48 色与 wplace 色板')
   const full = buildLibraryPalette({ includeExtended: true })
   const codes = new Set(full.map((e) => e.codes.MARD))
 
-  check('24 色定义恰好 24 个', BASIC_24_MARD.length === 24, `${BASIC_24_MARD.length}`)
-  check('48 追加列表恰好 24 个', BASIC_48_EXTRA_MARD.length === 24, `${BASIC_48_EXTRA_MARD.length}`)
-  check('48 = 24 + 追加，且无重复', BASIC_48_MARD.length === 48 && new Set(BASIC_48_MARD).size === 48)
-  check(
-    '24 色与追加列表不重叠',
-    BASIC_24_MARD.every((c) => !(BASIC_48_EXTRA_MARD as readonly string[]).includes(c)),
-  )
-  check('所有色号都在色号库里存在', BASIC_48_MARD.every((c) => codes.has(c)))
+  check('套装档位是 24/48/72/96/120', KIT_SIZES.join() === '24,48,72,96,120', KIT_SIZES.join())
+  for (const n of KIT_SIZES) {
+    const list = KIT_MARD[n]
+    check(`${n} 色套装恰好 ${n} 个色号`, list.length === n, `${list.length}`)
+    check(`${n} 色套装无重复`, new Set(list).size === n)
+    check(`${n} 色套装色号都在色号库里`, list.every((c) => codes.has(c)))
+  }
+  // 24 → 48 → 72 → 96 → 120 严格逐级包含，每档正好多 24 色
+  for (let i = 1; i < KIT_SIZES.length; i++) {
+    const small = new Set(KIT_MARD[KIT_SIZES[i - 1]])
+    const big = KIT_MARD[KIT_SIZES[i]]
+    check(
+      `${KIT_SIZES[i]} 色套装包含 ${KIT_SIZES[i - 1]} 色套装且多 24 色`,
+      [...small].every((c) => big.includes(c)) && big.length - small.size === 24,
+    )
+  }
 
-  const p24 = buildBasic24Palette()
-  const p48 = buildBasic48Palette()
-  check('基础24色解析出 24 个颜色', p24.length === 24, `${p24.length}`)
-  check('基础48色解析出 48 个颜色', p48.length === 48, `${p48.length}`)
-  check('24 色全部包含在 48 色里', p24.every((e) => p48.some((x) => x.hex === e.hex)))
-  check('两个色板都带 MARD 色号', p48.every((e) => Boolean(e.codes.MARD)))
+  const p24 = buildKitPalette(24)
+  const p120 = buildKitPalette(120)
+  check('24 色套装解析出 24 个颜色', p24.length === 24, `${p24.length}`)
+  check('120 色套装解析出 120 个颜色', p120.length === 120, `${p120.length}`)
+  check('24 色全部包含在 120 色里', p24.every((e) => p120.some((x) => x.hex === e.hex)))
+  check('套装色板都带 MARD 色号', p120.every((e) => Boolean(e.codes.MARD)))
   check(
-    '基础色板按色号排序',
-    p48.map((e) => e.codes.MARD).join() ===
-      [...p48.map((e) => e.codes.MARD)].sort((a, b) => a.localeCompare(b, undefined, { numeric: true })).join(),
+    '套装色板按色号排序',
+    p120.map((e) => e.codes.MARD).join() ===
+      [...p120.map((e) => e.codes.MARD)].sort((a, b) => a.localeCompare(b, undefined, { numeric: true })).join(),
   )
 
   // wplace 色板：不是拼豆颜色，保留在代码里但从界面隐藏

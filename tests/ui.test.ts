@@ -470,13 +470,19 @@ section('优化结果与色板来源')
   check('切回后颜色与原来完全一致', back.palette.map((e) => e.hex).join() === optimizedHexes)
   check('切回后没有残留提示', back.notice === null)
 
-  // 基础 24 / 48 色可以当色板用
-  useStudio.getState().setPaletteSource('basic24')
+  // 套装：一个入口，切档位就换色板
+  useStudio.getState().setPaletteSource('kit')
   await flush()
-  check('能用基础24色', useStudio.getState().palette.length === 24)
-  useStudio.getState().setPaletteSource('basic48')
+  check('能用套装当色板', useStudio.getState().paletteSource === 'kit')
+  check('默认是 24 色套装', useStudio.getState().palette.length === 24, `${useStudio.getState().palette.length}`)
+  useStudio.getState().setKitSize(48)
   await flush()
-  check('能用基础48色', useStudio.getState().palette.length === 48)
+  check('切到 48 色套装', useStudio.getState().palette.length === 48, `${useStudio.getState().palette.length}`)
+  useStudio.getState().setKitSize(96)
+  await flush()
+  check('切到 96 色套装', useStudio.getState().palette.length === 96, `${useStudio.getState().palette.length}`)
+  const kitHexes = useStudio.getState().palette.map((e) => e.hex)
+  check('套装色板换档后不重复', new Set(kitHexes).size === kitHexes.length)
 
   // 还没优化就选「优化结果」：要拦下来并提醒
   useStudio.setState({ optimizedPalette: [], paletteSource: 'library', notice: null })
