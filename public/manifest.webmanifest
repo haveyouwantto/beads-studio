@@ -1,7 +1,7 @@
 {
-  "name": "Beads Studio · 拼豆工作流工作室",
+  "name": "Beads Studio · 拼豆工作室",
   "short_name": "Beads Studio",
-  "description": "纯浏览器运行的拼豆工作流：规范化 → 优化颜色 → 转拼豆图纸，图片不上传。",
+  "description": "纯浏览器运行的拼豆工作室：像素图规范化 → 拼豆化配色 → 色号调色板优化",
   "lang": "zh-CN",
   "dir": "ltr",
   "start_url": "./",

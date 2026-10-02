@@ -3,7 +3,7 @@
   "private": true,
   "version": "1.0.0",
   "type": "module",
-  "description": "纯浏览器运行的拼豆工作流工作室：像素图规范化 → 拼豆化配色 → 色号调色板优化",
+  "description": "纯浏览器运行的拼豆工作室：像素图规范化 → 拼豆化配色 → 色号调色板优化",
   "scripts": {
     "dev": "vite",
     "build": "tsc -b && vite build",

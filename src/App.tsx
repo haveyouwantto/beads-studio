@@ -236,7 +236,7 @@ export default function App() {
           </span>
           <div className="brand-text">
             <span className="brand-name">Beads Studio</span>
-            <small>拼豆工作流工作室</small>
+            <small>拼豆工作室</small>
           </div>
         </div>
 
