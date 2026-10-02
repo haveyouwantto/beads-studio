@@ -163,7 +163,9 @@ a {
   color: var(--accent);
 }
 
-input:not([type='checkbox']):not([type='radio']),
+/* 注意排除 color：它是拿「背景色」画那个色块的，
+   一旦被这条规则刷成透明，控件就变成一片空白（全站的颜色选择器都会失效）。 */
+input:not([type='checkbox']):not([type='radio']):not([type='color']),
 select,
 textarea {
   border: 1px solid var(--md-outline-strong) !important;
@@ -912,7 +914,7 @@ input[type='color'] {
   width: 42px;
   height: 30px;
   padding: 2px;
-  background: transparent;
+  /* 别设置背景色，色块就是它自己画的 */
   border: 1px solid var(--md-outline-strong);
   border-radius: var(--md-radius);
 }

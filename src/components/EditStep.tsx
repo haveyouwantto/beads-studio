@@ -446,9 +446,9 @@ export function EditStep() {
       </div>
 
       <div>
-        <Panel title="这一步在做什么" tight>
+        <Panel title="编辑图片" tight>
           <div className="tiny muted">
-            改颜色、点掉不要的格子。涂成<b>透明</b>的格子会被忽略：不参与配色优化，也不出图、不计数。
+            涂成<b>透明</b>的格子会被忽略（不参与配色、也不出图）。不需要编辑就直接下一步。
           </div>
           <div className="divider" />
           <div className="row tight">

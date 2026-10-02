@@ -54,6 +54,7 @@ const markup = [
   '<button class="btn-flat btn-small waves-effect">重来</button>',
   '<select id="metric"><option>Lab ΔE</option></select>',
   '<input type="number" value="12"><input type="text" value="名字">',
+  '<input type="color" value="#123456">',
   '<label class="check"><input type="checkbox"><span>自动保存</span></label>',
   '<span class="btn-flat"><span class="pill">3</span></span>',
   '<ul class="tabs tabs-fixed-width segmented"><li class="tab"><a class="active">色号库</a></li><li class="indicator"></li></ul>',
@@ -133,6 +134,17 @@ section('Materialize 不再误伤自定义组件')
   // Materialize 给文本框写的是 content-box，宽 100% 会多出一圈内边距 + 边框
   check('输入框用 border-box', style('input[type=number]', 'box-sizing') === 'border-box', style('input[type=number]', 'box-sizing'))
   check('文本框用 border-box', style('input[type=text]', 'box-sizing') === 'border-box', style('input[type=text]', 'box-sizing'))
+
+  // input[type=color] 是靠控件自己画的色块，不能被通用输入框规则接管：
+  // 之前那条规则带 !important 的 height:auto / border / 透明背景，把色块压成一条看不见的线。
+  check('颜色控件走自己的尺寸', style('input[type=color]', 'height') === '30px', style('input[type=color]', 'height'))
+  check('颜色控件宽度来自专用规则', style('input[type=color]', 'width') === '42px', style('input[type=color]', 'width'))
+  const sheetsAll = Array.from(win.document.styleSheets) as CSSStyleSheet[]
+  const colorInput = win.document.querySelector('input[type=color]') as Element
+  const hijacked = (Array.from(sheetsAll[sheetsAll.length - 1].cssRules) as (CSSRule & { selectorText?: string; style?: CSSStyleDeclaration })[])
+    .filter((r) => r.selectorText && r.style?.getPropertyValue('background-color') && colorInput.matches(r.selectorText))
+    .map((r) => r.selectorText as string)
+  check('没有规则接管颜色控件的背景色', hijacked.length === 0, hijacked.join(' | '))
 
   // Materialize 把真复选框藏起来等它自己的伪元素来画，我们的 .check 又把伪元素关了
   // —— 两边一凑，复选框就彻底不可见。这里要求真复选框被放回来。
