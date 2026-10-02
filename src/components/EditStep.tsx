@@ -330,7 +330,7 @@ export function EditStep() {
 
         <Panel
           title="像素画板"
-          hint={`${grid.width} × ${grid.height} 格${stats && stats.ignored ? ` · 忽略 ${stats.ignored} 格` : ''}`}
+          hint={`${grid.width} × ${grid.height} 格`}
           actions={
             <>
               <button

@@ -21,6 +21,8 @@ export interface RenderOptions {
   /** 是否画行列标尺 */
   rulers: boolean
   rulerStep: number
+  /** 四边的留白（以「格」为单位）：标尺数字就写在留白里 */
+  margin: number
 }
 
 export const DEFAULT_RENDER_OPTIONS: RenderOptions = {
@@ -34,11 +36,22 @@ export const DEFAULT_RENDER_OPTIONS: RenderOptions = {
   codeSystem: 'MARD',
   rulers: true,
   rulerStep: 10,
+  // 2.6 是标尺数字需要的地方：比这更窄，左上的数字就贴着图纸了
+  margin: 2.6,
 }
 
 /** 线宽以「格」为单位，保证跟着图一起缩放，永远是矢量 */
 const THIN_WIDTH = 0.05
 const THICK_WIDTH = 0.18
+
+/**
+ * 图纸四边的留白（格）。
+ * 标尺数字写在留白里，不再自己额外撑开一条边 —— 四边永远一样宽。
+ * 老存档里没有这个字段，缺省按默认值走。
+ */
+function marginOf(options: RenderOptions): number {
+  return Number.isFinite(options.margin) ? Math.max(0, options.margin) : DEFAULT_RENDER_OPTIONS.margin
+}
 
 /** 和界面一致的 Roboto 无衬线字体栈 */
 export const SVG_FONT =
@@ -135,10 +148,11 @@ export function buildPatternSvg(
   const codesSuppressed = codes && totalCells > CODE_CELL_LIMIT
   const drawCodes = codes && !codesSuppressed && cellSize >= 8
 
-  // 四周留出标尺的位置（以「格」为单位）
-  const pad = rulers ? 2.6 : 0
-  const vbW = W + pad
-  const vbH = H + pad
+  // 四边留同样的白（以「格」为单位），标尺数字写在留白里。
+  // 以前只有左上的标尺占位、右下贴边，看起来是歪的。
+  const pad = marginOf(options)
+  const vbW = W + pad * 2
+  const vbH = H + pad * 2
   const outW = Math.max(1, Math.round(vbW * cellSize))
   const outH = Math.max(1, Math.round(vbH * cellSize))
 
@@ -318,17 +332,17 @@ function hexToRgbSafe(hex: string): [number, number, number] {
 
 /** 给定渲染设置后 SVG 的固有尺寸（用来提前判断导出会不会过大） */
 export function estimateSvgSize(img: Pixmap, options: RenderOptions): { width: number; height: number } {
-  const pad = options.rulers ? 2.6 : 0
+  const pad = marginOf(options)
   return {
-    width: Math.round((img.width + pad) * options.cellSize),
-    height: Math.round((img.height + pad) * options.cellSize),
+    width: Math.round((img.width + pad * 2) * options.cellSize),
+    height: Math.round((img.height + pad * 2) * options.cellSize),
   }
 }
 
 /** 预览用：把固有尺寸限制在 maxSide 以内，超大图纸自动缩小显示 */
 export function clampPreviewCellSize(img: Pixmap, options: RenderOptions, maxSide = 2048): number {
-  const pad = options.rulers ? 2.6 : 0
-  const longest = Math.max(img.width, img.height) + pad
+  const pad = marginOf(options)
+  const longest = Math.max(img.width, img.height) + pad * 2
   if (longest <= 0) return options.cellSize
   return Math.max(1, Math.min(options.cellSize, Math.floor(maxSide / longest)))
 }

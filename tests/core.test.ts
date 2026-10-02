@@ -655,8 +655,14 @@ section('③ 转拼豆图纸 · 矢量 SVG')
   const out = buildPatternSvg(png, palette, opts)
 
   check('输出是 SVG', out.svg.startsWith('<svg') && out.svg.endsWith('</svg>'))
-  check('带 viewBox（可任意缩放）', out.svg.includes('viewBox="0 0 21 12"'), out.svg.slice(0, 80))
-  check('固有尺寸 = 格数 × 格子大小', out.width === W * opts.cellSize && out.height === H * opts.cellSize)
+  check('带 viewBox（可任意缩放）', out.svg.includes('viewBox="0 0 26.2 17.2"'), out.svg.slice(0, 80))
+  check('图纸四边留出同样的边距', out.svg.includes('transform="translate(2.6 2.6)"'), out.svg.slice(0, 160))
+  check(
+    '固有尺寸 = (格数 + 两边边距) × 格子大小',
+    out.width === Math.round((W + opts.margin * 2) * opts.cellSize) &&
+      out.height === Math.round((H + opts.margin * 2) * opts.cellSize),
+    `${out.width}×${out.height}`,
+  )
   check('没有把文字转成像素', !out.svg.includes('<image'))
 
   const horizontalThick = countVerticalThick(out.svg)
@@ -707,7 +713,16 @@ section('③ 转拼豆图纸 · 矢量 SVG')
   const small = buildPatternSvg(makePixmap(4, 4, [10, 10, 10]), palette, opts)
   check('4×4 小图也能生成', small.svg.startsWith('<svg'))
 
-  check('标尺会让固有尺寸变大', estimateSvgSize(png, { ...opts, rulers: true }).width > out.width)
+  // 标尺数字写在留白里，不再自己撑开一条边
+  check('标尺不改变图纸尺寸', estimateSvgSize(png, { ...opts, rulers: true }).width === out.width)
+  const withRulers = buildPatternSvg(png, palette, { ...opts, rulers: true })
+  check('标尺数字写在留白里', withRulers.svg.includes(`<text x="3.1" y="1.5"`), withRulers.svg.slice(0, 200))
+  const tight = buildPatternSvg(png, palette, { ...opts, margin: 0 })
+  check(
+    '边距设 0 时图纸贴边',
+    tight.svg.includes('viewBox="0 0 21 12"') && tight.width === W * opts.cellSize,
+    `${tight.width}`,
+  )
   check(
     '超大图纸预览会自动降格子尺寸',
     clampPreviewCellSize(makePixmap(600, 400, [0, 0, 0]), DEFAULT_RENDER_OPTIONS, 1600) <
