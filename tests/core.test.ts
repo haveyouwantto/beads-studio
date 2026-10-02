@@ -49,7 +49,7 @@ import {
   DEFAULT_RENDER_OPTIONS,
   type RenderOptions,
 } from '../src/core/svg.ts'
-import type { Pixmap, RGB } from '../src/core/types.ts'
+import type { Pixmap, RGB, SampleMode } from '../src/core/types.ts'
 
 let passed = 0
 let failed = 0
@@ -228,6 +228,39 @@ section('① 规范化 · 四角变换')
     }
   }
   check('四角采样逐格还原', exact === CELLS_W * CELLS_H, `${exact}/${CELLS_W * CELLS_H}`)
+
+  // 四角变换和自动识别共用同一套格内取样方式
+  const quadModes: SampleMode[] = ['center', 'mean', 'median', 'geometric', 'mode']
+  const sameAsArt = (pm: Pixmap): boolean => {
+    for (let y = 0; y < CELLS_H; y++) {
+      for (let x = 0; x < CELLS_W; x++) {
+        const a = getPixel(pm, x, y)
+        const b = getPixel(art, x, y)
+        if (a[0] !== b[0] || a[1] !== b[1] || a[2] !== b[2]) return false
+      }
+    }
+    return true
+  }
+  check('四角变换默认就是中心点取样', sameAsArt(sampleQuad(canvas, [...corners], CELLS_W, CELLS_H)))
+  check(
+    '四角变换支持全部五种取样方式',
+    quadModes.every((m) => sameAsArt(sampleQuad(canvas, [...corners], CELLS_W, CELLS_H, m))),
+    quadModes.join(),
+  )
+
+  // 一格跨两种颜色时，中心点和平均给的结果不一样（说明 mode 真的生效了）
+  const twoTone = makePixmap(2, 2, [0, 0, 0])
+  setPixel(twoTone, 0, 0, [255, 0, 0])
+  setPixel(twoTone, 1, 1, [0, 0, 255])
+  const whole = [
+    { x: 0, y: 0 },
+    { x: 2, y: 0 },
+    { x: 2, y: 2 },
+    { x: 0, y: 2 },
+  ] as const
+  const oneCell = (m: SampleMode) => getPixel(sampleQuad(twoTone, [...whole], 1, 1, m), 0, 0)
+  check('四角 · 中心点只取格中心那一个像素', oneCell('center').slice(0, 3).join() === '0,0,255', oneCell('center').slice(0, 3).join())
+  check('四角 · 平均把整格混起来', oneCell('mean').slice(0, 3).join() === '64,0,64', oneCell('mean').slice(0, 3).join())
 
   const dc = defaultCorners(200, 200)
   check('默认四角向内收缩 20%', Math.abs(dc[0].x - 40) < 1e-6 && Math.abs(dc[2].y - 160) < 1e-6)

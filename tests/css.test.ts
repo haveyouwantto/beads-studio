@@ -392,7 +392,17 @@ section('响应式断点')
   check('主界面图纸限高用 dvh', value('', '.canvas-wrap.pattern-host .pattern-svg svg', 'max-height') === '54dvh')
   check('主界面图纸有留白', value('', '.canvas-wrap.pattern-host .pattern-svg', 'padding') === 'var(--sp-3)')
   // 画布与预览框一起等比缩进容器，内容只留边不拉伸
-  check('预览画布用 contain', value('', '.canvas-wrap.fit .overlay-host > canvas:not(.handle-layer)', 'object-fit') === 'contain')
+  check(
+    '预览画布用 contain',
+    value('', '.canvas-wrap.fit .overlay-host > canvas:not(.handle-layer):not(.grid-layer)', 'object-fit') === 'contain',
+  )
+  // 四角变换的内部网格：单独一层反色（白色 + 差值混合），压在照片上也看得见
+  check(
+    '四角网格用反色混合',
+    value('', '.overlay-host > canvas.grid-layer', 'mix-blend-mode') === 'difference',
+    value('', '.overlay-host > canvas.grid-layer', 'mix-blend-mode'),
+  )
+  check('四角网格层不挡鼠标', value('', '.overlay-host > canvas.grid-layer', 'pointer-events') === 'none')
 }
 
 console.log(`\n${'─'.repeat(52)}`)

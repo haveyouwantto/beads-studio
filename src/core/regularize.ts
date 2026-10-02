@@ -296,6 +296,38 @@ export function findPhase(projection: Float64Array, period: number): number {
   return bestPhase
 }
 
+/**
+ * 把一串像素样本按取样方式合成一个颜色。
+ * `center` 不在这里 —— 它只要格中心那一个点，由调用方直接取。
+ */
+export function aggregateSamples(samples: number[][], mode: SampleMode): [number, number, number, number] {
+  if (!samples.length) return [0, 0, 0, 255]
+
+  const rs: number[] = []
+  const gs: number[] = []
+  const bs: number[] = []
+  const as: number[] = []
+  for (const c of samples) {
+    rs.push(c[0])
+    gs.push(c[1])
+    bs.push(c[2])
+    as.push(c[3])
+  }
+
+  switch (mode) {
+    case 'mean':
+      return [arithmeticMean(rs), arithmeticMean(gs), arithmeticMean(bs), arithmeticMean(as)]
+    case 'median':
+      return [medianValue(rs), medianValue(gs), medianValue(bs), medianValue(as)]
+    case 'geometric':
+      return [geometricMean(rs), geometricMean(gs), geometricMean(bs), arithmeticMean(as)]
+    case 'mode':
+      return modeColor(samples)
+    default:
+      return [arithmeticMean(rs), arithmeticMean(gs), arithmeticMean(bs), arithmeticMean(as)]
+  }
+}
+
 /** 格内取样：center 单独处理，其余模式收集整格像素（不做 trim / 丢弃） */
 function sampleCell(
   source: Uint8ClampedArray,
@@ -326,31 +358,7 @@ function sampleCell(
       samples.push([source[p], source[p + 1], source[p + 2], source[p + 3]])
     }
   }
-  if (!samples.length) return [0, 0, 0, 255]
-
-  const rs: number[] = []
-  const gs: number[] = []
-  const bs: number[] = []
-  const as: number[] = []
-  for (const c of samples) {
-    rs.push(c[0])
-    gs.push(c[1])
-    bs.push(c[2])
-    as.push(c[3])
-  }
-
-  switch (mode) {
-    case 'mean':
-      return [arithmeticMean(rs), arithmeticMean(gs), arithmeticMean(bs), arithmeticMean(as)]
-    case 'median':
-      return [medianValue(rs), medianValue(gs), medianValue(bs), medianValue(as)]
-    case 'geometric':
-      return [geometricMean(rs), geometricMean(gs), geometricMean(bs), arithmeticMean(as)]
-    case 'mode':
-      return modeColor(samples)
-    default:
-      return [arithmeticMean(rs), arithmeticMean(gs), arithmeticMean(bs), arithmeticMean(as)]
-  }
+  return aggregateSamples(samples, mode)
 }
 
 export interface SampleResult {

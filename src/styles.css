@@ -1079,6 +1079,16 @@ input[type='checkbox'] {
   touch-action: none;
 }
 
+/* 四角变换的内部网格：白色 + 差值混合 = 反色，深浅底图上都看得见 */
+.overlay-host > canvas.grid-layer {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  pointer-events: none;
+  mix-blend-mode: difference;
+}
+
 .progress {
   height: 8px;
   border-radius: 999px;
@@ -2503,7 +2513,7 @@ button.btn-floating.disabled {
   max-height: 58dvh !important;
 }
 
-.canvas-wrap.fit .overlay-host > canvas:not(.handle-layer) {
+.canvas-wrap.fit .overlay-host > canvas:not(.handle-layer):not(.grid-layer) {
   object-fit: contain;
 }
 

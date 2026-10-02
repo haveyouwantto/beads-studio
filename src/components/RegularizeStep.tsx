@@ -121,6 +121,7 @@ export function RegularizeStep({ onOpenFile }: { onOpenFile: () => void }) {
   const [dragging, setDragging] = useState(-1)
   const imgRef = useRef<HTMLCanvasElement>(null)
   const overlayRef = useRef<HTMLCanvasElement>(null)
+  const gridLayerRef = useRef<HTMLCanvasElement>(null)
   const gridRef = useRef<HTMLCanvasElement>(null)
 
   const scale = useMemo(() => {
@@ -137,7 +138,7 @@ export function RegularizeStep({ onOpenFile }: { onOpenFile: () => void }) {
     drawPixmap(imgRef.current, source.pixmap, scale, scale < 1)
   }, [source, scale])
 
-  // 覆盖层：自动模式画网格，四角模式画控制点
+  // 覆盖层：只画四角的框和四个控制点（网格在下面那层反色网格上）
   useEffect(() => {
     const canvas = overlayRef.current
     if (!source || !canvas) return
@@ -147,10 +148,47 @@ export function RegularizeStep({ onOpenFile }: { onOpenFile: () => void }) {
     if (!ctx) return
     ctx.clearRect(0, 0, viewW, viewH)
 
-    if (alignmentMode === 'auto' && analysis) {
-      ctx.strokeStyle = 'rgba(120,200,255,0.55)'
-      ctx.lineWidth = 1
+    if (alignmentMode === 'quad') {
+      const pts = corners.map((p) => ({ x: p.x * scale, y: p.y * scale }))
+      ctx.strokeStyle = 'rgba(139,92,246,0.95)'
+      ctx.lineWidth = 2
       ctx.beginPath()
+      ctx.moveTo(pts[0].x, pts[0].y)
+      for (let i = 1; i < pts.length; i++) ctx.lineTo(pts[i].x, pts[i].y)
+      ctx.closePath()
+      ctx.stroke()
+
+      pts.forEach((p, i) => {
+        ctx.fillStyle = i === dragging ? '#ffffff' : '#ff2d78'
+        ctx.beginPath()
+        ctx.arc(p.x, p.y, 7, 0, Math.PI * 2)
+        ctx.fill()
+        ctx.strokeStyle = '#fff'
+        ctx.lineWidth = 2
+        ctx.stroke()
+      })
+    }
+  }, [source, alignmentMode, corners, scale, viewW, viewH, dragging])
+
+  /**
+   * 网格单独一层：画白色 + CSS 差值混合 —— 也就是反色。
+   * 自动识别的格线、四角变换的内部格线都画在这里：
+   * 以前一个用 55% 蓝、一个用 18% 白，压在照片上都不明显，反色后深底浅底都清楚。
+   */
+  useEffect(() => {
+    const canvas = gridLayerRef.current
+    if (!canvas || !source) return
+    canvas.width = viewW
+    canvas.height = viewH
+    const ctx = canvas.getContext('2d')
+    if (!ctx) return
+    ctx.clearRect(0, 0, viewW, viewH)
+
+    ctx.strokeStyle = '#ffffff'
+    ctx.lineWidth = 1
+    ctx.beginPath()
+
+    if (alignmentMode === 'auto' && analysis) {
       const startX = ((phaseX % periodX) + periodX) % periodX
       for (let x = startX; x < source.width; x += periodX) {
         ctx.moveTo(x * scale, 0)
@@ -169,23 +207,8 @@ export function RegularizeStep({ onOpenFile }: { onOpenFile: () => void }) {
         ctx.moveTo(0, y * scale)
         ctx.lineTo(viewW, y * scale)
       }
-      ctx.stroke()
-    }
-
-    if (alignmentMode === 'quad') {
+    } else if (alignmentMode === 'quad') {
       const pts = corners.map((p) => ({ x: p.x * scale, y: p.y * scale }))
-      ctx.strokeStyle = 'rgba(139,92,246,0.95)'
-      ctx.lineWidth = 2
-      ctx.beginPath()
-      ctx.moveTo(pts[0].x, pts[0].y)
-      for (let i = 1; i < pts.length; i++) ctx.lineTo(pts[i].x, pts[i].y)
-      ctx.closePath()
-      ctx.stroke()
-
-      // 内部网格辅助线
-      ctx.strokeStyle = 'rgba(255,255,255,0.18)'
-      ctx.lineWidth = 1
-      ctx.beginPath()
       const steps = Math.min(24, Math.max(4, Math.round(manualCols / 2)))
       for (let i = 1; i < steps; i++) {
         const u = i / steps
@@ -205,19 +228,9 @@ export function RegularizeStep({ onOpenFile }: { onOpenFile: () => void }) {
         ctx.moveTo(lx, ly)
         ctx.lineTo(rx, ry)
       }
-      ctx.stroke()
-
-      pts.forEach((p, i) => {
-        ctx.fillStyle = i === dragging ? '#ffffff' : '#ff2d78'
-        ctx.beginPath()
-        ctx.arc(p.x, p.y, 7, 0, Math.PI * 2)
-        ctx.fill()
-        ctx.strokeStyle = '#fff'
-        ctx.lineWidth = 2
-        ctx.stroke()
-      })
     }
-  }, [source, alignmentMode, analysis, corners, periodX, periodY, phaseX, phaseY, scale, viewW, viewH, manualCols, dragging])
+    ctx.stroke()
+  }, [source, alignmentMode, analysis, corners, scale, viewW, viewH, manualCols, periodX, periodY, phaseX, phaseY])
 
   // 规范化结果
   useEffect(() => {
@@ -307,6 +320,7 @@ export function RegularizeStep({ onOpenFile }: { onOpenFile: () => void }) {
                 画布和覆盖层用同一个尺寸，四角控制点才不会错位。 */}
             <div className="overlay-host" style={{ width: viewW, height: viewH }}>
               <canvas ref={imgRef} />
+              <canvas ref={gridLayerRef} className="grid-layer" />
               <canvas
                 ref={overlayRef}
                 className="handle-layer"
@@ -393,17 +407,21 @@ export function RegularizeStep({ onOpenFile }: { onOpenFile: () => void }) {
             />
           </Field>
 
+          {/* 取样方式对自动识别和四角变换都适用（直接 1:1 是一像素一颗豆，没有格内可谈） */}
+          {alignmentMode !== 'direct' && (
+            <Field label="格内取样方式">
+              <select value={sampleMode} onChange={(e) => setSampleMode(e.target.value as SampleMode)}>
+                {(Object.keys(SAMPLE_MODE_LABELS) as SampleMode[]).map((m) => (
+                  <option key={m} value={m}>
+                    {SAMPLE_MODE_LABELS[m]}
+                  </option>
+                ))}
+              </select>
+            </Field>
+          )}
+
           {alignmentMode === 'auto' && (
             <>
-              <Field label="格内取样方式">
-                <select value={sampleMode} onChange={(e) => setSampleMode(e.target.value as SampleMode)}>
-                  {(Object.keys(SAMPLE_MODE_LABELS) as SampleMode[]).map((m) => (
-                    <option key={m} value={m}>
-                      {SAMPLE_MODE_LABELS[m]}
-                    </option>
-                  ))}
-                </select>
-              </Field>
               <Field label="X 周期（像素/格）" value={periodX.toFixed(2)}>
                 <input
                   type="range"

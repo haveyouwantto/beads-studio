@@ -979,6 +979,53 @@ section('编辑提示：盖住规范化的强制确认')
   }
 }
 
+section('规范化 · 格内取样方式')
+{
+  useStudio.getState().setStage('regularize')
+  await flush()
+  useStudio.getState().setAlignmentMode('quad')
+  await flush(20)
+
+  const host = dom.window.document.createElement('div')
+  dom.window.document.body.appendChild(host)
+  const root3 = createRoot(host)
+  root3.render(React.createElement(RegularizeStep, { onOpenFile: () => undefined }))
+  await flush(20)
+
+  const findSampleSelect = () =>
+    [...host.querySelectorAll('select')].find((s) => (s.textContent ?? '').includes('中心点')) as
+      | HTMLSelectElement
+      | undefined
+
+  const quadSelect = findSampleSelect()
+  check('四角变换也有「格内取样方式」', Boolean(quadSelect))
+  check('取样方式有五种', quadSelect?.options.length === 5, String(quadSelect?.options.length))
+  check('默认是中心点', useStudio.getState().sampleMode === 'center', useStudio.getState().sampleMode)
+
+  if (quadSelect) {
+    const setter = Object.getOwnPropertyDescriptor(dom.window.HTMLSelectElement.prototype, 'value')?.set
+    setter?.call(quadSelect, 'median')
+    quadSelect.dispatchEvent(new dom.window.Event('change', { bubbles: true }))
+    await flush(20)
+  }
+  check('四角下改取样方式写回 store', useStudio.getState().sampleMode === 'median', useStudio.getState().sampleMode)
+
+  useStudio.getState().setAlignmentMode('auto')
+  await flush(30)
+  check('自动识别下也能选取样方式', Boolean(findSampleSelect()))
+
+  useStudio.getState().setAlignmentMode('direct')
+  await flush(20)
+  check('直接 1:1 不需要取样方式', findSampleSelect() === undefined)
+
+  useStudio.getState().setSampleMode('center')
+  useStudio.getState().setAlignmentMode('auto')
+  await flush(20)
+  root3.unmount()
+  await flush()
+  host.remove()
+}
+
 section('候选色方案')
 {
   const lib = useStudio.getState().libraryPalette

@@ -319,7 +319,7 @@ function freshProject(): ProjectState {
     periodY: 1,
     phaseX: 0,
     phaseY: 0,
-    sampleMode: 'mean',
+    sampleMode: 'center',
     corners: defaultCorners(1, 1),
     manualCols: DEFAULT_QUAD_SIZE,
     manualRows: DEFAULT_QUAD_SIZE,
@@ -813,7 +813,7 @@ export const useStudio = create<StudioState>((set, get) => ({
       )
       grid = out.pixmap
     } else if (state.alignmentMode === 'quad') {
-      grid = sampleQuad(src.pixmap, state.corners, state.manualCols, state.manualRows)
+      grid = sampleQuad(src.pixmap, state.corners, state.manualCols, state.manualRows, state.sampleMode)
     } else {
       grid =
         state.directBlock > 1
