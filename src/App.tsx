@@ -11,7 +11,7 @@ import { MenuDrawer, type DrawerItem } from './components/MenuDrawer.tsx'
 import { STAGE_META, STAGE_ORDER } from './components/stages.ts'
 import { BeadLogo } from './components/BeadLogo.tsx'
 import { Notice, useMaterialRipple } from './components/ui.tsx'
-import { packPixels, unpackPixels, downloadText, type ProjectFile } from './core/export.ts'
+import { packPixels, unpackPixels, downloadText, safeFileName, type ProjectFile } from './core/export.ts'
 import { formatTime } from './core/storage.ts'
 
 const STAGES = STAGE_ORDER.map((id) => ({ id, ...STAGE_META[id] }))
@@ -110,6 +110,7 @@ export default function App() {
       app: 'beads-studio',
       version: 1,
       savedAt: new Date().toISOString(),
+      name: s.tabs.find((t) => t.id === s.activeTabId)?.name ?? '未命名项目',
       activeStage: s.activeStage,
       edited: s.edited,
       grid: s.grid ? { width: s.grid.width, height: s.grid.height, data: packPixels(s.grid) } : undefined,
@@ -122,7 +123,8 @@ export default function App() {
         optimizeTargetMode: s.optimizeTargetMode,
       },
     }
-    downloadText(JSON.stringify(project), `beads-studio-${Date.now()}.json`, 'application/json')
+    // 文件名用项目名，别让一堆导出都叫 beads-xxxx
+    downloadText(JSON.stringify(project), `${safeFileName(project.name ?? '未命名项目')}.json`, 'application/json')
   }
 
   const loadProject = async (file: File) => {
@@ -159,6 +161,10 @@ export default function App() {
         })
       }
       useStudio.getState().recomputeResult()
+      // 存档里的项目名：导入后当前标签页跟着改名
+      if (typeof project.name === 'string' && project.name.trim()) {
+        useStudio.getState().renameTab(useStudio.getState().activeTabId, project.name.trim())
+      }
       // 存档里记了当时停在哪一步，导入后直接跳过去
       const stage = project.activeStage
       if (stage && STAGE_ORDER.includes(stage as StageId)) {

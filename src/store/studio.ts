@@ -25,6 +25,7 @@ import {
   readCandidateSets,
   readSession,
   readProject,
+  renameProjectEntry,
   removeProject,
   saveProject,
   writeCandidateSets,
@@ -399,7 +400,8 @@ function persistSession(s: StudioState): void {
  */
 const tabSnapshots = new Map<string, ProjectState>()
 
-function tabNameOf(s: StudioState): string {
+/** 当前项目的名字（就是标签页标题）：导出文件名等地方用 */
+export function tabNameOf(s: StudioState): string {
   return s.tabs.find((t) => t.id === s.activeTabId)?.name ?? NEW_TAB_NAME
 }
 
@@ -1157,7 +1159,11 @@ export const useStudio = create<StudioState>((set, get) => ({
   },
 
   renameTab: (id, name) => {
-    set({ tabs: withRenamedTab(get().tabs, id, name || NEW_TAB_NAME) })
+    const next = name.trim() || NEW_TAB_NAME
+    set({ tabs: withRenamedTab(get().tabs, id, next) })
+    // 最近项目列表里的名字也跟着改（只动索引那一条，不重写整个项目）
+    renameProjectEntry(id, next)
+    set({ recent: listProjects() })
     persistSession(get())
   },
 

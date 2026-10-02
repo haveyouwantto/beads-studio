@@ -40,7 +40,7 @@ import {
 } from '../src/core/palette.ts'
 import { PaletteOptimizer, targetsFromPixmap, DEFAULT_OPTIMIZE_CONFIG } from '../src/core/optimize.ts'
 import { deltaE, hexToRgb, rgbToHex, rgbToLab } from '../src/core/color.ts'
-import { packPixels, unpackPixels } from '../src/core/export.ts'
+import { packPixels, safeFileName, unpackPixels } from '../src/core/export.ts'
 import {
   buildPatternSvg,
   clampPreviewCellSize,
@@ -254,6 +254,12 @@ const fullpalette = buildLibraryPalette({ includeExtended: true })
       parsePaletteText('B02', palette, 'COCO')[0] !== '#63F347',
   )
   check('解析结果随色号体系可取回色号', codeOf({ hex: '#FAF4C8', rgb: hexToRgb('#FAF4C8'), lab: rgbToLab(hexToRgb('#FAF4C8')), codes: { MARD: 'A01' } }, 'MARD') === 'A01')
+
+  // 下载文件名：项目名里可能有文件名不允许的字符
+  check('文件名去掉非法字符', safeFileName('a/b:c*d?e"f<g>h|i') === 'a b c d e f g h i', safeFileName('a/b:c*d?e"f<g>h|i'))
+  check('文件名不留开头的点', safeFileName('...隐藏名') === '隐藏名', safeFileName('...隐藏名'))
+  check('文件名空时用兜底', safeFileName('   ') === 'beads-studio', safeFileName('   '))
+  check('正常中文名原样保留', safeFileName('小狐狸 拼豆') === '小狐狸 拼豆', safeFileName('小狐狸 拼豆'))
 }
 
 section('基础 24 / 48 色与 wplace 色板')

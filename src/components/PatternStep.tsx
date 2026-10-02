@@ -1,5 +1,5 @@
 import { useMemo, useState } from 'react'
-import { useStudio } from '../store/studio.ts'
+import { tabNameOf, useStudio } from '../store/studio.ts'
 import { Check, Empty, Field, Notice, Panel, Segmented, Stat, Swatch } from './ui.tsx'
 import { buildHexLookup } from '../core/render.ts'
 import {
@@ -30,6 +30,7 @@ import {
   buildPaletteExport,
   downloadBlob,
   downloadText,
+  safeFileName,
 } from '../core/export.ts'
 import { STAGE_META } from './stages.ts'
 
@@ -56,6 +57,9 @@ export function PatternStep({ onOpenFullscreen }: { onOpenFullscreen: () => void
   const setCodeSystem = useStudio((s) => s.setCodeSystem)
   const optimizedPalette = useStudio((s) => s.optimizedPalette)
   const libraryPalette = useStudio((s) => s.libraryPalette)
+  // 导出文件名用项目名，别让一堆导出都叫 beads-xxxx
+  const projectName = useStudio(tabNameOf)
+  const fileBase = safeFileName(projectName)
 
   const [pasteText, setPasteText] = useState('')
   const [exportScale, setExportScale] = useState(2)
@@ -126,7 +130,7 @@ export function PatternStep({ onOpenFullscreen }: { onOpenFullscreen: () => void
     setBusy(true)
     try {
       const blob = await svgToPngBlob(fullPattern.svg, fullPattern.width, fullPattern.height, exportScale)
-      downloadBlob(blob, `beads-chart-${result.width}x${result.height}@${exportScale}x.png`)
+      downloadBlob(blob, `${fileBase}-图纸-${result.width}x${result.height}@${exportScale}x.png`)
     } catch (err) {
       useStudio.setState({ error: err instanceof Error ? err.message : 'PNG 导出失败' })
     } finally {
@@ -136,7 +140,7 @@ export function PatternStep({ onOpenFullscreen }: { onOpenFullscreen: () => void
 
   const exportChartSvg = () => {
     if (!result || !fullPattern) return
-    downloadText(fullPattern.svg, `beads-chart-${result.width}x${result.height}.svg`, 'image/svg+xml')
+    downloadText(fullPattern.svg, `${fileBase}-图纸-${result.width}x${result.height}.svg`, 'image/svg+xml')
   }
 
   const exportPixelPng = () => {
@@ -151,7 +155,7 @@ export function PatternStep({ onOpenFullscreen }: { onOpenFullscreen: () => void
     if (!ctx) return
     ctx.putImageData(new ImageData(new Uint8ClampedArray(withAlpha.data), result.width, result.height), 0, 0)
     canvas.toBlob((blob) => {
-      if (blob) downloadBlob(blob, 'beads-pixel-1x1.png')
+      if (blob) downloadBlob(blob, `${fileBase}-像素图-${result.width}x${result.height}.png`)
     }, 'image/png')
   }
 
@@ -260,7 +264,7 @@ export function PatternStep({ onOpenFullscreen }: { onOpenFullscreen: () => void
               <button
                 className="btn-flat btn-small waves-effect"
                 disabled={!bom.length}
-                onClick={() => downloadText(bomToCsv(bom, 'Beads Studio 用料清单'), 'beads-bom.csv', 'text/csv')}
+                onClick={() => downloadText(bomToCsv(bom, `${projectName} 用料清单`), `${fileBase}-用料清单.csv`, 'text/csv')}
               >
                 导出 CSV
               </button>
@@ -268,7 +272,7 @@ export function PatternStep({ onOpenFullscreen }: { onOpenFullscreen: () => void
                 className="btn-flat btn-small waves-effect"
                 disabled={!bom.length}
                 onClick={() =>
-                  downloadText(buildPaletteExport(palette, codeSystem, 'code'), `beads-codes-${codeSystem}.txt`)
+                  downloadText(buildPaletteExport(palette, codeSystem, 'code'), `${fileBase}-色号-${codeSystem}.txt`)
                 }
               >
                 导出用到的色号

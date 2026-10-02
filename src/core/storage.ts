@@ -265,6 +265,16 @@ export function listProjects(): IndexEntry[] {
   return readIndex().sort((a, b) => b.savedAt - a.savedAt)
 }
 
+/**
+ * 改个名字：只动索引里那一条。
+ * 改名不该把整个项目（含原图 PNG）重写一遍，那太贵了。
+ */
+export function renameProjectEntry(id: string, name: string): void {
+  const entries = readIndex()
+  if (!entries.some((e) => e.id === id)) return
+  writeIndex(entries.map((e) => (e.id === id ? { ...e, name } : e)))
+}
+
 export function readProject(id: string): ProjectRecord | null {
   const ls = safeStorage()
   if (!ls) return null

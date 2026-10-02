@@ -1155,6 +1155,81 @@ section('重启应用后恢复上次会话')
   stop()
 }
 
+section('项目名：改名与导出文件名')
+{
+  // 点当前标签的名字 = 就地改名（以前只有双击，基本发现不了）
+  const tabHost = dom.window.document.createElement('div')
+  dom.window.document.body.appendChild(tabHost)
+  const tabRoot = createRoot(tabHost)
+  tabRoot.render(React.createElement(TabBar, { onRequestFile: () => undefined }))
+  await flush()
+
+  const activeId = useStudio.getState().activeTabId
+  const nameEl = tabHost.querySelector('.tab.active .tab-name') as HTMLElement | null
+  check('标签栏有当前标签', Boolean(nameEl))
+  check('一开始没有改名输入框', !tabHost.querySelector('.tab-rename'))
+  nameEl?.click()
+  await flush()
+  const renameInput = tabHost.querySelector('.tab-rename') as HTMLInputElement | null
+  check('点一下当前标签的名字就进改名', Boolean(renameInput), tabHost.innerHTML.slice(0, 120))
+
+  if (renameInput) {
+    const setter = Object.getOwnPropertyDescriptor(dom.window.HTMLInputElement.prototype, 'value')?.set
+    setter?.call(renameInput, '小狐狸拼豆')
+    renameInput.dispatchEvent(new dom.window.Event('input', { bubbles: true }))
+    renameInput.dispatchEvent(new dom.window.KeyboardEvent('keydown', { key: 'Enter', bubbles: true }))
+    await flush()
+  }
+  check(
+    '改完名字写回标签页',
+    useStudio.getState().tabs.find((t) => t.id === activeId)?.name === '小狐狸拼豆',
+    String(useStudio.getState().tabs.find((t) => t.id === activeId)?.name),
+  )
+  check(
+    '最近项目里的名字也跟着改',
+    storage.listProjects().some((e) => e.id === activeId && e.name === '小狐狸拼豆'),
+    JSON.stringify(storage.listProjects().map((e) => e.name)),
+  )
+  tabRoot.unmount()
+  await flush()
+  tabHost.remove()
+
+  // 导出文件：文件名用项目名，存档里也要有名字
+  const realBlob = (globalThis as unknown as { Blob: typeof Blob }).Blob
+  let exportedJson = ''
+  class CapturingBlob extends realBlob {
+    constructor(parts: BlobPart[] = [], options?: BlobPropertyBag) {
+      super(parts, options)
+      exportedJson = String(parts[0] ?? '')
+    }
+  }
+  ;(globalThis as unknown as { Blob: typeof Blob }).Blob = CapturingBlob
+  ;(dom.window as unknown as { Blob: unknown }).Blob = CapturingBlob
+
+  const anchorProto = dom.window.HTMLAnchorElement.prototype as unknown as { click: () => void }
+  const realClick = anchorProto.click
+  let downloadName = ''
+  anchorProto.click = function (this: HTMLAnchorElement) {
+    downloadName = this.download
+  }
+
+  const exportBtn = [...container.querySelectorAll('.topbar-actions button')].find(
+    (b) => b.getAttribute('aria-label') === '导出文件',
+  ) as HTMLButtonElement | undefined
+  check('顶栏有导出文件按钮', Boolean(exportBtn))
+  check('有网格时导出可用', exportBtn?.disabled === false)
+  exportBtn?.click()
+  await flush()
+
+  anchorProto.click = realClick
+  ;(globalThis as unknown as { Blob: typeof Blob }).Blob = realBlob
+  ;(dom.window as unknown as { Blob: unknown }).Blob = realBlob
+
+  check('下载文件名用项目名', downloadName === '小狐狸拼豆.json', downloadName)
+  const saved = JSON.parse(exportedJson || '{}') as { name?: string }
+  check('存档里记下了项目名', saved.name === '小狐狸拼豆', String(saved.name))
+}
+
 console.log(`\n${'─'.repeat(52)}`)
 console.log(`通过 ${passed} 项，失败 ${failed} 项`)
 if (failures.length) console.log(`失败项：${failures.join('、')}`)

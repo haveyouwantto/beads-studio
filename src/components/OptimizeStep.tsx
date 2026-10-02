@@ -1,9 +1,9 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
-import { useStudio } from '../store/studio.ts'
+import { tabNameOf, useStudio } from '../store/studio.ts'
 import { Check, Empty, Field, Notice, Panel, Segmented, Stat, Swatch } from './ui.tsx'
 import { targetsFromPixmap } from '../core/optimize.ts'
 import { CODE_SYSTEMS, codeOf, compareByCode, swatchHex, type CodeSystem, type PaletteEntry } from '../core/palette.ts'
-import { buildPaletteExport, downloadText } from '../core/export.ts'
+import { buildPaletteExport, downloadText, safeFileName } from '../core/export.ts'
 import { drawPixmap } from '../core/render.ts'
 import { CandidateColorsDialog } from './CandidateColorsDialog.tsx'
 import { STAGE_META } from './stages.ts'
@@ -35,6 +35,8 @@ export function OptimizeStep() {
   const candidateHex = useStudio((s) => s.candidateHex)
   const candidateCount = candidateHex.length ? candidateHex.length : libraryPalette.length
   const candidateSets = useStudio((s) => s.candidateSets)
+  // 导出文件名用项目名
+  const projectName = useStudio(tabNameOf)
 
   // 优化目标预览：直接来自「规范化」的网格
   const targetInfo = useMemo(() => (grid ? targetsFromPixmap(grid, { maxTargets: 1200 }) : null), [grid])
@@ -195,14 +197,20 @@ export function OptimizeStep() {
               <div className="row tight">
                 <button
                   className="btn-flat btn-small waves-effect"
-                  onClick={() => downloadExport(sortedResult, codeSystem, 'json')}
+                  onClick={() => downloadExport(sortedResult, codeSystem, 'json', projectName)}
                 >
                   导出 JSON
                 </button>
-                <button className="btn-flat btn-small waves-effect" onClick={() => downloadExport(sortedResult, codeSystem, 'hex')}>
+                <button
+                  className="btn-flat btn-small waves-effect"
+                  onClick={() => downloadExport(sortedResult, codeSystem, 'hex', projectName)}
+                >
                   导出 HEX 列表
                 </button>
-                <button className="btn-flat btn-small waves-effect" onClick={() => downloadExport(sortedResult, codeSystem, 'code')}>
+                <button
+                  className="btn-flat btn-small waves-effect"
+                  onClick={() => downloadExport(sortedResult, codeSystem, 'code', projectName)}
+                >
                   导出色号列表
                 </button>
               </div>
@@ -370,9 +378,10 @@ function downloadExport(
   entries: PaletteEntry[],
   system: CodeSystem,
   format: 'json' | 'hex' | 'code',
+  projectName: string,
 ) {
   const text = buildPaletteExport(entries, system, format)
   const ext = format === 'json' ? 'json' : 'txt'
   const mime = format === 'json' ? 'application/json' : 'text/plain'
-  downloadText(text, `palette-${system}.${ext}`, mime)
+  downloadText(text, `${safeFileName(projectName)}-色板-${system}.${ext}`, mime)
 }
