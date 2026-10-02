@@ -40,7 +40,7 @@ import {
 } from '../src/core/palette.ts'
 import { PaletteOptimizer, targetsFromPixmap, DEFAULT_OPTIMIZE_CONFIG } from '../src/core/optimize.ts'
 import { deltaE, hexToRgb, rgbToHex, rgbToLab } from '../src/core/color.ts'
-import { packPixels, safeFileName, unpackPixels } from '../src/core/export.ts'
+import { buildPaletteExport, packPixels, safeFileName, unpackPixels } from '../src/core/export.ts'
 import {
   buildPatternSvg,
   clampPreviewCellSize,
@@ -260,6 +260,23 @@ const fullpalette = buildLibraryPalette({ includeExtended: true })
   check('文件名不留开头的点', safeFileName('...隐藏名') === '隐藏名', safeFileName('...隐藏名'))
   check('文件名空时用兜底', safeFileName('   ') === 'beads-studio', safeFileName('   '))
   check('正常中文名原样保留', safeFileName('小狐狸 拼豆') === '小狐狸 拼豆', safeFileName('小狐狸 拼豆'))
+
+  // 导出的色板 JSON：版本号得是自己的（以前写着原工具的 '3.0'）
+  const three = palette.slice(0, 3)
+  const paletteJson = JSON.parse(buildPaletteExport(three, 'MARD', 'json')) as Record<string, unknown>
+  check(
+    '色板 JSON 带 app 与 version=1',
+    paletteJson.app === 'beads-studio' && paletteJson.version === 1,
+    JSON.stringify({ app: paletteJson.app, version: paletteJson.version }),
+  )
+  check('色板 JSON 里没有 3.0', !buildPaletteExport(three, 'MARD', 'json').includes('3.0'))
+  check('色板 JSON 记下色号体系与数量', paletteJson.codeSystem === 'MARD' && paletteJson.totalColors === 3)
+  check('色板 JSON 里颜色按色号排好', (paletteJson.codes as { code: string }[]).map((c) => c.code).join() === three.map((e) => e.codes.MARD).join())
+  check(
+    'HEX / 色号导出各一行',
+    buildPaletteExport(three, 'MARD', 'hex').split('\n').length === 3 &&
+      buildPaletteExport(three, 'MARD', 'code').split('\n').length === 3,
+  )
 }
 
 section('基础 24 / 48 色与 wplace 色板')

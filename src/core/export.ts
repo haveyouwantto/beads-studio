@@ -81,7 +81,10 @@ export function buildPaletteExport(
   if (format === 'json') {
     return JSON.stringify(
       {
-        version: '3.0',
+        // 本工具自己的格式版本，和项目存档一样从 1 起
+        // （旧的 '3.0' 是从原「配色采样器」搬过来的字面量，跟这里没关系）
+        app: 'beads-studio',
+        version: 1,
         codeSystem: system,
         exportDate: new Date().toISOString(),
         totalColors: sorted.length,
