@@ -972,6 +972,36 @@ section('像素编辑（第 2 步）')
     check('移动工具拖动不画画', cellPx2(useStudio.getState().grid as Pixmap, 8, 0) === beforePan)
     check('移动工具拖动滚动画布', wrap.scrollLeft > 50, String(wrap.scrollLeft))
 
+    // 「移动」工具下双指张开 = 放大画布（格子变大）
+    const cellNow = () => Number((host.querySelector('input[type=range]') as HTMLInputElement).value)
+    const beforeZoom = cellNow()
+    await act(async () => {
+      send('pointerdown', 5, 4, 4)
+      send('pointerdown', 6, 6, 4)
+      send('pointermove', 5, 2, 4)
+      send('pointermove', 6, 8, 4)
+      send('pointerup', 5, 2, 4)
+      send('pointerup', 6, 8, 4)
+    })
+    await flush(20)
+    check('移动工具双指张开把画布放大', cellNow() > beforeZoom, `格子 ${beforeZoom} → ${cellNow()}`)
+    check('放大后画布跟着变大', canvas.width === g.width * cellNow(), `${canvas.width} / 期望 ${g.width * cellNow()}`)
+
+    // 画笔 / 填充工具下双指只滚动，不缩放
+    useStudio.setState({ editTool: 'paint' })
+    await flush()
+    const beforeNoZoom = cellNow()
+    await act(async () => {
+      send('pointerdown', 7, 4, 4)
+      send('pointerdown', 8, 6, 4)
+      send('pointermove', 7, 2, 4)
+      send('pointermove', 8, 8, 4)
+      send('pointerup', 7, 2, 4)
+      send('pointerup', 8, 8, 4)
+    })
+    await flush(20)
+    check('画笔工具下双指不缩放', cellNow() === beforeNoZoom, `格子 ${beforeNoZoom} → ${cellNow()}`)
+
     useStudio.setState({ editTool: 'paint', editColor: '#000000' })
     await flush()
   }

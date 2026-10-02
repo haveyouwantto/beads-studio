@@ -60,6 +60,12 @@ export function EditStep() {
   const pointers = useRef(new Map<number, { x: number; y: number }>())
   /** 平移中：上一次的手指中点（屏幕坐标） */
   const panFrom = useRef<{ x: number; y: number } | null>(null)
+  /** 双指间距（屏幕像素）：只有「移动」工具用它做缩放 */
+  const pinchDist = useRef(0)
+  /** 缩放前后要摆回原处的那一点：屏幕坐标 + 它缩放前的内容坐标 + 倍数 */
+  const zoomAnchor = useRef<{ screen: { x: number; y: number }; content: { x: number; y: number }; ratio: number } | null>(
+    null,
+  )
 
   const color = useStudio((s) => s.editColor)
   const setColor = useStudio((s) => s.setEditColor)
@@ -70,6 +76,9 @@ export function EditStep() {
   const swatches = useStudio((s) => s.editSwatches)
   const addSwatch = useStudio((s) => s.addEditSwatch)
   const [cell, setCell] = useState(16)
+  /** 格子大小的即时值：同一帧里连续缩放（事件被批处理）时不能靠 state 的旧闭包 */
+  const cellRef = useRef(cell)
+  cellRef.current = cell
   const [version, setVersion] = useState(0)
 
   // 取色对话框：点「+」或右键某个色块时打开，初值就是那个颜色
@@ -188,6 +197,17 @@ export function EditStep() {
     setCell(Math.max(MIN_CELL, Math.min(FIT_MAX_CELL, fit || MIN_CELL)))
   }, [grid?.width, grid?.height])
 
+  // 双指缩放改完格子大小后，把两指中点按住的那块内容摆回原处
+  useEffect(() => {
+    const host = hostRef.current
+    const anchor = zoomAnchor.current
+    if (!host || !anchor) return
+    zoomAnchor.current = null
+    const rect = host.getBoundingClientRect()
+    host.scrollLeft = anchor.content.x * anchor.ratio - (anchor.screen.x - rect.left)
+    host.scrollTop = anchor.content.y * anchor.ratio - (anchor.screen.y - rect.top)
+  }, [cell])
+
   const pushHistory = () => {
     if (!draft.current) return
     strokeStart.current = new Uint8ClampedArray(draft.current)
@@ -237,6 +257,35 @@ export function EditStep() {
     }
   }
 
+  /** 两根手指的间距：缩放按它算倍数 */
+  const pointerSpread = () => {
+    const [a, b] = [...pointers.current.values()]
+    if (!a || !b) return 0
+    return Math.hypot(a.x - b.x, a.y - b.y)
+  }
+
+  /**
+   * 双指缩放：改格子大小，并把两指中点按住的那块内容摆回原位。
+   * 改格子是异步的 state，所以这里只记下锚点，等 cell 生效后在校正 effect 里滚回去。
+   */
+  const zoomBy = (ratio: number, mid: { x: number; y: number } | null) => {
+    if (!Number.isFinite(ratio) || ratio <= 0) return
+    const current = cellRef.current
+    const next = Math.max(MIN_CELL, Math.min(MAX_CELL, Math.round(current * ratio)))
+    if (next === current) return
+    cellRef.current = next
+    const host = hostRef.current
+    if (host && mid) {
+      const rect = host.getBoundingClientRect()
+      zoomAnchor.current = {
+        screen: mid,
+        content: { x: mid.x - rect.left + host.scrollLeft, y: mid.y - rect.top + host.scrollTop },
+        ratio: next / current,
+      }
+    }
+    setCell(next)
+  }
+
   /** 手指落下第二根 = 想滚动：把这一笔已经涂的还原掉，别留孤零零一个点 */
   const cancelStroke = () => {
     if (strokeStart.current && draft.current) {
@@ -260,6 +309,7 @@ export function EditStep() {
     if (pointers.current.size >= 2) {
       cancelStroke()
       panFrom.current = pointerMid()
+      pinchDist.current = pointerSpread()
       return
     }
     if (tool === 'pan') {
@@ -303,6 +353,12 @@ export function EditStep() {
         panScrollable(hostRef.current, panFrom.current.x - mid.x, panFrom.current.y - mid.y)
         panFrom.current = mid
       }
+      // 「移动」工具下双指还能缩放：按两指间距的变化改格子大小
+      if (tool === 'pan' && pointers.current.size >= 2) {
+        const spread = pointerSpread()
+        if (pinchDist.current > 0 && spread > 0) zoomBy(spread / pinchDist.current, mid)
+        pinchDist.current = spread
+      }
       return
     }
 
@@ -332,6 +388,7 @@ export function EditStep() {
     pointers.current.delete(e.pointerId)
     // 手指还有剩就继续平移（换手指时不跳），全松开了才结束
     panFrom.current = pointers.current.size ? pointerMid() : null
+    if (pointers.current.size < 2) pinchDist.current = 0
 
     if (!painting.current) return
     painting.current = false
