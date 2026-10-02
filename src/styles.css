@@ -111,6 +111,11 @@ html,
 body,
 #root {
   height: 100%;
+  /* 手机浏览器的地址栏也算在视口里：100% 用的是「大视口」，
+     于是整块界面比实际可见区域高，底部被浏览器栏盖住。
+     dvh 是「当前真实可见高度」，地址栏收起/展开都会跟着变。
+     不认识 dvh 的浏览器用上面那行 100% 兜底。 */
+  height: 100dvh;
   margin: 0;
 }
 
@@ -486,6 +491,7 @@ button {
 .modal {
   width: min(680px, 100%);
   max-height: min(78vh, 720px);
+  max-height: min(78dvh, 720px);
   display: flex;
   flex-direction: column;
   background: var(--panel);
@@ -1056,6 +1062,7 @@ input[type='checkbox'] {
   place-items: center;
   min-height: 220px;
   max-height: 62vh;
+  max-height: 62dvh;
 }
 
 .canvas-wrap canvas {
@@ -1066,6 +1073,7 @@ input[type='checkbox'] {
 
 .canvas-wrap.fit canvas {
   max-height: 58vh;
+  max-height: 58dvh;
   width: auto;
 }
 
@@ -1085,6 +1093,7 @@ input[type='checkbox'] {
 .canvas-wrap.pattern-host {
   place-items: start;
   max-height: 68vh;
+  max-height: 68dvh;
   padding: 14px;
 }
 
@@ -1840,6 +1849,7 @@ button:disabled {
   display: flex;
   flex-direction: column;
   max-height: 80vh;
+  max-height: 80dvh;
   overflow: hidden;
   top: 10%;
   background-color: var(--md-surface-2);
@@ -2335,6 +2345,7 @@ button:disabled {
   width: 100%;
   height: auto;
   max-height: 54vh;
+  max-height: 54dvh;
 }
 
 /* ---------- 候选色方案 ---------- */
@@ -2413,6 +2424,7 @@ button:disabled {
   height: auto !important;
   max-width: 100% !important;
   max-height: 58vh !important;
+  max-height: 58dvh !important;
 }
 
 .canvas-wrap.fit .overlay-host > canvas:not(.handle-layer) {
@@ -2527,6 +2539,7 @@ button:disabled {
   .modal.open {
     top: 5%;
     max-height: 90vh;
+    max-height: 90dvh;
   }
 
   .modal .modal-content {
@@ -2628,6 +2641,7 @@ button:disabled {
   .modal.open {
     top: 2%;
     max-height: 96vh;
+    max-height: 96dvh;
   }
 
   .stage-head h1 {
@@ -2676,4 +2690,3 @@ button:disabled {
     padding: 0;
   }
 }
-

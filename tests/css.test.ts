@@ -65,6 +65,7 @@ const markup = [
   '<header class="panel-head">面板标题</header>',
   '<div class="card panel"><div class="card-title panel-head">面板标题</div><div class="card-content panel-body">内容</div></div>',
   '<div class="stage-head"><h1><i class="material-icons">palette</i>规范化</h1><p>把图片变成网格</p></div>',
+  '<div id="root"></div>',
   '</body></html>',
 ].join('\n')
 
@@ -220,6 +221,38 @@ section('字体与图纸预览')
   check('图纸预览禁止选中文字', style('.pattern-svg', 'user-select') === 'none', style('.pattern-svg', 'user-select'))
 }
 
+// 手机浏览器的地址栏也算视口：100% / vh 用的是「大视口」，界面会高出可见区域，
+// 底部被浏览器栏盖住。所有整屏高度与限高都要用 dvh（并保留 vh 兜底）。
+section('移动端视口单位')
+{
+  check('根高度用 dvh', style('#root', 'height') === '100dvh', style('#root', 'height'))
+  check('body 高度也用 dvh', style('body', 'height') === '100dvh', style('body', 'height'))
+
+  // 限高都写在样式表里，直接查 CSSOM（这些元素不一定在测试 markup 里）
+  const sheets = Array.from(win.document.styleSheets) as CSSStyleSheet[]
+  const ours = sheets[sheets.length - 1]
+  const declared = (selector: string, prop: string): string => {
+    let found = ''
+    for (const rule of Array.from(ours.cssRules) as (CSSRule & { selectorText?: string; style?: CSSStyleDeclaration })[]) {
+      if (rule.selectorText?.split(',').map((s) => s.trim()).includes(selector)) {
+        found = rule.style?.getPropertyValue(prop).trim() || found
+      }
+    }
+    return found
+  }
+  const dvhRules = [
+    ['.modal', 'max-height'],
+    ['.canvas-wrap', 'max-height'],
+    ['.canvas-wrap.fit canvas', 'max-height'],
+    ['.canvas-wrap.pattern-host', 'max-height'],
+    ['.modal.open', 'max-height'],
+  ] as const
+  for (const [selector, prop] of dvhRules) {
+    const v = declared(selector, prop)
+    check(`${selector} 的 ${prop} 用 dvh`, v.includes('dvh'), v)
+  }
+}
+
 // 媒体查询在 jsdom 里算不出 computed style（它不做视口匹配），
 // 所以窄屏规则改成直接读 CSSOM：确认断点存在、且写的是预期的声明。
 // 真实布局由浏览器实测验证，这里只做「别被删掉/写错」的回归网。
@@ -302,7 +335,8 @@ section('响应式断点')
 
   // 主界面图纸只做展示：等比缩进容器，缩放/平移都留给全屏
   check('主界面图纸等比适配', value('', '.canvas-wrap.pattern-host .pattern-svg svg', 'width') === '100%')
-  check('主界面图纸限高', value('', '.canvas-wrap.pattern-host .pattern-svg svg', 'max-height') === '54vh')
+  // 手机浏览器把地址栏也算进视口，限高要用 dvh；不认识的浏览器退回 vh（两条都写在样式里）
+  check('主界面图纸限高用 dvh', value('', '.canvas-wrap.pattern-host .pattern-svg svg', 'max-height') === '54dvh')
   check('主界面图纸有留白', value('', '.canvas-wrap.pattern-host .pattern-svg', 'padding') === 'var(--sp-3)')
   // 画布与预览框一起等比缩进容器，内容只留边不拉伸
   check('预览画布用 contain', value('', '.canvas-wrap.fit .overlay-host > canvas:not(.handle-layer)', 'object-fit') === 'contain')
