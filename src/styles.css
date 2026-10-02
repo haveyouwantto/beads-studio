@@ -2676,14 +2676,13 @@ button.btn-floating.disabled {
   }
 
   /* 手机顶栏用两列网格：
-     品牌占剩下的宽度（不够就省略号），操作按钮按自身宽度靠右，
-     永远不会因为差几个像素就被挤到第二行去。 */
+     菜单 + logo + 项目标签栏一行放完（手机上不写「Beads Studio」，
+     把宽度让给标签）。 */
   .topbar {
     display: grid;
-    grid-template-columns: auto minmax(0, 1fr) auto;
+    grid-template-columns: auto auto minmax(0, 1fr);
     grid-template-areas:
-      'menu brand actions'
-      'tabs tabs tabs';
+      'menu brand tabs';
     align-items: center;
     padding: 0;
   }
@@ -2717,15 +2716,9 @@ button.btn-floating.disabled {
     overflow: hidden;
   }
 
+  /* 手机上只留 logo：标题栏的位置让给项目标签 */
   .brand-text {
-    min-width: 0;
-  }
-
-  .brand-name {
-    font-size: 15px;
-    white-space: nowrap;
-    overflow: hidden;
-    text-overflow: ellipsis;
+    display: none;
   }
 
   .topbar-spacer {
@@ -2734,7 +2727,9 @@ button.btn-floating.disabled {
 
   .tabstrip {
     grid-area: tabs;
-    padding-left: 0;
+    min-width: 0;
+    padding-left: var(--sp-1);
+    border-top: 0;
   }
 
   .tabstrip .tabstrip-scroll .tab {

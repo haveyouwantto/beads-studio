@@ -369,12 +369,20 @@ section('响应式断点')
   check('窄屏步骤标题不省略号截断', value(narrow, '.rail-label', 'text-overflow') !== 'ellipsis')
   check('窄屏步骤项保留标题', value(narrow, '.rail-label', 'display') === 'block', value(narrow, '.rail-label', 'display'))
 
-  // 顶栏：标签栏独占一行，不然会和按钮挤在一起
+  // 顶栏：窄屏（平板）标签栏独占一行，不然会和按钮挤在一起
   check('窄屏标签栏独占一行', value(narrow, '.tabstrip', 'flex-basis') === '100%', value(narrow, '.tabstrip', 'flex-basis'))
   check('窄屏标签栏不限宽（原来的 62vw 会截断）', value(narrow, '.tabstrip', 'max-width') === '100%', value(narrow, '.tabstrip', 'max-width'))
   check('窄屏顶栏用两列网格', value(phone, '.topbar', 'display') === 'grid', value(phone, '.topbar', 'display'))
   check('手机顶栏工具收进侧边栏', value(phone, '.topbar-actions', 'display') === 'none', value(phone, '.topbar-actions', 'display'))
   check('手机显示菜单按钮', value(phone, '.topbar-menu', 'display') === 'grid', value(phone, '.topbar-menu', 'display'))
+  // 手机上标题栏只留 logo，位置让给项目标签（一行放完，不再单独占一行）
+  check('手机顶栏不写品牌名', value(phone, '.brand-text', 'display') === 'none', value(phone, '.brand-text', 'display'))
+  check('手机标签栏就在标题栏里', value(phone, '.tabstrip', 'grid-area') === 'tabs', value(phone, '.tabstrip', 'grid-area'))
+  check(
+    '手机标题栏一行放菜单 + logo + 标签',
+    value(phone, '.topbar', 'grid-template-areas').replace(/\s+/g, ' ').includes('menu brand tabs'),
+    value(phone, '.topbar', 'grid-template-areas'),
+  )
   check('宽屏不显示菜单按钮', value('', '.topbar-menu', 'display') === 'none', value('', '.topbar-menu', 'display'))
   // 工具栏现在是纯图标，任何一档把图标藏起来都会变成一排空按钮
   check('宽屏工具栏图标不被隐藏', value('', '.topbar-actions .material-icons', 'display') !== 'none', value('', '.topbar-actions .material-icons', 'display'))
