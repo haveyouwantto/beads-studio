@@ -48,6 +48,10 @@ export function EditStep() {
   const draft = useRef<Uint8ClampedArray | null>(null)
   const undoStack = useRef<Uint8ClampedArray[]>([])
   const redoStack = useRef<Uint8ClampedArray[]>([])
+  /** 这一笔落笔前的缓冲：提交时才知道有没有真的改动 */
+  const strokeStart = useRef<Uint8ClampedArray | null>(null)
+  /** 自己提交出去的那个网格对象：它引起的 grid 变化不算「换了网格」 */
+  const ownGrid = useRef<Pixmap | null>(null)
   const painting = useRef(false)
   const lastCell = useRef<{ x: number; y: number } | null>(null)
 
@@ -71,17 +75,35 @@ export function EditStep() {
     setColor(hex)
   }
 
-  // 网格换了（重新规范化 / 切标签页）就重置草稿与历史
+  // 网格换了（重新规范化 / 换图 / 切标签页）才重置草稿与历史。
+  // 注意每落一笔也会往 store 提交一个新网格，那种变化必须保留历史，
+  // 否则撤销栈刚记上就被清掉，两个按钮永远点不动。
   useEffect(() => {
+    if (grid && grid === ownGrid.current) return
     draft.current = grid ? new Uint8ClampedArray(grid.data) : null
     undoStack.current = []
     redoStack.current = []
+    strokeStart.current = null
     setVersion((v) => v + 1)
   }, [grid])
 
   const commit = useCallback(() => {
     if (!grid || !draft.current) return
-    applyGridEdit({ width: grid.width, height: grid.height, data: new Uint8ClampedArray(draft.current) })
+    const before = strokeStart.current
+    strokeStart.current = null
+    if (before) {
+      // 一笔下去什么都没改就别记历史，不然「撤销」第一下点了没反应
+      let changed = before.length !== draft.current.length
+      for (let i = 0; !changed && i < before.length; i++) if (before[i] !== draft.current[i]) changed = true
+      if (!changed) return
+      undoStack.current.push(before)
+      const limit = historyLimit(grid)
+      if (undoStack.current.length > limit) undoStack.current.shift()
+      redoStack.current = []
+    }
+    const next: Pixmap = { width: grid.width, height: grid.height, data: new Uint8ClampedArray(draft.current) }
+    ownGrid.current = next
+    applyGridEdit(next)
   }, [grid, applyGridEdit])
 
   const draw = useCallback(() => {
@@ -160,10 +182,7 @@ export function EditStep() {
 
   const pushHistory = () => {
     if (!draft.current) return
-    const limit = grid ? historyLimit(grid) : 20
-    undoStack.current.push(new Uint8ClampedArray(draft.current))
-    if (undoStack.current.length > limit) undoStack.current.shift()
-    redoStack.current = []
+    strokeStart.current = new Uint8ClampedArray(draft.current)
   }
 
   const undo = () => {

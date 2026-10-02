@@ -825,6 +825,69 @@ section('像素编辑（第 2 步）')
   useStudio.setState({ editTool: 'paint', editSwatches: [] })
   await flush()
 
+  // 撤销 / 重做：必须真的能退回上一笔（以前每落一笔都会把历史清空，按钮等于摆设）
+  {
+    const canvas = host.querySelector('.canvas-wrap.edit-host canvas') as HTMLCanvasElement
+    const gridNow = useStudio.getState().grid as Pixmap
+    const CELL_PX = 10
+    // jsdom 不做排版，给画布一块确定的尺寸，坐标换算才有意义
+    canvas.getBoundingClientRect = () =>
+      ({
+        left: 0,
+        top: 0,
+        width: gridNow.width * CELL_PX,
+        height: gridNow.height * CELL_PX,
+        right: gridNow.width * CELL_PX,
+        bottom: gridNow.height * CELL_PX,
+        x: 0,
+        y: 0,
+        toJSON: () => ({}),
+      }) as DOMRect
+    const proto = dom.window.HTMLElement.prototype as unknown as Record<string, unknown>
+    if (typeof proto.setPointerCapture !== 'function') proto.setPointerCapture = () => undefined
+    if (typeof proto.releasePointerCapture !== 'function') proto.releasePointerCapture = () => undefined
+
+    const at = (x: number, y: number) => ({
+      pointerId: 1,
+      clientX: (x + 0.5) * CELL_PX,
+      clientY: (y + 0.5) * CELL_PX,
+      pointerType: 'mouse',
+      bubbles: true,
+      cancelable: true,
+    })
+    const cellPx = (pm: Pixmap, x: number, y: number) => {
+      const i = (y * pm.width + x) * 4
+      return [pm.data[i], pm.data[i + 1], pm.data[i + 2], pm.data[i + 3]].join()
+    }
+    const undoBtn = host.querySelector('button[aria-label="撤销"]') as HTMLButtonElement
+    const redoBtn = host.querySelector('button[aria-label="重做"]') as HTMLButtonElement
+    check('撤销 / 重做按钮在', Boolean(undoBtn) && Boolean(redoBtn))
+    check('还没画时撤销是禁用的', undoBtn.disabled)
+
+    const first = cellPx(gridNow, 0, 0)
+    useStudio.setState({ editTool: 'paint', editColor: '#FF0000' })
+    await flush()
+    canvas.dispatchEvent(new dom.window.PointerEvent('pointerdown', at(0, 0)))
+    canvas.dispatchEvent(new dom.window.PointerEvent('pointerup', at(0, 0)))
+    await flush(20)
+    check('画了一格', cellPx(useStudio.getState().grid as Pixmap, 0, 0) === '255,0,0,255', cellPx(useStudio.getState().grid as Pixmap, 0, 0))
+    check('一笔之后撤销可用', !undoBtn.disabled)
+
+    undoBtn.click()
+    await flush(20)
+    check('撤销回到上一笔之前', cellPx(useStudio.getState().grid as Pixmap, 0, 0) === first, cellPx(useStudio.getState().grid as Pixmap, 0, 0))
+    check('撤销之后重做可用', !redoBtn.disabled)
+
+    redoBtn.click()
+    await flush(20)
+    check('重做又回到画过的样子', cellPx(useStudio.getState().grid as Pixmap, 0, 0) === '255,0,0,255', cellPx(useStudio.getState().grid as Pixmap, 0, 0))
+
+    // 收尾：退回没画过的样子，别影响后面的用例
+    undoBtn.click()
+    await flush(20)
+    check('再撤销一次又回到原样', cellPx(useStudio.getState().grid as Pixmap, 0, 0) === first)
+  }
+
   editRoot.unmount()
   await flush()
   host.remove()
