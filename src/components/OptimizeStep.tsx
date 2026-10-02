@@ -13,6 +13,7 @@ export function OptimizeStep() {
   const grid = useStudio((s) => s.grid)
   const goPrev = useStudio((s) => s.goPrev)
   const goNext = useStudio((s) => s.goNext)
+  const setStage = useStudio((s) => s.setStage)
   const libraryPalette = useStudio((s) => s.libraryPalette)
   const includeExtended = useStudio((s) => s.includeExtended)
   const setIncludeExtended = useStudio((s) => s.setIncludeExtended)
@@ -79,7 +80,7 @@ export function OptimizeStep() {
         </div>
         <Empty icon="palette" title="还没有可优化的网格">
           <div style={{ marginTop: 12 }}>
-            <button className="btn waves-effect waves-light" onClick={goPrev}>
+            <button className="btn waves-effect waves-light" onClick={() => setStage('regularize')}>
               <i className="material-icons sm">arrow_back</i>
               回到规范化
             </button>
@@ -102,7 +103,7 @@ export function OptimizeStep() {
           <span className="grow" />
           <button className="btn-flat btn-small waves-effect" onClick={goPrev}>
             <i className="material-icons sm">arrow_back</i>
-            规范化
+            编辑
           </button>
         </div>
 

@@ -1,4 +1,5 @@
 import { luminance } from './color.ts'
+import { IGNORED_ALPHA } from './edit.ts'
 import { blendOver, codeOf, type CodeSystem, type PaletteEntry } from './palette.ts'
 import type { Pixmap, RGB } from './types.ts'
 
@@ -158,6 +159,8 @@ export function buildPatternSvg(
     const radius = Math.max(0.05, (1 - Math.max(0, gap) / Math.max(1, cellSize)) / 2)
     for (let y = 0; y < H; y++) {
       for (let x = 0; x < W; x++) {
+        // 透明格 = 忽略：不出豆子，背景直接透出来
+        if (data[(y * W + x) * 4 + 3] < IGNORED_ALPHA) continue
         const hex = hexOf(data, (y * W + x) * 4)
         const cx = n(pad + x + 0.5)
         const cy = n(pad + y + 0.5)
@@ -179,6 +182,7 @@ export function buildPatternSvg(
     const hr = n(Math.max(0.03, radius * 0.34))
     for (let y = 0; y < H; y++) {
       for (let x = 0; x < W; x++) {
+        if (data[(y * W + x) * 4 + 3] < IGNORED_ALPHA) continue
         hl.push(`<circle cx="${n(pad + x + 0.34)}" cy="${n(pad + y + 0.34)}" r="${hr}"/>`)
       }
     }
@@ -189,6 +193,7 @@ export function buildPatternSvg(
     const byColor = new Map<string, string[]>()
     for (let y = 0; y < H; y++) {
       for (let x = 0; x < W; x++) {
+        if (data[(y * W + x) * 4 + 3] < IGNORED_ALPHA) continue
         const hex = hexOf(data, (y * W + x) * 4)
         const key = groupKey(hex)
         let list = byColor.get(key)
@@ -239,6 +244,8 @@ export function buildPatternSvg(
     for (let y = 0; y < H; y++) {
       for (let x = 0; x < W; x++) {
         const i = (y * W + x) * 4
+        // 忽略的格子没有豆子，自然也没有色号
+        if (data[i + 3] < IGNORED_ALPHA) continue
         const hex = hexOf(data, i)
         if (!needLookup.has(hex)) needLookup.set(hex, lookup.get(hex))
         const entry = needLookup.get(hex)

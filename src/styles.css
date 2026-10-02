@@ -2408,6 +2408,93 @@ button:disabled {
   border: 1px solid rgba(255, 255, 255, 0.18);
 }
 
+/* ---------- 像素编辑（第 2 步）---------- */
+
+.canvas-wrap.edit-host {
+  place-items: start;
+  max-height: 62vh;
+  max-height: 62dvh;
+  padding: 14px;
+}
+
+.canvas-wrap.edit-host canvas {
+  image-rendering: pixelated;
+  cursor: crosshair;
+  /* 画的时候不要触发浏览器自己的滚动/缩放手势 */
+  touch-action: none;
+}
+
+.canvas-wrap.edit-host canvas.picking {
+  cursor: copy;
+}
+
+/* 画笔调色板：一排小方块，选中的加描边 */
+.tool-row {
+  display: flex;
+  flex: 0 0 auto;
+  gap: 2px;
+}
+
+/* 选中的工具：primary 状态层 + primary 图标（和侧栏选中项同一套语义） */
+.btn-flat.icon-only.on {
+  background-color: rgba(144, 202, 249, var(--md-state-selected));
+  color: var(--md-primary);
+}
+
+.swatch-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+}
+
+.paint-swatch {
+  width: 26px;
+  height: 26px;
+  padding: 0;
+  border: 2px solid transparent;
+  border-radius: var(--radius-sm);
+  box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.18);
+}
+
+.paint-swatch.on {
+  border-color: var(--md-primary);
+  box-shadow: inset 0 0 0 1px rgba(0, 0, 0, 0.35);
+}
+
+/* 「透明」= 忽略：画成棋盘格，免得和白色混在一起 */
+.paint-swatch.transparent {
+  background-color: #4a4a4a;
+  background-image: linear-gradient(45deg, #3a3a3a 25%, transparent 25%, transparent 75%, #3a3a3a 75%),
+    linear-gradient(45deg, #3a3a3a 25%, transparent 25%, transparent 75%, #3a3a3a 75%);
+  background-size: 10px 10px;
+  background-position: 0 0, 5px 5px;
+}
+
+/* 「+」：选一个新颜色加进调色板 */
+.paint-swatch.add {
+  display: grid;
+  place-items: center;
+  background-color: transparent;
+  color: var(--md-on-surface-medium);
+  border-color: var(--md-outline-strong);
+  box-shadow: none;
+}
+
+.paint-swatch.add:hover {
+  background-color: rgba(255, 255, 255, var(--md-state-hover));
+  color: var(--md-on-surface);
+}
+
+/* 原生取色器只用来弹系统调色板，自己不出现在界面上 */
+.offscreen-picker {
+  position: absolute;
+  left: -9999px;
+  width: 1px;
+  height: 1px;
+  opacity: 0;
+  pointer-events: none;
+}
+
 /* 规范化预览：画布按源图比例绘制，上限是 760×540 的固定像素。
    窄屏会超出容器、矮屏会被 max-height 压扁，所以这里让 host 和画布一起
    等比缩进容器（宽高都留 auto，交给 max-width / max-height 约束）。

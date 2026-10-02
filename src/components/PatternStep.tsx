@@ -40,6 +40,7 @@ export function PatternStep({ onOpenFullscreen }: { onOpenFullscreen: () => void
   const grid = useStudio((s) => s.grid)
   const result = useStudio((s) => s.result)
   const goPrev = useStudio((s) => s.goPrev)
+  const setStage = useStudio((s) => s.setStage)
   const palette = useStudio((s) => s.palette)
   const paletteSource = useStudio((s) => s.paletteSource)
   const setPaletteSource = useStudio((s) => s.setPaletteSource)
@@ -166,7 +167,7 @@ export function PatternStep({ onOpenFullscreen }: { onOpenFullscreen: () => void
         </div>
         <Empty icon="grid_on" title="还没有网格">
           <div style={{ marginTop: 12 }}>
-            <button className="btn waves-effect waves-light" onClick={goPrev}>
+            <button className="btn waves-effect waves-light" onClick={() => setStage('regularize')}>
               <i className="material-icons sm">arrow_back</i>
               回到规范化
             </button>

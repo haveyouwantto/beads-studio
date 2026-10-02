@@ -16,6 +16,7 @@ import { analyzePeriods, sampleImage, type DetectReport } from '../core/regulari
 import { defaultCorners, sampleQuad } from '../core/warp.ts'
 import { collapseBlocks, detectUniformBlock } from '../core/direct.ts'
 import { packPixels, unpackPixels } from '../core/export.ts'
+import { appendSwatch } from '../core/edit.ts'
 import {
   dataUrlToPixmap,
   listProjects,
@@ -47,7 +48,13 @@ import {
  * 三个阶段：① 规范化 → ② 优化颜色 → ③ 转拼豆图纸。
  * 规范化产出 1:1 网格，作为「优化颜色」的优化目标，再交给「转拼豆图纸」出图。
  */
-export type StageId = 'regularize' | 'optimize' | 'pattern'
+export type StageId = 'regularize' | 'edit' | 'optimize' | 'pattern'
+
+/** 工作流顺序：规范化 → 像素编辑 → 优化颜色 → 转拼豆图纸 */
+export const STAGE_ORDER: StageId[] = ['regularize', 'edit', 'optimize', 'pattern']
+
+/** 编辑器工具：画笔 / 油漆桶 / 吸管 */
+export type EditTool = 'paint' | 'fill' | 'pick'
 
 /**
  * 规范化的三种输入方式：
@@ -173,6 +180,14 @@ interface StudioState {
 
   // --- 阶段 3：转拼豆图纸 ---
   paletteSource: PaletteSource
+  /**
+   * 像素编辑器的工具状态。这几个只是「当前在用什么」，
+   * 和项目内容无关，所以切标签页/重开都无所谓，放全局就够。
+   */
+  editTool: EditTool
+  editColor: string | null
+  /** 自己加进来的颜色（吸管取的、配色器挑的），最多 MAX_ADDED_SWATCHES 个 */
+  editSwatches: string[]
   /** 选了「套装」时用哪一档：24 / 48 / 72 / 96 / 120 */
   kitSize: KitSize
   /**
@@ -218,6 +233,12 @@ interface StudioState {
   setDirectBlock: (n: number) => void
   detectDirectBlock: () => void
   buildGrid: () => void
+  /** 像素编辑：提交编辑后的网格（透明格 = 忽略） */
+  applyGridEdit: (next: Pixmap) => void
+  setEditTool: (tool: EditTool) => void
+  setEditColor: (hex: string | null) => void
+  /** 往「新增色」里放一个颜色（已存在则不动，满了挤掉最早的那个） */
+  addEditSwatch: (hex: string) => void
 
   setPaletteSource: (s: PaletteSource) => void
   setKitSize: (size: KitSize) => void
@@ -278,7 +299,7 @@ export function getTabSnapshot(id: string): ProjectState | undefined {
 function freshProject(): ProjectState {
   const library = buildLibraryPalette({ includeExtended: false })
   return {
-    visited: { regularize: true, optimize: false, pattern: false },
+    visited: { regularize: true, edit: false, optimize: false, pattern: false },
     source: null,
     analysis: null,
     alignmentMode: 'auto',
@@ -512,7 +533,7 @@ async function deserializeProject(p: PersistedProject): Promise<ProjectState> {
   }
 
   return {
-    visited: { regularize: true, optimize: false, pattern: false },
+    visited: { regularize: true, edit: false, optimize: false, pattern: false },
     source,
     analysis: null,
     alignmentMode: p.alignmentMode as AlignmentMode,
@@ -586,6 +607,9 @@ export const useStudio = create<StudioState>((set, get) => ({
 
   loading: false,
   error: null,
+  editTool: 'paint',
+  editColor: '#000000',
+  editSwatches: [],
   libraryPalette: buildLibraryPalette({ includeExtended: false }),
   optimizeRun: { ...EMPTY_RUN },
   // 方案存在本地，跨项目共享，所以随 store 一起初始化
@@ -595,12 +619,12 @@ export const useStudio = create<StudioState>((set, get) => ({
 
   setStage: (s) => set((prev) => ({ activeStage: s, visited: { ...prev.visited, [s]: true } })),
   goNext: () => {
-    const order: StageId[] = ['regularize', 'optimize', 'pattern']
+    const order: StageId[] = STAGE_ORDER
     const idx = order.indexOf(get().activeStage)
     if (idx < order.length - 1) get().setStage(order[idx + 1])
   },
   goPrev: () => {
-    const order: StageId[] = ['regularize', 'optimize', 'pattern']
+    const order: StageId[] = STAGE_ORDER
     const idx = order.indexOf(get().activeStage)
     if (idx > 0) get().setStage(order[idx - 1])
   },
@@ -704,6 +728,20 @@ export const useStudio = create<StudioState>((set, get) => ({
     set({ manualCols: Math.max(1, Math.round(cols)), manualRows: Math.max(1, Math.round(rows)) })
     get().buildGrid()
   },
+
+  applyGridEdit: (next) => {
+    set({ grid: next, result: null })
+    get().recomputeResult()
+  },
+
+  setEditTool: (tool) => set({ editTool: tool }),
+  setEditColor: (hex) => set({ editColor: hex }),
+  addEditSwatch: (hex) => {
+    const current = get().editSwatches
+    const next = appendSwatch(current, hex)
+    if (next.join() !== current.join()) set({ editSwatches: next })
+  },
+
   setDirectBlock: (n) => {
     set({ directBlock: Math.max(1, Math.round(n)) })
     get().buildGrid()

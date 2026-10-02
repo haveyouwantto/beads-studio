@@ -251,6 +251,10 @@ section('移动端视口单位')
     const v = declared(selector, prop)
     check(`${selector} 的 ${prop} 用 dvh`, v.includes('dvh'), v)
   }
+
+  // 像素编辑的画板：自己吞掉触摸手势（否则手机上画两笔就变成滚页面）
+  check('编辑画板接管触摸手势', declared('.canvas-wrap.edit-host canvas', 'touch-action') === 'none', declared('.canvas-wrap.edit-host canvas', 'touch-action'))
+  check('编辑画板限高用 dvh', declared('.canvas-wrap.edit-host', 'max-height') === '62dvh', declared('.canvas-wrap.edit-host', 'max-height'))
 }
 
 // 媒体查询在 jsdom 里算不出 computed style（它不做视口匹配），

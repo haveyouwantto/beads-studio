@@ -215,6 +215,10 @@ const { RecentProjectsDialog } = await import('../src/components/RecentProjectsD
 const { CandidateColorsDialog } = await import('../src/components/CandidateColorsDialog.tsx')
 const { usePinchPan } = await import('../src/components/gestures.ts')
 const { MenuDrawer } = await import('../src/components/MenuDrawer.tsx')
+const { EditStep } = await import('../src/components/EditStep.tsx')
+const { countIgnored, writeCell } = await import('../src/core/edit.ts')
+const { usageCounts } = await import('../src/core/quantize.ts')
+type Pixmap = { width: number; height: number; data: Uint8ClampedArray }
 
 const act = (React as unknown as { act: (cb: () => void | Promise<void>) => Promise<void> }).act
 
@@ -232,12 +236,12 @@ try {
 }
 check('App 渲染无异常', bootError === null, bootError ?? '')
 check('渲染出品牌标题', container.textContent?.includes('Beads Studio') ?? false)
-check('左侧显示三个阶段', ['规范化', '优化颜色', '转拼豆图纸'].every((t) => container.textContent?.includes(t)))
+check('左侧显示四个阶段', ['规范化', '编辑', '优化颜色', '转拼豆图纸'].every((t) => container.textContent?.includes(t)))
 check('空态提示上传图片', container.textContent?.includes('先放入一张图片') ?? false)
 check(
   '初始只有第一步算已访问',
   JSON.stringify(useStudio.getState().visited) ===
-    JSON.stringify({ regularize: true, optimize: false, pattern: false }),
+    JSON.stringify({ regularize: true, edit: false, optimize: false, pattern: false }),
   JSON.stringify(useStudio.getState().visited),
 )
 check(
@@ -699,6 +703,76 @@ section('窄屏工具抽屉')
   drawerRoot.unmount()
   await flush()
   host.remove()
+}
+
+section('像素编辑（第 2 步）')
+{
+  // 走到「编辑」这一步
+  useStudio.getState().setStage('edit')
+  await flush(20)
+  const host = dom.window.document.createElement('div')
+  dom.window.document.body.appendChild(host)
+  const editRoot = createRoot(host)
+  let err: string | null = null
+  try {
+    editRoot.render(React.createElement(EditStep))
+    await flush(20)
+  } catch (e) {
+    err = e instanceof Error ? e.message : String(e)
+  }
+  check('编辑步骤渲染无异常', err === null, err ?? '')
+  check('渲染出画板', Boolean(host.querySelector('canvas')))
+  check('画笔里有透明档', Boolean(host.querySelector('.paint-swatch.transparent')))
+  check('预设色板有黑白两种', host.querySelectorAll('.paint-swatch').length >= 10, `${host.querySelectorAll('.paint-swatch').length}`)
+  // 工具用 Material 图标：画笔 / 填充 / 吸管
+  const tools = [...host.querySelectorAll('.tool-row button')].map((b) => b.querySelector('.material-icons')?.textContent ?? '')
+  check('三个工具都是 md 图标', tools.join() === 'brush,format_color_fill,colorize', tools.join())
+  check('工具按钮没有文字', [...host.querySelectorAll('.tool-row button')].every((b) => (b.textContent ?? '').trim() === tools[[...host.querySelectorAll('.tool-row button')].indexOf(b)]))
+  check('新增色有「+」入口', Boolean(host.querySelector('.paint-swatch.add')))
+
+  // 右键色块 = 以它为起点开取色器
+  const picker = host.querySelector('.offscreen-picker') as HTMLInputElement
+  check('有取色器控件', Boolean(picker) && picker.type === 'color')
+  const firstSwatch = host.querySelector('.paint-swatch') as HTMLButtonElement
+  firstSwatch.dispatchEvent(new dom.window.MouseEvent('contextmenu', { bubbles: true, cancelable: true }))
+  await flush()
+  check('右键后取色器以该颜色为初值', picker.value.toUpperCase() === '#000000', picker.value)
+
+  // 图里的颜色最多列 24 类，点一下会进「新增」
+  const clusterSwatches = host.querySelectorAll('.swatch-grid .swatch')
+  check('图中颜色最多 24 类', clusterSwatches.length <= 24, `${clusterSwatches.length}`)
+  useStudio.setState({ editSwatches: [] })
+  ;(clusterSwatches[0] as HTMLButtonElement | undefined)?.click()
+  await flush()
+  check('点图中的颜色会加入「新增」', useStudio.getState().editSwatches.length === 1, JSON.stringify(useStudio.getState().editSwatches))
+  useStudio.setState({ editSwatches: [] })
+  editRoot.unmount()
+  await flush()
+  host.remove()
+
+  // 涂掉几格，验证下游（优化目标 / 用料清单）真的忽略它们
+  const grid = useStudio.getState().grid
+  check('编辑前有网格', Boolean(grid))
+  if (grid) {
+    const edited: Pixmap = { width: grid.width, height: grid.height, data: new Uint8ClampedArray(grid.data) }
+    const total = grid.width * grid.height
+    const ignoredCount = 5
+    for (let i = 0; i < ignoredCount; i++) writeCell(edited.data, grid.width, i % grid.width, Math.floor(i / grid.width), null)
+    useStudio.getState().applyGridEdit(edited)
+    await flush(20)
+
+    const after = useStudio.getState()
+    check('忽略格子写回了 store', countIgnored(after.grid as Pixmap) === ignoredCount)
+    const counts = usageCounts(after.result as Pixmap, after.palette)
+    const beads = [...counts].reduce((a, b) => a + b, 0)
+    check('用料清单里没有忽略的格子', beads === total - ignoredCount, `${beads} / ${total}`)
+
+    // 涂回去（避免影响后面的用例）
+    const restored: Pixmap = { width: grid.width, height: grid.height, data: new Uint8ClampedArray(grid.data) }
+    useStudio.getState().applyGridEdit(restored)
+    await flush()
+    check('还原后忽略清零', countIgnored(useStudio.getState().grid as Pixmap) === 0)
+  }
 }
 
 section('候选色方案')

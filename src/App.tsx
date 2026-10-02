@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { useStudio, type StageId } from './store/studio.ts'
 import { RegularizeStep } from './components/RegularizeStep.tsx'
+import { EditStep } from './components/EditStep.tsx'
 import { OptimizeStep } from './components/OptimizeStep.tsx'
 import { PatternStep } from './components/PatternStep.tsx'
 import { FullscreenPreview } from './components/FullscreenPreview.tsx'
@@ -89,12 +90,12 @@ export default function App() {
     }
   }, [])
 
-  // Ctrl/Cmd + 1/2/3 切换阶段
+  // Ctrl/Cmd + 1/2/3/4 切换阶段
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
       if (!(e.ctrlKey || e.metaKey)) return
-      const idx = ['1', '2', '3'].indexOf(e.key)
-      if (idx >= 0) {
+      const idx = Number(e.key) - 1
+      if (Number.isInteger(idx) && idx >= 0 && idx < STAGES.length) {
         e.preventDefault()
         setStage(STAGES[idx].id)
       }
@@ -164,6 +165,7 @@ export default function App() {
   const stageDone: Record<StageId, boolean> = {
     // 没进过的阶段不算完成：图纸是自动生成的，否则一做完第一步第三步就提前打勾了
     regularize: visited.regularize && Boolean(grid),
+    edit: visited.edit && Boolean(grid),
     optimize: visited.optimize && optimizedPalette.length > 0,
     pattern: visited.pattern && Boolean(result),
   }
@@ -307,6 +309,7 @@ export default function App() {
           )}
 
           {activeStage === 'regularize' && <RegularizeStep onOpenFile={openFile} />}
+          {activeStage === 'edit' && <EditStep />}
           {activeStage === 'optimize' && <OptimizeStep />}
           {activeStage === 'pattern' && <PatternStep onOpenFullscreen={() => setShowFullscreen(true)} />}
         </main>
