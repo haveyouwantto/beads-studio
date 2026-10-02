@@ -1,8 +1,8 @@
 import { useEffect, useMemo, useState } from 'react'
 import { useStudio } from '../store/studio.ts'
 import { codeOf, mardSeries, swatchHex, type PaletteEntry } from '../core/palette.ts'
-import { idealTextColor } from '../core/color.ts'
 import { formatTime } from '../core/storage.ts'
+import { Swatch } from './ui.tsx'
 
 /**
  * 候选色选择弹窗。
@@ -21,6 +21,8 @@ export function CandidateColorsDialog({ onClose }: { onClose: () => void }) {
   const deleteCandidateSet = useStudio((s) => s.deleteCandidateSet)
   const includeExtended = useStudio((s) => s.includeExtended)
   const codeSystem = useStudio((s) => s.codeSystem)
+  // 方案预览的圆点：h01 这类半透明豆按观感色画，和别的色板走同一套
+  const swatchByHex = useMemo(() => new Map(libraryPalette.map((e) => [e.hex, swatchHex(e)])), [libraryPalette])
 
   // 本地草稿：点「应用」才写回 store，取消则不变
   const [selected, setSelected] = useState<Set<string>>(
@@ -145,7 +147,7 @@ export function CandidateColorsDialog({ onClose }: { onClose: () => void }) {
                       {/* 让方案自己说明包含哪些颜色 */}
                       <div className="set-chips">
                         {s.hexes.slice(0, 24).map((h) => (
-                          <i key={h} className="chip" style={{ background: h }} title={h} />
+                          <Swatch key={h} size="dot" hex={swatchByHex.get(h) ?? h} title={h} />
                         ))}
                         {s.hexes.length > 24 && <span className="tiny muted">+{s.hexes.length - 24}</span>}
                       </div>
@@ -189,23 +191,17 @@ export function CandidateColorsDialog({ onClose }: { onClose: () => void }) {
                   </button>
                 </header>
 
-                <div className="candidate-grid">
-                  {entries.map((entry) => {
-                    const active = selected.has(entry.hex)
-                    return (
-                      <button
-                        key={entry.hex}
-                        type="button"
-                        className={active ? 'candidate on' : 'candidate'}
-                        style={{ background: swatchHex(entry), color: idealTextColor(entry.rgb) }}
-                        onClick={() => toggleOne(entry.hex)}
-                        title={`${codeOf(entry, codeSystem)} · ${entry.hex}`}
-                      >
-                        <span className="candidate-check">{active ? '✓' : ''}</span>
-                        <span className="candidate-code">{codeOf(entry, codeSystem)}</span>
-                      </button>
-                    )
-                  })}
+                <div className="swatch-grid">
+                  {entries.map((entry) => (
+                    <Swatch
+                      key={entry.hex}
+                      hex={swatchHex(entry)}
+                      code={codeOf(entry, codeSystem)}
+                      title={`${codeOf(entry, codeSystem)} · ${entry.hex}`}
+                      selected={selected.has(entry.hex)}
+                      onClick={() => toggleOne(entry.hex)}
+                    />
+                  ))}
                 </div>
               </section>
             )

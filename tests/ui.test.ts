@@ -216,8 +216,10 @@ const { CandidateColorsDialog } = await import('../src/components/CandidateColor
 const { usePinchPan } = await import('../src/components/gestures.ts')
 const { MenuDrawer } = await import('../src/components/MenuDrawer.tsx')
 const { EditStep } = await import('../src/components/EditStep.tsx')
+const { RegularizeStep } = await import('../src/components/RegularizeStep.tsx')
 const { countIgnored, writeCell } = await import('../src/core/edit.ts')
 const { usageCounts } = await import('../src/core/quantize.ts')
+const { hexToRgb, idealTextColor, luminance } = await import('../src/core/color.ts')
 type Pixmap = { width: number; height: number; data: Uint8ClampedArray }
 
 const act = (React as unknown as { act: (cb: () => void | Promise<void>) => Promise<void> }).act
@@ -722,21 +724,27 @@ section('像素编辑（第 2 步）')
   }
   check('编辑步骤渲染无异常', err === null, err ?? '')
   check('渲染出画板', Boolean(host.querySelector('canvas')))
-  check('画笔里有透明档（H01）', host.querySelector('.paint-swatch.transparent')?.getAttribute('aria-label') === 'H01 透明')
+  check(
+    '画笔里有透明档（H01）',
+    host.querySelector('.swatch.chip.transparent')?.getAttribute('aria-label')?.startsWith('H01') === true,
+    host.querySelector('.swatch.chip.transparent')?.getAttribute('aria-label') ?? '没有',
+  )
   check(
     '预设色板是 24 色套装',
-    host.querySelectorAll('.field .swatch-row .paint-swatch:not(.add)').length === 24,
-    `${host.querySelectorAll('.field .swatch-row .paint-swatch:not(.add)').length}`,
+    host.querySelectorAll('.field .swatch-row .swatch.chip:not(.add)').length === 24,
+    `${host.querySelectorAll('.field .swatch-row .swatch.chip:not(.add)').length}`,
   )
   // 工具用 Material 图标：画笔 / 填充 / 吸管
   const tools = [...host.querySelectorAll('.tool-row button')].map((b) => b.querySelector('.material-icons')?.textContent ?? '')
   check('三个工具都是 md 图标', tools.join() === 'brush,format_color_fill,colorize', tools.join())
   check('工具按钮没有文字', [...host.querySelectorAll('.tool-row button')].every((b) => (b.textContent ?? '').trim() === tools[[...host.querySelectorAll('.tool-row button')].indexOf(b)]))
-  check('新增色有「+」入口', Boolean(host.querySelector('.paint-swatch.add')))
+  check('新增色有「+」入口', Boolean(host.querySelector('.swatch.chip.add')))
 
   // 右键色块 = 以它为起点打开取色对话框
   useStudio.setState({ editSwatches: [] })
-  const blackSwatch = [...host.querySelectorAll('.paint-swatch')].find((b) => b.getAttribute('aria-label') === 'H07') as HTMLButtonElement | undefined
+  const blackSwatch = [...host.querySelectorAll('.swatch.chip')].find((b) =>
+    (b.getAttribute('aria-label') ?? '').startsWith('H07'),
+  ) as HTMLButtonElement | undefined
   check('预设里有黑色 H07', Boolean(blackSwatch))
   blackSwatch?.dispatchEvent(new dom.window.MouseEvent('contextmenu', { bubbles: true, cancelable: true }))
   await flush()
@@ -770,6 +778,33 @@ section('像素编辑（第 2 步）')
   // 图里的颜色最多列 24 类，点一下会进「新增」
   const clusterSwatches = host.querySelectorAll('.swatch-grid .swatch')
   check('图中颜色最多 24 类', clusterSwatches.length <= 24, `${clusterSwatches.length}`)
+
+  // 色块上的文字颜色必须跟着底色走：浅底黑字、深底白字。
+  // 第二步的「图中颜色」以前是自己写的一套，漏了这条，浅色块上白字看不见。
+  const probe = dom.window.document.createElement('span')
+  const cssColor = (hex: string) => {
+    probe.style.color = hex
+    return probe.style.color
+  }
+  const bgOf = (el: HTMLElement): [number, number, number] | null => {
+    const raw = el.style.background || el.style.backgroundColor
+    const h = /#([0-9a-fA-F]{6})/.exec(raw)
+    if (h) return hexToRgb(h[0])
+    const m = /rgba?\((\d+),\s*(\d+),\s*(\d+)/.exec(raw)
+    return m ? [Number(m[1]), Number(m[2]), Number(m[3])] : null
+  }
+  const swatchEls = [...host.querySelectorAll('.swatch')] as HTMLElement[]
+  const wrongText = swatchEls.filter((el) => {
+    const rgb = bgOf(el)
+    return rgb ? el.style.color !== cssColor(idealTextColor(rgb)) : false
+  })
+  const lightSwatch = swatchEls.find((el) => {
+    const rgb = bgOf(el)
+    return rgb ? luminance(rgb) > 0.55 : false
+  })
+  check('色块文字按底色自动黑/白', swatchEls.length > 0 && wrongText.length === 0, `${wrongText.length} 个不匹配`)
+  check('浅色块上是深色文字', Boolean(lightSwatch) && lightSwatch?.style.color === cssColor('#0b1220'), lightSwatch?.style.color ?? '')
+
   useStudio.setState({ editSwatches: [] })
   ;(clusterSwatches[0] as HTMLButtonElement | undefined)?.click()
   await flush()
@@ -792,6 +827,7 @@ section('像素编辑（第 2 步）')
 
     const after = useStudio.getState()
     check('忽略格子写回了 store', countIgnored(after.grid as Pixmap) === ignoredCount)
+    check('编辑过会打上 edited 标记', after.edited === true)
     const counts = usageCounts(after.result as Pixmap, after.palette)
     const beads = [...counts].reduce((a, b) => a + b, 0)
     check('用料清单里没有忽略的格子', beads === total - ignoredCount, `${beads} / ${total}`)
@@ -801,6 +837,53 @@ section('像素编辑（第 2 步）')
     useStudio.getState().applyGridEdit(restored)
     await flush()
     check('还原后忽略清零', countIgnored(useStudio.getState().grid as Pixmap) === 0)
+
+    // 回规范化重新生成 = 丢掉编辑
+    useStudio.getState().setStage('regularize')
+    await flush()
+    // 恢复出来的项目没有 analysis，用「直接 1:1」触发一次重新生成
+    useStudio.getState().setAlignmentMode('direct')
+    await flush()
+    check('重新生成网格会清掉 edited 标记', useStudio.getState().edited === false)
+    useStudio.getState().setAlignmentMode('auto')
+    await flush()
+  }
+}
+
+section('编辑提示：盖住规范化的强制确认')
+{
+  useStudio.getState().setStage('regularize')
+  await flush()
+  const grid = useStudio.getState().grid
+  check('规范化里有网格', Boolean(grid))
+  if (grid) {
+    // 造出「编辑过」的状态
+    useStudio.getState().applyGridEdit({ width: grid.width, height: grid.height, data: new Uint8ClampedArray(grid.data) })
+    await flush(20)
+    check('编辑后 edited 置 1', useStudio.getState().edited === true)
+
+    const host = dom.window.document.createElement('div')
+    dom.window.document.body.appendChild(host)
+    const guardRoot = createRoot(host)
+    guardRoot.render(React.createElement(RegularizeStep, { onOpenFile: () => undefined }))
+    await flush(20)
+
+    const guard = host.querySelector('.modal-overlay.open .modal.guard')
+    check('提示直接盖住整个规范化画面', Boolean(guard))
+    const guardButtons = [...(guard?.querySelectorAll('button') ?? [])] as HTMLButtonElement[]
+    check('提示只有一个按钮', guardButtons.length === 1, `${guardButtons.length}`)
+    ;(guard as HTMLElement | null)?.click()
+    await flush()
+    check('点遮罩本身不关提示', useStudio.getState().edited === true)
+
+    guardButtons[guardButtons.length - 1]?.click()
+    await flush()
+    check('确认后 edited 归零', useStudio.getState().edited === false)
+    check('确认后遮罩消失', !host.querySelector('.modal-overlay.open'))
+
+    guardRoot.unmount()
+    await flush()
+    host.remove()
   }
 }
 
@@ -919,8 +1002,11 @@ section('候选色弹窗')
   }
   check('候选色弹窗渲染无异常', err === null, err ?? '')
   check('按系列分组', (host.querySelectorAll('.series-block').length ?? 0) >= 8, `${host.querySelectorAll('.series-block').length} 组`)
-  check('列出了每个颜色', (host.querySelectorAll('.candidate').length ?? 0) === useStudio.getState().libraryPalette.length)
-  check('默认全部勾选', host.querySelectorAll('.candidate.on').length === host.querySelectorAll('.candidate').length)
+  check('列出了每个颜色', (host.querySelectorAll('.swatch-grid .swatch').length ?? 0) === useStudio.getState().libraryPalette.length)
+  check(
+    '默认全部勾选',
+    host.querySelectorAll('.swatch-grid .swatch.on').length === host.querySelectorAll('.swatch-grid .swatch').length,
+  )
   check('有全选/全不选/反选', (host.textContent ?? '').includes('反选'))
   check('有应用按钮', (host.textContent ?? '').includes('应用'))
   root2.unmount()
@@ -930,6 +1016,17 @@ section('候选色弹窗')
 
 section('重启应用后恢复上次会话')
 {
+  // 存档里记下「停在哪一步」
+  useStudio.getState().setStage('edit')
+  await flush(20)
+  useStudio.getState().saveCurrentProject()
+  await flush(30)
+  check(
+    '存档里记下了当时停在哪一步',
+    storage.readProject(useStudio.getState().activeTabId)?.project.activeStage === 'edit',
+    String(storage.readProject(useStudio.getState().activeTabId)?.project.activeStage),
+  )
+
   const session = storage.readSession()
   check('存档里有可恢复的会话', (session?.tabs.length ?? 0) > 0, `${session?.tabs.length ?? 0} 个标签`)
 
@@ -950,10 +1047,17 @@ section('重启应用后恢复上次会话')
   await flush(150)
 
   const restored = useStudio.getState()
-  check('标签页被恢复', restored.tabs.length === (session?.tabs.length ?? 0), `${restored.tabs.length} 个`)
+  // 会话里记着上次开着的标签；恢复时只装回「本地还有项目数据」的那些，
+  // 所以这里比的是「恢复出来的都在会话里」，而不是数量完全相等。
+  check(
+    '标签页被恢复',
+    restored.tabs.length > 0 && restored.tabs.every((t) => (session?.tabs ?? []).some((s) => s.id === t.id)),
+    `恢复 ${restored.tabs.length} 个 / 会话里 ${session?.tabs.length ?? 0} 个`,
+  )
   check('当前标签是存档里的那个', restored.tabs.some((t) => t.id === restored.activeTabId))
   check('网格被恢复', Boolean(restored.grid))
   check('原图被恢复', Boolean(restored.source))
+  check('重新打开后回到存档里的那一步', restored.activeStage === 'edit', restored.activeStage)
   check('恢复后没有报错', restored.notice === null && restored.error === null)
 
   stop()

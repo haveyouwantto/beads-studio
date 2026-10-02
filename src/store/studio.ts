@@ -119,6 +119,8 @@ export interface ProjectTab {
  */
 const PROJECT_KEYS = [
   'visited',
+  'activeStage',
+  'edited',
   'source',
   'analysis',
   'alignmentMode',
@@ -151,6 +153,8 @@ export type ProjectState = Pick<StudioState, ProjectKey>
 
 interface StudioState {
   activeStage: StageId
+  /** 网格是不是被「像素编辑」改过 —— 回规范化重新生成会丢掉这些修改 */
+  edited: boolean
 
   // --- 标签页与本地存档 ---
   tabs: ProjectTab[]
@@ -235,6 +239,8 @@ interface StudioState {
   buildGrid: () => void
   /** 像素编辑：提交编辑后的网格（透明格 = 忽略） */
   applyGridEdit: (next: Pixmap) => void
+  /** 规范化里看过「网格被改过」的强制提示，确认掉这个标记 */
+  clearEdited: () => void
   setEditTool: (tool: EditTool) => void
   setEditColor: (hex: string | null) => void
   /** 往「新增色」里放一个颜色（已存在则不动，满了挤掉最早的那个） */
@@ -300,6 +306,8 @@ function freshProject(): ProjectState {
   const library = buildLibraryPalette({ includeExtended: false })
   return {
     visited: { regularize: true, edit: false, optimize: false, pattern: false },
+    activeStage: 'regularize',
+    edited: false,
     source: null,
     analysis: null,
     alignmentMode: 'auto',
@@ -492,10 +500,17 @@ function serializeProject(s: StudioState): PersistedProject {
     optimizeTargetMode: s.optimizeTargetMode,
     optimizeConfig: s.optimizeConfig,
     optimizedHex: s.optimizedPalette.map((e) => e.hex),
+    activeStage: s.activeStage,
+    edited: s.edited,
     source: encodeSource(s),
     sourceOmitted: false,
     grid: encodeGrid(s),
   }
+}
+
+/** 存档里的阶段名可能来自旧版本 / 被手改过，认不出来就退回第一步 */
+function restoreStage(stage: unknown): StageId {
+  return STAGE_ORDER.includes(stage as StageId) ? (stage as StageId) : 'regularize'
 }
 
 /**
@@ -533,7 +548,16 @@ async function deserializeProject(p: PersistedProject): Promise<ProjectState> {
   }
 
   return {
-    visited: { regularize: true, edit: false, optimize: false, pattern: false },
+    // 存的时候在哪一步，读回来就还在哪一步（顺带把那一步标成「进过」）
+    activeStage: restoreStage(p.activeStage),
+    edited: Boolean(p.edited),
+    visited: {
+      regularize: true,
+      edit: false,
+      optimize: false,
+      pattern: false,
+      [restoreStage(p.activeStage)]: true,
+    },
     source,
     analysis: null,
     alignmentMode: p.alignmentMode as AlignmentMode,
@@ -596,8 +620,6 @@ async function decodeImage(blob: Blob): Promise<{ pixmap: Pixmap; url: string }>
 }
 
 export const useStudio = create<StudioState>((set, get) => ({
-  activeStage: 'regularize',
-
   tabs: [{ id: FIRST_TAB_ID, name: NEW_TAB_NAME }],
   activeTabId: FIRST_TAB_ID,
   recent: [],
@@ -646,6 +668,7 @@ export const useStudio = create<StudioState>((set, get) => ({
         analysis: null,
         grid: null,
         result: null,
+        edited: false,
         loading: false,
       })
       get().detectDirectBlock()
@@ -664,6 +687,7 @@ export const useStudio = create<StudioState>((set, get) => ({
       analysis: null,
       grid: null,
       result: null,
+      edited: false,
       error: null,
       optimizedPalette: [],
       optimizeRun: { ...EMPTY_RUN },
@@ -730,8 +754,12 @@ export const useStudio = create<StudioState>((set, get) => ({
   },
 
   applyGridEdit: (next) => {
-    set({ grid: next, result: null })
+    set({ grid: next, result: null, edited: true })
     get().recomputeResult()
+  },
+
+  clearEdited: () => {
+    set({ edited: false })
   },
 
   setEditTool: (tool) => set({ editTool: tool }),
@@ -786,7 +814,8 @@ export const useStudio = create<StudioState>((set, get) => ({
           : { width: src.pixmap.width, height: src.pixmap.height, data: new Uint8ClampedArray(src.pixmap.data) }
     }
 
-    set({ grid })
+    // 重新生成 = 丢掉编辑过的东西
+    set({ grid, edited: false })
     get().recomputeResult()
   },
 

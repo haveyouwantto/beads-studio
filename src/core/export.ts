@@ -84,6 +84,10 @@ export interface ProjectFile {
   app: 'beads-studio'
   version: 1
   savedAt: string
+  /** 导出时停在哪一步；导入后直接跳过去 */
+  activeStage?: string
+  /** 网格是否被像素编辑改过 */
+  edited?: boolean
   grid?: { width: number; height: number; data: string }
   paletteHex?: string[]
   settings?: Record<string, unknown>

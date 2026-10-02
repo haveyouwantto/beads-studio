@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { useStudio, type EditTool } from '../store/studio.ts'
-import { Empty, Notice, Panel, Stat } from './ui.tsx'
+import { Empty, Notice, Panel, Stat, Swatch } from './ui.tsx'
 import { ColorPickerDialog } from './ColorPickerDialog.tsx'
 import { STAGE_META } from './stages.ts'
 import {
@@ -383,16 +383,14 @@ export function EditStep() {
               {EDIT_PRESETS.map((p) => {
                 // H01 现实中是透明塑料：这一格就是「透明（忽略）」
                 const active = tool === 'paint' && (p.transparent ? color === null : color === p.hex)
-                const cls = ['paint-swatch']
-                if (p.transparent) cls.push('transparent')
-                if (active) cls.push('on')
                 return (
-                  <button
+                  <Swatch
                     key={p.code}
-                    className={cls.join(' ')}
-                    style={p.transparent ? undefined : { background: p.hex }}
+                    size="chip"
+                    hex={p.transparent ? undefined : p.hex}
+                    transparent={p.transparent}
+                    selected={active}
                     title={p.transparent ? `${p.code} 透明（忽略）` : `${p.code} · ${p.hex}`}
-                    aria-label={p.transparent ? `${p.code} 透明` : p.code}
                     onClick={() => {
                       setColor(p.transparent ? null : p.hex)
                       setTool('paint')
@@ -418,12 +416,12 @@ export function EditStep() {
             </div>
             <div className="swatch-row">
               {swatches.map((hex) => (
-                <button
+                <Swatch
                   key={hex}
-                  className={color === hex && tool === 'paint' ? 'paint-swatch on' : 'paint-swatch'}
-                  style={{ background: hex }}
+                  size="chip"
+                  hex={hex}
+                  selected={color === hex && tool === 'paint'}
                   title={hex}
-                  aria-label={hex}
                   onClick={() => {
                     setColor(hex)
                     setTool('paint')
@@ -434,14 +432,7 @@ export function EditStep() {
                   }}
                 />
               ))}
-              <button
-                className="paint-swatch add"
-                title="新增颜色"
-                aria-label="新增颜色"
-                onClick={() => openPicker(null)}
-              >
-                <i className="material-icons sm">add</i>
-              </button>
+              <Swatch size="chip" add title="新增颜色" onClick={() => openPicker(null)} />
             </div>
           </div>
         </Panel>
@@ -475,10 +466,12 @@ export function EditStep() {
           {stats && stats.clusters.length ? (
             <div className="swatch-grid dense">
               {stats.clusters.map((c) => (
-                <button
+                <Swatch
                   key={c.hex}
-                  className="swatch static"
-                  style={{ background: c.hex }}
+                  size="dense"
+                  hex={c.hex}
+                  code={c.hex.slice(1, 4)}
+                  count={c.count}
                   title={`${c.hex} · ${c.count} 颗`}
                   onClick={() => {
                     // 图里的颜色直接进「新增」，方便反复用
@@ -490,10 +483,7 @@ export function EditStep() {
                     e.preventDefault()
                     openPicker(c.hex)
                   }}
-                >
-                  <span className="count">{c.count}</span>
-                  <div className="code">{c.hex.slice(1, 4)}</div>
-                </button>
+                />
               ))}
             </div>
           ) : (

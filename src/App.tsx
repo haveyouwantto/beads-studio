@@ -110,6 +110,8 @@ export default function App() {
       app: 'beads-studio',
       version: 1,
       savedAt: new Date().toISOString(),
+      activeStage: s.activeStage,
+      edited: s.edited,
       grid: s.grid ? { width: s.grid.width, height: s.grid.height, data: packPixels(s.grid) } : undefined,
       paletteHex: s.palette.map((e) => e.hex),
       settings: {
@@ -157,6 +159,17 @@ export default function App() {
         })
       }
       useStudio.getState().recomputeResult()
+      // 存档里记了当时停在哪一步，导入后直接跳过去
+      const stage = project.activeStage
+      if (stage && STAGE_ORDER.includes(stage as StageId)) {
+        useStudio.setState({
+          activeStage: stage as StageId,
+          edited: Boolean(project.edited),
+          visited: { ...useStudio.getState().visited, [stage as StageId]: true },
+        })
+      } else if (project.edited) {
+        useStudio.setState({ edited: true })
+      }
     } catch (err) {
       useStudio.setState({ error: err instanceof Error ? err.message : '项目文件读取失败' })
     }

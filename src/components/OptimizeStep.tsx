@@ -1,10 +1,9 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { useStudio } from '../store/studio.ts'
-import { Check, Empty, Field, Notice, Panel, Segmented, Stat } from './ui.tsx'
+import { Check, Empty, Field, Notice, Panel, Segmented, Stat, Swatch } from './ui.tsx'
 import { targetsFromPixmap } from '../core/optimize.ts'
 import { CODE_SYSTEMS, codeOf, compareByCode, swatchHex, type CodeSystem, type PaletteEntry } from '../core/palette.ts'
 import { buildPaletteExport, downloadText } from '../core/export.ts'
-import { idealTextColor } from '../core/color.ts'
 import { drawPixmap } from '../core/render.ts'
 import { CandidateColorsDialog } from './CandidateColorsDialog.tsx'
 import { STAGE_META } from './stages.ts'
@@ -171,23 +170,16 @@ export function OptimizeStep() {
           {sortedResult.length ? (
             <div className="swatch-grid">
               {sortedResult.map((e) => {
-                const text = idealTextColor(e.rgb)
                 const mandatory = config.mandatory && ['H02', 'H07'].includes(e.codes.MARD ?? '')
                 return (
-                  <div
+                  <Swatch
                     key={e.hex}
-                    className="swatch static"
-                    style={{ background: swatchHex(e), color: text }}
+                    hex={swatchHex(e)}
+                    code={codeOf(e, codeSystem)}
+                    hexLabel={e.hex}
+                    lock={mandatory}
                     title={`${codeOf(e, codeSystem)} · ${e.hex}`}
-                  >
-                    {mandatory && (
-                      <span className="lock">
-                        <i className="material-icons sm">lock</i>
-                      </span>
-                    )}
-                    <div className="code">{codeOf(e, codeSystem)}</div>
-                    <div className="hex">{e.hex}</div>
-                  </div>
+                  />
                 )
               })}
             </div>

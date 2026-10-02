@@ -1,6 +1,6 @@
 import { useMemo, useState } from 'react'
 import { useStudio } from '../store/studio.ts'
-import { Check, Empty, Field, Notice, Panel, Segmented, Stat } from './ui.tsx'
+import { Check, Empty, Field, Notice, Panel, Segmented, Stat, Swatch } from './ui.tsx'
 import { buildHexLookup } from '../core/render.ts'
 import {
   buildPatternSvg,
@@ -31,7 +31,6 @@ import {
   downloadBlob,
   downloadText,
 } from '../core/export.ts'
-import { idealTextColor } from '../core/color.ts'
 import { STAGE_META } from './stages.ts'
 
 const EXPORT_SCALES = [1, 2, 4, 8] as const
@@ -83,6 +82,8 @@ export function PatternStep({ onOpenFullscreen }: { onOpenFullscreen: () => void
 
   const counts = useMemo(() => (result ? usageCounts(result, palette) : new Uint32Array(0)), [result, palette])
   const bom = useMemo(() => buildBom(palette, counts, codeSystem), [palette, counts, codeSystem])
+  // 半透明豆（H01）在清单里也要按「看上去是什么颜色」画，不然会是一块纯白
+  const swatchByHex = useMemo(() => new Map(palette.map((e) => [e.hex, swatchHex(e)])), [palette])
   const totalBeads = useMemo(() => bom.reduce((a, r) => a + r.count, 0), [bom])
   const usedSet = useMemo(() => new Set(bom.map((r) => r.hex)), [bom])
   const lookup = useMemo(() => buildHexLookup(palette), [palette])
@@ -291,7 +292,7 @@ export function PatternStep({ onOpenFullscreen }: { onOpenFullscreen: () => void
                   {bom.map((r) => (
                     <tr key={r.hex}>
                       <td>
-                        <span className="chip" style={{ background: r.hex }} />
+                        <Swatch size="dot" hex={swatchByHex.get(r.hex) ?? r.hex} title={`${r.code} · ${r.hex}`} />
                         <b className="mono">{r.code}</b>
                       </td>
                       <td className="mono">{r.hex}</td>
@@ -494,15 +495,15 @@ export function PatternStep({ onOpenFullscreen }: { onOpenFullscreen: () => void
                 const count = idx === undefined ? 0 : counts[idx] ?? 0
                 const used = usedSet.has(e.hex)
                 return (
-                  <div
+                  <Swatch
                     key={e.hex}
-                    className={`swatch static ${used ? '' : 'dimmed'}`}
-                    style={{ background: swatchHex(e), color: idealTextColor(e.rgb) }}
+                    size="dense"
+                    hex={swatchHex(e)}
+                    code={codeOf(e, codeSystem) || e.hex.slice(1, 4)}
+                    count={count > 0 ? count : undefined}
+                    dimmed={!used}
                     title={`${codeOf(e, codeSystem)} · ${e.hex} · ${count} 颗`}
-                  >
-                    {count > 0 && <span className="count">{count}</span>}
-                    <div className="code">{codeOf(e, codeSystem) || e.hex.slice(1, 4)}</div>
-                  </div>
+                  />
                 )
               })}
             </div>

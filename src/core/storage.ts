@@ -129,6 +129,10 @@ export interface PersistedProject {
   paletteSource: string
   /** 选了「套装」色板时用哪一档（24/48/72/96/120）；老存档没有这个字段 */
   kitSize?: number
+  /** 保存时停在哪一步；读回来直接跳过去（老存档没有就回第一步） */
+  activeStage?: string
+  /** 网格是否被像素编辑改过 */
+  edited?: boolean
   /** 配色优化的候选色；空数组 = 全库参与 */
   candidateHex?: string[]
   includeExtended: boolean
