@@ -730,13 +730,37 @@ section('像素编辑（第 2 步）')
   check('工具按钮没有文字', [...host.querySelectorAll('.tool-row button')].every((b) => (b.textContent ?? '').trim() === tools[[...host.querySelectorAll('.tool-row button')].indexOf(b)]))
   check('新增色有「+」入口', Boolean(host.querySelector('.paint-swatch.add')))
 
-  // 右键色块 = 以它为起点开取色器
-  const picker = host.querySelector('.offscreen-picker') as HTMLInputElement
-  check('有取色器控件', Boolean(picker) && picker.type === 'color')
+  // 右键色块 = 以它为起点打开取色对话框
+  useStudio.setState({ editSwatches: [] })
   const firstSwatch = host.querySelector('.paint-swatch') as HTMLButtonElement
   firstSwatch.dispatchEvent(new dom.window.MouseEvent('contextmenu', { bubbles: true, cancelable: true }))
   await flush()
-  check('右键后取色器以该颜色为初值', picker.value.toUpperCase() === '#000000', picker.value)
+  const dialog = host.querySelector('.modal.open')
+  check('右键打开取色对话框', Boolean(dialog))
+  const colorInput = dialog?.querySelector('input[type=color]') as HTMLInputElement | null
+  check('对话框以该颜色为初值', colorInput?.value.toUpperCase() === '#000000', colorInput?.value)
+
+  // 直接改 .value 不会触发 React 的 onChange，要用原生 setter 再派发 input
+  const setInputValue = (el: HTMLInputElement, value: string) => {
+    const setter = Object.getOwnPropertyDescriptor(dom.window.HTMLInputElement.prototype, 'value')?.set
+    setter?.call(el, value)
+    el.dispatchEvent(new dom.window.Event('input', { bubbles: true }))
+  }
+  // 拖动系统取色器会连续触发 change —— 这时候不能往调色板里塞颜色
+  for (const v of ['#111111', '#222222', '#333333']) {
+    if (!colorInput) break
+    setInputValue(colorInput, v)
+  }
+  await flush()
+  check('还没点确定时不加进调色板', useStudio.getState().editSwatches.length === 0, JSON.stringify(useStudio.getState().editSwatches))
+
+  const hexBox = dialog?.querySelector('input[type=text]') as HTMLInputElement | null
+  if (hexBox) setInputValue(hexBox, '#123456')
+  await flush()
+  ;(dialog?.querySelectorAll('button')[dialog.querySelectorAll('button').length - 1] as HTMLButtonElement | undefined)?.click()
+  await flush()
+  check('确定后只加一个颜色', useStudio.getState().editSwatches.length === 1, JSON.stringify(useStudio.getState().editSwatches))
+  check('加的就是确定时的颜色', useStudio.getState().editSwatches[0] === '#123456', JSON.stringify(useStudio.getState().editSwatches))
 
   // 图里的颜色最多列 24 类，点一下会进「新增」
   const clusterSwatches = host.querySelectorAll('.swatch-grid .swatch')

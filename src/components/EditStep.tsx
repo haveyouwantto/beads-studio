@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { useStudio, type EditTool } from '../store/studio.ts'
 import { Empty, Notice, Panel, Stat } from './ui.tsx'
+import { ColorPickerDialog } from './ColorPickerDialog.tsx'
 import { STAGE_META } from './stages.ts'
 import {
   clusterColors,
@@ -18,6 +19,8 @@ import type { Pixmap } from '../core/types.ts'
 /** 编辑区里的一格画多大（屏幕像素），太大就看不下整张图，太小点不准 */
 const MIN_CELL = 4
 const MAX_CELL = 40
+/** 打开时先按容器宽度适应，但别超过这个值（小图在宽屏上不至于一格顶满屏） */
+const FIT_MAX_CELL = 24
 
 /** 工具按钮：图标用 Material Icons（和界面其它地方一致） */
 const TOOLS: { id: EditTool; icon: string; label: string }[] = [
@@ -57,19 +60,14 @@ export function EditStep() {
   const [cell, setCell] = useState(16)
   const [version, setVersion] = useState(0)
 
-  // 自带的取色器：点「+」或右键某个色块时，用它选一个颜色
-  const pickerRef = useRef<HTMLInputElement>(null)
-
-  /** 打开取色器，初值用 `from`（右键色块 = 从那个颜色开始调） */
-  const openPicker = useCallback((from: string | null) => {
-    const input = pickerRef.current
-    if (!input) return
-    input.value = from ?? color ?? '#000000'
-    input.click()
+  // 取色对话框：点「+」或右键某个色块时打开，初值就是那个颜色
+  const [picker, setPicker] = useState<{ title: string; initial: string } | null>(null)
+  const openPicker = useCallback((from: string | null, title = '选择颜色') => {
+    setPicker({ title, initial: from ?? color ?? '#000000' })
   }, [color])
 
   const onPickedColor = (hex: string) => {
-    addSwatch(hex)
+    addSwatch(hex) // 一次只加一个（在对话框里按「确定」时才走到这里）
     setColor(hex)
     setTool('paint')
   }
@@ -152,13 +150,14 @@ export function EditStep() {
     // version 变化表示草稿被替换过（撤销/重做/新网格），需要重画
   }, [draw, version])
 
-  // 网格大小变化时，把格子尺寸调成看得下整张图
+  // 只在「网格尺寸」变化时重新按容器宽度算一次格子大小。
+  // 不能依赖 grid 对象本身 —— 每落一笔都会提交一个新网格，那样会不停覆盖手动缩放。
   useEffect(() => {
     if (!grid || !hostRef.current) return
     const width = hostRef.current.clientWidth - 28
     const fit = Math.floor(width / grid.width)
-    setCell(Math.max(MIN_CELL, Math.min(MAX_CELL, fit || MIN_CELL)))
-  }, [grid])
+    setCell(Math.max(MIN_CELL, Math.min(FIT_MAX_CELL, fit || MIN_CELL)))
+  }, [grid?.width, grid?.height])
 
   const pushHistory = () => {
     if (!draft.current) return
@@ -394,7 +393,7 @@ export function EditStep() {
                   }}
                   onContextMenu={(e) => {
                     e.preventDefault()
-                    openPicker(c.hex)
+                    openPicker(c.hex, `从 ${c.hex} 开始调`)
                   }}
                 />
               ))}
@@ -429,7 +428,7 @@ export function EditStep() {
                   }}
                   onContextMenu={(e) => {
                     e.preventDefault()
-                    openPicker(hex)
+                    openPicker(hex, `从 ${hex} 开始调`)
                   }}
                 />
               ))}
@@ -487,7 +486,7 @@ export function EditStep() {
                   }}
                   onContextMenu={(e) => {
                     e.preventDefault()
-                    openPicker(c.hex)
+                    openPicker(c.hex, `从 ${c.hex} 开始调`)
                   }}
                 >
                   <span className="count">{c.count}</span>
@@ -510,15 +509,17 @@ export function EditStep() {
         </Panel>
       </div>
 
-      {/* 取色器：不显示这个原生控件，只用它弹系统调色板 */}
-      <input
-        ref={pickerRef}
-        type="color"
-        tabIndex={-1}
-        aria-hidden="true"
-        className="offscreen-picker"
-        onChange={(e) => onPickedColor(e.target.value.toUpperCase())}
-      />
+      {picker && (
+        <ColorPickerDialog
+          title={picker.title}
+          initial={picker.initial}
+          onCancel={() => setPicker(null)}
+          onConfirm={(hex) => {
+            onPickedColor(hex)
+            setPicker(null)
+          }}
+        />
+      )}
     </div>
   )
 }
