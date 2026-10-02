@@ -69,7 +69,6 @@ export function EditStep() {
   const onPickedColor = (hex: string) => {
     addSwatch(hex) // 一次只加一个（在对话框里按「确定」时才走到这里）
     setColor(hex)
-    setTool('paint')
   }
 
   // 网格换了（重新规范化 / 切标签页）就重置草稿与历史
@@ -207,10 +206,9 @@ export function EditStep() {
     e.currentTarget.setPointerCapture(e.pointerId)
     if (tool === 'pick') {
       const picked = draft.current ? readCell({ width: grid.width, height: grid.height, data: draft.current }, at.x, at.y) : null
-      // 取色 = 把颜色加进「新增色」并用它当画笔
+      // 取色 = 把颜色加进「新增色」并设为当前色；工具不动
       if (picked) addSwatch(picked)
       setColor(picked)
-      setTool('paint')
       return
     }
     pushHistory()
@@ -382,7 +380,8 @@ export function EditStep() {
             <div className="swatch-row">
               {EDIT_PRESETS.map((p) => {
                 // H01 现实中是透明塑料：这一格就是「透明（忽略）」
-                const active = tool === 'paint' && (p.transparent ? color === null : color === p.hex)
+                // 选中框跟着「当前色」走，和左边选了哪个工具无关
+                const active = p.transparent ? color === null : color === p.hex
                 return (
                   <Swatch
                     key={p.code}
@@ -393,7 +392,6 @@ export function EditStep() {
                     title={p.transparent ? `${p.code} 透明（忽略）` : `${p.code} · ${p.hex}`}
                     onClick={() => {
                       setColor(p.transparent ? null : p.hex)
-                      setTool('paint')
                     }}
                     onContextMenu={
                       p.transparent
@@ -420,11 +418,10 @@ export function EditStep() {
                   key={hex}
                   size="chip"
                   hex={hex}
-                  selected={color === hex && tool === 'paint'}
+                  selected={color === hex}
                   title={hex}
                   onClick={() => {
                     setColor(hex)
-                    setTool('paint')
                   }}
                   onContextMenu={(e) => {
                     e.preventDefault()
@@ -477,7 +474,6 @@ export function EditStep() {
                     // 图里的颜色直接进「新增」，方便反复用
                     addSwatch(c.hex)
                     setColor(c.hex)
-                    setTool('paint')
                   }}
                   onContextMenu={(e) => {
                     e.preventDefault()

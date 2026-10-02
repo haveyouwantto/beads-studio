@@ -810,6 +810,21 @@ section('像素编辑（第 2 步）')
   await flush()
   check('点图中的颜色会加入「新增」', useStudio.getState().editSwatches.length === 1, JSON.stringify(useStudio.getState().editSwatches))
   useStudio.setState({ editSwatches: [] })
+
+  // 选了填充再去点颜色，工具不能被顺手切成画笔；当前色的选中框也和工具无关
+  useStudio.setState({ editTool: 'fill' })
+  await flush()
+  const chipOn = () =>
+    host.querySelector('.swatch-row .swatch.chip[aria-label^="H07"]')?.classList.contains('on') === true
+  check('选中框一开始不在任何色块上', !chipOn())
+  ;(host.querySelector('.swatch-row .swatch.chip[aria-label^="H07"]') as HTMLButtonElement | null)?.click()
+  await flush()
+  check('点色块不会把工具切成画笔', useStudio.getState().editTool === 'fill', useStudio.getState().editTool)
+  check('点色块就是换颜色', useStudio.getState().editColor === '#000000', String(useStudio.getState().editColor))
+  check('填充工具下当前色照样有选中框', chipOn())
+  useStudio.setState({ editTool: 'paint', editSwatches: [] })
+  await flush()
+
   editRoot.unmount()
   await flush()
   host.remove()
