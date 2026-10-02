@@ -1,5 +1,88 @@
 import type { ReactNode } from 'react'
 import { useEffect } from 'react'
+import { hexToRgb, idealTextColor } from '../core/color.ts'
+
+/**
+ * 全站唯一的色块。
+ *
+ * 之前「优化结果」「色板用量」「图中颜色」「候选色」各写了一套，
+ * 结果有的忘了按底色自动切黑/白文字（浅色块上白字看不见）。
+ * 现在统一走这里：底色决定文字色，图标/数量/色号按需叠加。
+ *
+ * size：
+ *   md    默认，可以放色号与 HEX
+ *   dense 色板用量那种小格
+ *   chip  画笔调色板那种 26px 小方块（不放文字）
+ *   dot   用料清单 / 方案预览里那种 14px 圆点，只有颜色没有文字
+ */
+export function Swatch({
+  hex,
+  code,
+  hexLabel,
+  count,
+  title,
+  lock = false,
+  selected = false,
+  dimmed = false,
+  transparent = false,
+  add = false,
+  size = 'md',
+  onClick,
+  onContextMenu,
+}: {
+  hex?: string
+  code?: string
+  hexLabel?: string
+  count?: number
+  title?: string
+  lock?: boolean
+  selected?: boolean
+  dimmed?: boolean
+  /** 透明档：画成棋盘格 */
+  transparent?: boolean
+  /** 「+」按钮那种空块 */
+  add?: boolean
+  size?: 'md' | 'dense' | 'chip' | 'dot'
+  onClick?: () => void
+  onContextMenu?: (e: React.MouseEvent) => void
+}) {
+  const cls = ['swatch', size]
+  if (dimmed) cls.push('dimmed')
+  if (selected) cls.push('on')
+  if (transparent) cls.push('transparent')
+  if (add) cls.push('add')
+
+  // 文字颜色跟着「实际显示出来的底色」走 —— 半透明豆的观感色也在这里传进来
+  const style = add || transparent ? undefined : { background: hex, color: idealTextColor(hexToRgb(hex ?? '#000000')) }
+  const Tag = onClick || onContextMenu ? 'button' : 'div'
+
+  return (
+    <Tag
+      type={Tag === 'button' ? 'button' : undefined}
+      className={cls.join(' ')}
+      style={style}
+      title={title}
+      aria-label={title ?? code}
+      onClick={onClick}
+      onContextMenu={onContextMenu}
+    >
+      {selected && !add && (
+        <span className="pick">
+          <i className="material-icons sm">check</i>
+        </span>
+      )}
+      {lock && (
+        <span className="lock">
+          <i className="material-icons sm">lock</i>
+        </span>
+      )}
+      {count !== undefined && <span className="count">{count}</span>}
+      {add && <i className="material-icons sm">add</i>}
+      {code && <div className="code">{code}</div>}
+      {hexLabel && <div className="hex">{hexLabel}</div>}
+    </Tag>
+  )
+}
 
 /**
  * MD 涟漪：在点击位置扩散一圈。
@@ -10,7 +93,7 @@ import { useEffect } from 'react'
  */
 export function useMaterialRipple(): void {
   useEffect(() => {
-    const selector = '.btn, .tab, .rail-step, .tab-new, .tab-close, .swatch, .candidate, .segmented button'
+    const selector = '.btn, .tab, .rail-step, .tab-new, .tab-close, button.swatch, .segmented button'
 
     const onPointerDown = (e: PointerEvent) => {
       if (e.button !== 0) return

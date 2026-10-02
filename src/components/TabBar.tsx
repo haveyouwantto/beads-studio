@@ -4,7 +4,7 @@ import { getTabSnapshot, useStudio } from '../store/studio.ts'
 /**
  * 浏览器式的项目标签栏。
  * 每个标签页是一个独立项目（各自的图、网格、色板、配色结果），
- * 点击切换，右侧 × 关闭，双击名字可以改名。
+ * 点一下切换，右侧 × 关闭；点当前标签的名字就地改名（双击任意标签也行）。
  */
 export function TabBar({ onRequestFile }: { onRequestFile: () => void }) {
   const tabs = useStudio((s) => s.tabs)
@@ -21,6 +21,11 @@ export function TabBar({ onRequestFile }: { onRequestFile: () => void }) {
   const commit = () => {
     if (editingId) renameTab(editingId, draft.trim())
     setEditingId(null)
+  }
+
+  const startRename = (id: string, name: string) => {
+    setEditingId(id)
+    setDraft(name)
   }
 
   return (
@@ -45,6 +50,7 @@ export function TabBar({ onRequestFile }: { onRequestFile: () => void }) {
                   value={draft}
                   onChange={(e) => setDraft(e.target.value)}
                   onClick={(e) => e.stopPropagation()}
+                  onFocus={(e) => e.currentTarget.select()}
                   onBlur={commit}
                   onKeyDown={(e) => {
                     if (e.key === 'Enter') commit()
@@ -54,10 +60,15 @@ export function TabBar({ onRequestFile }: { onRequestFile: () => void }) {
               ) : (
                 <span
                   className="tab-name"
+                  onClick={(e) => {
+                    // 点当前标签的名字 = 改名；点别的标签 = 切过去
+                    e.stopPropagation()
+                    if (active) startRename(tab.id, tab.name)
+                    else switchTab(tab.id)
+                  }}
                   onDoubleClick={(e) => {
                     e.stopPropagation()
-                    setEditingId(tab.id)
-                    setDraft(tab.name)
+                    startRename(tab.id, tab.name)
                   }}
                 >
                   {tab.name}

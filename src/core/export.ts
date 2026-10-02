@@ -12,6 +12,23 @@ export function downloadBlob(blob: Blob, filename: string): void {
   setTimeout(() => URL.revokeObjectURL(url), 2000)
 }
 
+/**
+ * 下载文件名：以项目名开头，这样一堆导出能看出是哪个项目的。
+ * 文件系统不允许的字符（`\ / : * ? " < > |`、控制符）换成空格，
+ * 去掉首尾的点和空格（开头的点会让文件变成隐藏文件），太长的截断。
+ */
+export function safeFileName(name: string, fallback = 'beads-studio'): string {
+  const cleaned = (name ?? '')
+    .replace(/[\\/:*?"<>|]/g, ' ')
+    .replace(/[\u0000-\u001f]/g, ' ')
+    .replace(/\s+/g, ' ')
+    .replace(/^[.\s]+/, '')
+    .replace(/[.\s]+$/, '')
+    .slice(0, 60)
+    .trim()
+  return cleaned || fallback
+}
+
 export function downloadText(text: string, filename: string, mime = 'text/plain'): void {
   downloadBlob(new Blob([text], { type: `${mime};charset=utf-8` }), filename)
 }
@@ -64,7 +81,10 @@ export function buildPaletteExport(
   if (format === 'json') {
     return JSON.stringify(
       {
-        version: '3.0',
+        // 本工具自己的格式版本，和项目存档一样从 1 起
+        // （旧的 '3.0' 是从原「配色采样器」搬过来的字面量，跟这里没关系）
+        app: 'beads-studio',
+        version: 1,
         codeSystem: system,
         exportDate: new Date().toISOString(),
         totalColors: sorted.length,
@@ -84,6 +104,12 @@ export interface ProjectFile {
   app: 'beads-studio'
   version: 1
   savedAt: string
+  /** 项目名（标签页标题）；导入后照着改名 */
+  name?: string
+  /** 导出时停在哪一步；导入后直接跳过去 */
+  activeStage?: string
+  /** 网格是否被像素编辑改过 */
+  edited?: boolean
   grid?: { width: number; height: number; data: string }
   paletteHex?: string[]
   settings?: Record<string, unknown>

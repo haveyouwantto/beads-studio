@@ -114,6 +114,8 @@ export function RegularizeStep({ onOpenFile }: { onOpenFile: () => void }) {
   const setDirectBlock = useStudio((s) => s.setDirectBlock)
   const detectDirectBlock = useStudio((s) => s.detectDirectBlock)
   const grid = useStudio((s) => s.grid)
+  const edited = useStudio((s) => s.edited)
+  const clearEdited = useStudio((s) => s.clearEdited)
   const goNext = useStudio((s) => s.goNext)
 
   const [dragging, setDragging] = useState(-1)
@@ -324,7 +326,7 @@ export function RegularizeStep({ onOpenFile }: { onOpenFile: () => void }) {
           hint={grid ? `${grid.width} × ${grid.height} 格` : '尚未生成'}
           actions={
             <button className="btn btn-small waves-effect waves-light" onClick={goNext} disabled={!grid}>
-              下一步：优化颜色
+              下一步：编辑
               <i className="material-icons sm">arrow_forward</i>
             </button>
           }
@@ -505,6 +507,25 @@ export function RegularizeStep({ onOpenFile }: { onOpenFile: () => void }) {
           </div>
         </Panel>
       </div>
+
+      {/* 编辑过的网格再重新生成会丢掉那些修改，所以这里直接把整个画面盖住，
+          点掉「继续」才能操作；确认后标记清零，不再反复弹。 */}
+      {edited && (
+        <div className="modal-overlay open" role="presentation">
+          <div className="modal open guard" role="alertdialog" aria-modal="true" aria-label="网格已被编辑">
+            <div className="modal-content modal-body guard-body">
+              <i className="material-icons">warning</i>
+              <div>这个网格在「编辑」里改过，重新生成会丢掉修改。</div>
+            </div>
+            <footer className="modal-foot">
+              <span style={{ flex: 1 }} />
+              <button className="btn waves-effect waves-light" onClick={clearEdited}>
+                继续
+              </button>
+            </footer>
+          </div>
+        </div>
+      )}
     </div>
   )
 }

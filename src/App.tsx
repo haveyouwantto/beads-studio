@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { useStudio, type StageId } from './store/studio.ts'
 import { RegularizeStep } from './components/RegularizeStep.tsx'
+import { EditStep } from './components/EditStep.tsx'
 import { OptimizeStep } from './components/OptimizeStep.tsx'
 import { PatternStep } from './components/PatternStep.tsx'
 import { FullscreenPreview } from './components/FullscreenPreview.tsx'
@@ -10,7 +11,7 @@ import { MenuDrawer, type DrawerItem } from './components/MenuDrawer.tsx'
 import { STAGE_META, STAGE_ORDER } from './components/stages.ts'
 import { BeadLogo } from './components/BeadLogo.tsx'
 import { Notice, useMaterialRipple } from './components/ui.tsx'
-import { packPixels, unpackPixels, downloadText, type ProjectFile } from './core/export.ts'
+import { packPixels, unpackPixels, downloadText, safeFileName, type ProjectFile } from './core/export.ts'
 import { formatTime } from './core/storage.ts'
 
 const STAGES = STAGE_ORDER.map((id) => ({ id, ...STAGE_META[id] }))
@@ -89,12 +90,12 @@ export default function App() {
     }
   }, [])
 
-  // Ctrl/Cmd + 1/2/3 切换阶段
+  // Ctrl/Cmd + 1/2/3/4 切换阶段
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
       if (!(e.ctrlKey || e.metaKey)) return
-      const idx = ['1', '2', '3'].indexOf(e.key)
-      if (idx >= 0) {
+      const idx = Number(e.key) - 1
+      if (Number.isInteger(idx) && idx >= 0 && idx < STAGES.length) {
         e.preventDefault()
         setStage(STAGES[idx].id)
       }
@@ -109,6 +110,9 @@ export default function App() {
       app: 'beads-studio',
       version: 1,
       savedAt: new Date().toISOString(),
+      name: s.tabs.find((t) => t.id === s.activeTabId)?.name ?? '未命名项目',
+      activeStage: s.activeStage,
+      edited: s.edited,
       grid: s.grid ? { width: s.grid.width, height: s.grid.height, data: packPixels(s.grid) } : undefined,
       paletteHex: s.palette.map((e) => e.hex),
       settings: {
@@ -119,7 +123,8 @@ export default function App() {
         optimizeTargetMode: s.optimizeTargetMode,
       },
     }
-    downloadText(JSON.stringify(project), `beads-studio-${Date.now()}.json`, 'application/json')
+    // 文件名用项目名，别让一堆导出都叫 beads-xxxx
+    downloadText(JSON.stringify(project), `${safeFileName(project.name ?? '未命名项目')}.json`, 'application/json')
   }
 
   const loadProject = async (file: File) => {
@@ -156,6 +161,21 @@ export default function App() {
         })
       }
       useStudio.getState().recomputeResult()
+      // 存档里的项目名：导入后当前标签页跟着改名
+      if (typeof project.name === 'string' && project.name.trim()) {
+        useStudio.getState().renameTab(useStudio.getState().activeTabId, project.name.trim())
+      }
+      // 存档里记了当时停在哪一步，导入后直接跳过去
+      const stage = project.activeStage
+      if (stage && STAGE_ORDER.includes(stage as StageId)) {
+        useStudio.setState({
+          activeStage: stage as StageId,
+          edited: Boolean(project.edited),
+          visited: { ...useStudio.getState().visited, [stage as StageId]: true },
+        })
+      } else if (project.edited) {
+        useStudio.setState({ edited: true })
+      }
     } catch (err) {
       useStudio.setState({ error: err instanceof Error ? err.message : '项目文件读取失败' })
     }
@@ -164,6 +184,7 @@ export default function App() {
   const stageDone: Record<StageId, boolean> = {
     // 没进过的阶段不算完成：图纸是自动生成的，否则一做完第一步第三步就提前打勾了
     regularize: visited.regularize && Boolean(grid),
+    edit: visited.edit && Boolean(grid),
     optimize: visited.optimize && optimizedPalette.length > 0,
     pattern: visited.pattern && Boolean(result),
   }
@@ -307,6 +328,7 @@ export default function App() {
           )}
 
           {activeStage === 'regularize' && <RegularizeStep onOpenFile={openFile} />}
+          {activeStage === 'edit' && <EditStep />}
           {activeStage === 'optimize' && <OptimizeStep />}
           {activeStage === 'pattern' && <PatternStep onOpenFullscreen={() => setShowFullscreen(true)} />}
         </main>

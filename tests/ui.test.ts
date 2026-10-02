@@ -215,6 +215,12 @@ const { RecentProjectsDialog } = await import('../src/components/RecentProjectsD
 const { CandidateColorsDialog } = await import('../src/components/CandidateColorsDialog.tsx')
 const { usePinchPan } = await import('../src/components/gestures.ts')
 const { MenuDrawer } = await import('../src/components/MenuDrawer.tsx')
+const { EditStep } = await import('../src/components/EditStep.tsx')
+const { RegularizeStep } = await import('../src/components/RegularizeStep.tsx')
+const { countIgnored, writeCell } = await import('../src/core/edit.ts')
+const { usageCounts } = await import('../src/core/quantize.ts')
+const { hexToRgb, idealTextColor, luminance } = await import('../src/core/color.ts')
+type Pixmap = { width: number; height: number; data: Uint8ClampedArray }
 
 const act = (React as unknown as { act: (cb: () => void | Promise<void>) => Promise<void> }).act
 
@@ -232,12 +238,12 @@ try {
 }
 check('App 渲染无异常', bootError === null, bootError ?? '')
 check('渲染出品牌标题', container.textContent?.includes('Beads Studio') ?? false)
-check('左侧显示三个阶段', ['规范化', '优化颜色', '转拼豆图纸'].every((t) => container.textContent?.includes(t)))
+check('左侧显示四个阶段', ['规范化', '编辑', '优化颜色', '转拼豆图纸'].every((t) => container.textContent?.includes(t)))
 check('空态提示上传图片', container.textContent?.includes('先放入一张图片') ?? false)
 check(
   '初始只有第一步算已访问',
   JSON.stringify(useStudio.getState().visited) ===
-    JSON.stringify({ regularize: true, optimize: false, pattern: false }),
+    JSON.stringify({ regularize: true, edit: false, optimize: false, pattern: false }),
   JSON.stringify(useStudio.getState().visited),
 )
 check(
@@ -701,6 +707,278 @@ section('窄屏工具抽屉')
   host.remove()
 }
 
+section('像素编辑（第 2 步）')
+{
+  // 走到「编辑」这一步
+  useStudio.getState().setStage('edit')
+  await flush(20)
+  const host = dom.window.document.createElement('div')
+  dom.window.document.body.appendChild(host)
+  const editRoot = createRoot(host)
+  let err: string | null = null
+  try {
+    editRoot.render(React.createElement(EditStep))
+    await flush(20)
+  } catch (e) {
+    err = e instanceof Error ? e.message : String(e)
+  }
+  check('编辑步骤渲染无异常', err === null, err ?? '')
+  check('渲染出画板', Boolean(host.querySelector('canvas')))
+  check(
+    '画笔里有透明档（H01）',
+    host.querySelector('.swatch.chip.transparent')?.getAttribute('aria-label')?.startsWith('H01') === true,
+    host.querySelector('.swatch.chip.transparent')?.getAttribute('aria-label') ?? '没有',
+  )
+  check(
+    '预设色板是 24 色套装',
+    host.querySelectorAll('.field .swatch-row .swatch.chip:not(.add)').length === 24,
+    `${host.querySelectorAll('.field .swatch-row .swatch.chip:not(.add)').length}`,
+  )
+  // 工具用 Material 图标：画笔 / 填充 / 吸管
+  const tools = [...host.querySelectorAll('.tool-row button')].map((b) => b.querySelector('.material-icons')?.textContent ?? '')
+  check('三个工具都是 md 图标', tools.join() === 'brush,format_color_fill,colorize', tools.join())
+  check('工具按钮没有文字', [...host.querySelectorAll('.tool-row button')].every((b) => (b.textContent ?? '').trim() === tools[[...host.querySelectorAll('.tool-row button')].indexOf(b)]))
+  check('新增色有「+」入口', Boolean(host.querySelector('.swatch.chip.add')))
+
+  // 右键色块 = 以它为起点打开取色对话框
+  useStudio.setState({ editSwatches: [] })
+  const blackSwatch = [...host.querySelectorAll('.swatch.chip')].find((b) =>
+    (b.getAttribute('aria-label') ?? '').startsWith('H07'),
+  ) as HTMLButtonElement | undefined
+  check('预设里有黑色 H07', Boolean(blackSwatch))
+  blackSwatch?.dispatchEvent(new dom.window.MouseEvent('contextmenu', { bubbles: true, cancelable: true }))
+  await flush()
+  const dialog = host.querySelector('.modal.open')
+  check('右键打开取色对话框', Boolean(dialog))
+  const colorInput = dialog?.querySelector('input[type=color]') as HTMLInputElement | null
+  check('对话框以该颜色为初值', colorInput?.value.toUpperCase() === '#000000', colorInput?.value)
+
+  // 直接改 .value 不会触发 React 的 onChange，要用原生 setter 再派发 input
+  const setInputValue = (el: HTMLInputElement, value: string) => {
+    const setter = Object.getOwnPropertyDescriptor(dom.window.HTMLInputElement.prototype, 'value')?.set
+    setter?.call(el, value)
+    el.dispatchEvent(new dom.window.Event('input', { bubbles: true }))
+  }
+  // 拖动系统取色器会连续触发 change —— 这时候不能往调色板里塞颜色
+  for (const v of ['#111111', '#222222', '#333333']) {
+    if (!colorInput) break
+    setInputValue(colorInput, v)
+  }
+  await flush()
+  check('还没点确定时不加进调色板', useStudio.getState().editSwatches.length === 0, JSON.stringify(useStudio.getState().editSwatches))
+
+  const hexBox = dialog?.querySelector('input[type=text]') as HTMLInputElement | null
+  if (hexBox) setInputValue(hexBox, '#123456')
+  await flush()
+  ;(dialog?.querySelectorAll('button')[dialog.querySelectorAll('button').length - 1] as HTMLButtonElement | undefined)?.click()
+  await flush()
+  check('确定后只加一个颜色', useStudio.getState().editSwatches.length === 1, JSON.stringify(useStudio.getState().editSwatches))
+  check('加的就是确定时的颜色', useStudio.getState().editSwatches[0] === '#123456', JSON.stringify(useStudio.getState().editSwatches))
+
+  // 图里的颜色最多列 24 类，点一下会进「新增」
+  const clusterSwatches = host.querySelectorAll('.swatch-grid .swatch')
+  check('图中颜色最多 24 类', clusterSwatches.length <= 24, `${clusterSwatches.length}`)
+
+  // 色块上的文字颜色必须跟着底色走：浅底黑字、深底白字。
+  // 第二步的「图中颜色」以前是自己写的一套，漏了这条，浅色块上白字看不见。
+  const probe = dom.window.document.createElement('span')
+  const cssColor = (hex: string) => {
+    probe.style.color = hex
+    return probe.style.color
+  }
+  const bgOf = (el: HTMLElement): [number, number, number] | null => {
+    const raw = el.style.background || el.style.backgroundColor
+    const h = /#([0-9a-fA-F]{6})/.exec(raw)
+    if (h) return hexToRgb(h[0])
+    const m = /rgba?\((\d+),\s*(\d+),\s*(\d+)/.exec(raw)
+    return m ? [Number(m[1]), Number(m[2]), Number(m[3])] : null
+  }
+  const swatchEls = [...host.querySelectorAll('.swatch')] as HTMLElement[]
+  const wrongText = swatchEls.filter((el) => {
+    const rgb = bgOf(el)
+    return rgb ? el.style.color !== cssColor(idealTextColor(rgb)) : false
+  })
+  const lightSwatch = swatchEls.find((el) => {
+    const rgb = bgOf(el)
+    return rgb ? luminance(rgb) > 0.55 : false
+  })
+  check('色块文字按底色自动黑/白', swatchEls.length > 0 && wrongText.length === 0, `${wrongText.length} 个不匹配`)
+  check('浅色块上是深色文字', Boolean(lightSwatch) && lightSwatch?.style.color === cssColor('#0b1220'), lightSwatch?.style.color ?? '')
+
+  useStudio.setState({ editSwatches: [] })
+  ;(clusterSwatches[0] as HTMLButtonElement | undefined)?.click()
+  await flush()
+  check('点图中的颜色会加入「新增」', useStudio.getState().editSwatches.length === 1, JSON.stringify(useStudio.getState().editSwatches))
+  useStudio.setState({ editSwatches: [] })
+
+  // 选了填充再去点颜色，工具不能被顺手切成画笔；当前色的选中框也和工具无关
+  useStudio.setState({ editTool: 'fill' })
+  await flush()
+  const chipOn = () =>
+    host.querySelector('.swatch-row .swatch.chip[aria-label^="H07"]')?.classList.contains('on') === true
+  check('选中框一开始不在任何色块上', !chipOn())
+  ;(host.querySelector('.swatch-row .swatch.chip[aria-label^="H07"]') as HTMLButtonElement | null)?.click()
+  await flush()
+  check('点色块不会把工具切成画笔', useStudio.getState().editTool === 'fill', useStudio.getState().editTool)
+  check('点色块就是换颜色', useStudio.getState().editColor === '#000000', String(useStudio.getState().editColor))
+  check('填充工具下当前色照样有选中框', chipOn())
+
+  // 填充方式：只有选了填充才出现，默认按颜色
+  useStudio.setState({ editTool: 'paint' })
+  await flush()
+  check('没选填充时不显示填充方式', !(host.textContent ?? '').includes('填充方式'))
+  useStudio.setState({ editTool: 'fill' })
+  await flush()
+  const fillTabs = [...host.querySelectorAll('.segmented .tab a')].map((a) => (a.textContent ?? '').trim())
+  check('选了填充才出现「按颜色 / 按聚类」', fillTabs.join() === '按颜色,按聚类', fillTabs.join())
+  check('填充默认按颜色', useStudio.getState().editFillMode === 'color', useStudio.getState().editFillMode)
+  ;(host.querySelectorAll('.segmented .tab a')[1] as HTMLAnchorElement | undefined)?.click()
+  await flush()
+  check('能切到按聚类', useStudio.getState().editFillMode === 'cluster', useStudio.getState().editFillMode)
+
+  useStudio.setState({ editTool: 'paint', editFillMode: 'color', editSwatches: [] })
+  await flush()
+
+  // 撤销 / 重做：必须真的能退回上一笔（以前每落一笔都会把历史清空，按钮等于摆设）
+  {
+    const canvas = host.querySelector('.canvas-wrap.edit-host canvas') as HTMLCanvasElement
+    const gridNow = useStudio.getState().grid as Pixmap
+    const CELL_PX = 10
+    // jsdom 不做排版，给画布一块确定的尺寸，坐标换算才有意义
+    canvas.getBoundingClientRect = () =>
+      ({
+        left: 0,
+        top: 0,
+        width: gridNow.width * CELL_PX,
+        height: gridNow.height * CELL_PX,
+        right: gridNow.width * CELL_PX,
+        bottom: gridNow.height * CELL_PX,
+        x: 0,
+        y: 0,
+        toJSON: () => ({}),
+      }) as DOMRect
+    const proto = dom.window.HTMLElement.prototype as unknown as Record<string, unknown>
+    if (typeof proto.setPointerCapture !== 'function') proto.setPointerCapture = () => undefined
+    if (typeof proto.releasePointerCapture !== 'function') proto.releasePointerCapture = () => undefined
+
+    const at = (x: number, y: number) => ({
+      pointerId: 1,
+      clientX: (x + 0.5) * CELL_PX,
+      clientY: (y + 0.5) * CELL_PX,
+      pointerType: 'mouse',
+      bubbles: true,
+      cancelable: true,
+    })
+    const cellPx = (pm: Pixmap, x: number, y: number) => {
+      const i = (y * pm.width + x) * 4
+      return [pm.data[i], pm.data[i + 1], pm.data[i + 2], pm.data[i + 3]].join()
+    }
+    const undoBtn = host.querySelector('button[aria-label="撤销"]') as HTMLButtonElement
+    const redoBtn = host.querySelector('button[aria-label="重做"]') as HTMLButtonElement
+    check('撤销 / 重做按钮在', Boolean(undoBtn) && Boolean(redoBtn))
+    check('还没画时撤销是禁用的', undoBtn.disabled)
+
+    const first = cellPx(gridNow, 0, 0)
+    useStudio.setState({ editTool: 'paint', editColor: '#FF0000' })
+    await flush()
+    canvas.dispatchEvent(new dom.window.PointerEvent('pointerdown', at(0, 0)))
+    canvas.dispatchEvent(new dom.window.PointerEvent('pointerup', at(0, 0)))
+    await flush(20)
+    check('画了一格', cellPx(useStudio.getState().grid as Pixmap, 0, 0) === '255,0,0,255', cellPx(useStudio.getState().grid as Pixmap, 0, 0))
+    check('一笔之后撤销可用', !undoBtn.disabled)
+
+    undoBtn.click()
+    await flush(20)
+    check('撤销回到上一笔之前', cellPx(useStudio.getState().grid as Pixmap, 0, 0) === first, cellPx(useStudio.getState().grid as Pixmap, 0, 0))
+    check('撤销之后重做可用', !redoBtn.disabled)
+
+    redoBtn.click()
+    await flush(20)
+    check('重做又回到画过的样子', cellPx(useStudio.getState().grid as Pixmap, 0, 0) === '255,0,0,255', cellPx(useStudio.getState().grid as Pixmap, 0, 0))
+
+    // 收尾：退回没画过的样子，别影响后面的用例
+    undoBtn.click()
+    await flush(20)
+    check('再撤销一次又回到原样', cellPx(useStudio.getState().grid as Pixmap, 0, 0) === first)
+  }
+
+  editRoot.unmount()
+  await flush()
+  host.remove()
+
+  // 涂掉几格，验证下游（优化目标 / 用料清单）真的忽略它们
+  const grid = useStudio.getState().grid
+  check('编辑前有网格', Boolean(grid))
+  if (grid) {
+    const edited: Pixmap = { width: grid.width, height: grid.height, data: new Uint8ClampedArray(grid.data) }
+    const total = grid.width * grid.height
+    const ignoredCount = 5
+    for (let i = 0; i < ignoredCount; i++) writeCell(edited.data, grid.width, i % grid.width, Math.floor(i / grid.width), null)
+    useStudio.getState().applyGridEdit(edited)
+    await flush(20)
+
+    const after = useStudio.getState()
+    check('忽略格子写回了 store', countIgnored(after.grid as Pixmap) === ignoredCount)
+    check('编辑过会打上 edited 标记', after.edited === true)
+    const counts = usageCounts(after.result as Pixmap, after.palette)
+    const beads = [...counts].reduce((a, b) => a + b, 0)
+    check('用料清单里没有忽略的格子', beads === total - ignoredCount, `${beads} / ${total}`)
+
+    // 涂回去（避免影响后面的用例）
+    const restored: Pixmap = { width: grid.width, height: grid.height, data: new Uint8ClampedArray(grid.data) }
+    useStudio.getState().applyGridEdit(restored)
+    await flush()
+    check('还原后忽略清零', countIgnored(useStudio.getState().grid as Pixmap) === 0)
+
+    // 回规范化重新生成 = 丢掉编辑
+    useStudio.getState().setStage('regularize')
+    await flush()
+    // 恢复出来的项目没有 analysis，用「直接 1:1」触发一次重新生成
+    useStudio.getState().setAlignmentMode('direct')
+    await flush()
+    check('重新生成网格会清掉 edited 标记', useStudio.getState().edited === false)
+    useStudio.getState().setAlignmentMode('auto')
+    await flush()
+  }
+}
+
+section('编辑提示：盖住规范化的强制确认')
+{
+  useStudio.getState().setStage('regularize')
+  await flush()
+  const grid = useStudio.getState().grid
+  check('规范化里有网格', Boolean(grid))
+  if (grid) {
+    // 造出「编辑过」的状态
+    useStudio.getState().applyGridEdit({ width: grid.width, height: grid.height, data: new Uint8ClampedArray(grid.data) })
+    await flush(20)
+    check('编辑后 edited 置 1', useStudio.getState().edited === true)
+
+    const host = dom.window.document.createElement('div')
+    dom.window.document.body.appendChild(host)
+    const guardRoot = createRoot(host)
+    guardRoot.render(React.createElement(RegularizeStep, { onOpenFile: () => undefined }))
+    await flush(20)
+
+    const guard = host.querySelector('.modal-overlay.open .modal.guard')
+    check('提示直接盖住整个规范化画面', Boolean(guard))
+    const guardButtons = [...(guard?.querySelectorAll('button') ?? [])] as HTMLButtonElement[]
+    check('提示只有一个按钮', guardButtons.length === 1, `${guardButtons.length}`)
+    ;(guard as HTMLElement | null)?.click()
+    await flush()
+    check('点遮罩本身不关提示', useStudio.getState().edited === true)
+
+    guardButtons[guardButtons.length - 1]?.click()
+    await flush()
+    check('确认后 edited 归零', useStudio.getState().edited === false)
+    check('确认后遮罩消失', !host.querySelector('.modal-overlay.open'))
+
+    guardRoot.unmount()
+    await flush()
+    host.remove()
+  }
+}
+
 section('候选色方案')
 {
   const lib = useStudio.getState().libraryPalette
@@ -816,8 +1094,11 @@ section('候选色弹窗')
   }
   check('候选色弹窗渲染无异常', err === null, err ?? '')
   check('按系列分组', (host.querySelectorAll('.series-block').length ?? 0) >= 8, `${host.querySelectorAll('.series-block').length} 组`)
-  check('列出了每个颜色', (host.querySelectorAll('.candidate').length ?? 0) === useStudio.getState().libraryPalette.length)
-  check('默认全部勾选', host.querySelectorAll('.candidate.on').length === host.querySelectorAll('.candidate').length)
+  check('列出了每个颜色', (host.querySelectorAll('.swatch-grid .swatch').length ?? 0) === useStudio.getState().libraryPalette.length)
+  check(
+    '默认全部勾选',
+    host.querySelectorAll('.swatch-grid .swatch.on').length === host.querySelectorAll('.swatch-grid .swatch').length,
+  )
   check('有全选/全不选/反选', (host.textContent ?? '').includes('反选'))
   check('有应用按钮', (host.textContent ?? '').includes('应用'))
   root2.unmount()
@@ -827,6 +1108,17 @@ section('候选色弹窗')
 
 section('重启应用后恢复上次会话')
 {
+  // 存档里记下「停在哪一步」
+  useStudio.getState().setStage('edit')
+  await flush(20)
+  useStudio.getState().saveCurrentProject()
+  await flush(30)
+  check(
+    '存档里记下了当时停在哪一步',
+    storage.readProject(useStudio.getState().activeTabId)?.project.activeStage === 'edit',
+    String(storage.readProject(useStudio.getState().activeTabId)?.project.activeStage),
+  )
+
   const session = storage.readSession()
   check('存档里有可恢复的会话', (session?.tabs.length ?? 0) > 0, `${session?.tabs.length ?? 0} 个标签`)
 
@@ -847,13 +1139,95 @@ section('重启应用后恢复上次会话')
   await flush(150)
 
   const restored = useStudio.getState()
-  check('标签页被恢复', restored.tabs.length === (session?.tabs.length ?? 0), `${restored.tabs.length} 个`)
+  // 会话里记着上次开着的标签；恢复时只装回「本地还有项目数据」的那些，
+  // 所以这里比的是「恢复出来的都在会话里」，而不是数量完全相等。
+  check(
+    '标签页被恢复',
+    restored.tabs.length > 0 && restored.tabs.every((t) => (session?.tabs ?? []).some((s) => s.id === t.id)),
+    `恢复 ${restored.tabs.length} 个 / 会话里 ${session?.tabs.length ?? 0} 个`,
+  )
   check('当前标签是存档里的那个', restored.tabs.some((t) => t.id === restored.activeTabId))
   check('网格被恢复', Boolean(restored.grid))
   check('原图被恢复', Boolean(restored.source))
+  check('重新打开后回到存档里的那一步', restored.activeStage === 'edit', restored.activeStage)
   check('恢复后没有报错', restored.notice === null && restored.error === null)
 
   stop()
+}
+
+section('项目名：改名与导出文件名')
+{
+  // 点当前标签的名字 = 就地改名（以前只有双击，基本发现不了）
+  const tabHost = dom.window.document.createElement('div')
+  dom.window.document.body.appendChild(tabHost)
+  const tabRoot = createRoot(tabHost)
+  tabRoot.render(React.createElement(TabBar, { onRequestFile: () => undefined }))
+  await flush()
+
+  const activeId = useStudio.getState().activeTabId
+  const nameEl = tabHost.querySelector('.tab.active .tab-name') as HTMLElement | null
+  check('标签栏有当前标签', Boolean(nameEl))
+  check('一开始没有改名输入框', !tabHost.querySelector('.tab-rename'))
+  nameEl?.click()
+  await flush()
+  const renameInput = tabHost.querySelector('.tab-rename') as HTMLInputElement | null
+  check('点一下当前标签的名字就进改名', Boolean(renameInput), tabHost.innerHTML.slice(0, 120))
+
+  if (renameInput) {
+    const setter = Object.getOwnPropertyDescriptor(dom.window.HTMLInputElement.prototype, 'value')?.set
+    setter?.call(renameInput, '小狐狸拼豆')
+    renameInput.dispatchEvent(new dom.window.Event('input', { bubbles: true }))
+    renameInput.dispatchEvent(new dom.window.KeyboardEvent('keydown', { key: 'Enter', bubbles: true }))
+    await flush()
+  }
+  check(
+    '改完名字写回标签页',
+    useStudio.getState().tabs.find((t) => t.id === activeId)?.name === '小狐狸拼豆',
+    String(useStudio.getState().tabs.find((t) => t.id === activeId)?.name),
+  )
+  check(
+    '最近项目里的名字也跟着改',
+    storage.listProjects().some((e) => e.id === activeId && e.name === '小狐狸拼豆'),
+    JSON.stringify(storage.listProjects().map((e) => e.name)),
+  )
+  tabRoot.unmount()
+  await flush()
+  tabHost.remove()
+
+  // 导出文件：文件名用项目名，存档里也要有名字
+  const realBlob = (globalThis as unknown as { Blob: typeof Blob }).Blob
+  let exportedJson = ''
+  class CapturingBlob extends realBlob {
+    constructor(parts: BlobPart[] = [], options?: BlobPropertyBag) {
+      super(parts, options)
+      exportedJson = String(parts[0] ?? '')
+    }
+  }
+  ;(globalThis as unknown as { Blob: typeof Blob }).Blob = CapturingBlob
+  ;(dom.window as unknown as { Blob: unknown }).Blob = CapturingBlob
+
+  const anchorProto = dom.window.HTMLAnchorElement.prototype as unknown as { click: () => void }
+  const realClick = anchorProto.click
+  let downloadName = ''
+  anchorProto.click = function (this: HTMLAnchorElement) {
+    downloadName = this.download
+  }
+
+  const exportBtn = [...container.querySelectorAll('.topbar-actions button')].find(
+    (b) => b.getAttribute('aria-label') === '导出文件',
+  ) as HTMLButtonElement | undefined
+  check('顶栏有导出文件按钮', Boolean(exportBtn))
+  check('有网格时导出可用', exportBtn?.disabled === false)
+  exportBtn?.click()
+  await flush()
+
+  anchorProto.click = realClick
+  ;(globalThis as unknown as { Blob: typeof Blob }).Blob = realBlob
+  ;(dom.window as unknown as { Blob: unknown }).Blob = realBlob
+
+  check('下载文件名用项目名', downloadName === '小狐狸拼豆.json', downloadName)
+  const saved = JSON.parse(exportedJson || '{}') as { name?: string }
+  check('存档里记下了项目名', saved.name === '小狐狸拼豆', String(saved.name))
 }
 
 console.log(`\n${'─'.repeat(52)}`)

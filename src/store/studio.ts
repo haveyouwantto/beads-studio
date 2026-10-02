@@ -16,6 +16,7 @@ import { analyzePeriods, sampleImage, type DetectReport } from '../core/regulari
 import { defaultCorners, sampleQuad } from '../core/warp.ts'
 import { collapseBlocks, detectUniformBlock } from '../core/direct.ts'
 import { packPixels, unpackPixels } from '../core/export.ts'
+import { appendSwatch } from '../core/edit.ts'
 import {
   dataUrlToPixmap,
   listProjects,
@@ -24,6 +25,7 @@ import {
   readCandidateSets,
   readSession,
   readProject,
+  renameProjectEntry,
   removeProject,
   saveProject,
   writeCandidateSets,
@@ -47,7 +49,13 @@ import {
  * 三个阶段：① 规范化 → ② 优化颜色 → ③ 转拼豆图纸。
  * 规范化产出 1:1 网格，作为「优化颜色」的优化目标，再交给「转拼豆图纸」出图。
  */
-export type StageId = 'regularize' | 'optimize' | 'pattern'
+export type StageId = 'regularize' | 'edit' | 'optimize' | 'pattern'
+
+/** 工作流顺序：规范化 → 像素编辑 → 优化颜色 → 转拼豆图纸 */
+export const STAGE_ORDER: StageId[] = ['regularize', 'edit', 'optimize', 'pattern']
+
+/** 编辑器工具：画笔 / 油漆桶 / 吸管 */
+export type EditTool = 'paint' | 'fill' | 'pick'
 
 /**
  * 规范化的三种输入方式：
@@ -112,6 +120,8 @@ export interface ProjectTab {
  */
 const PROJECT_KEYS = [
   'visited',
+  'activeStage',
+  'edited',
   'source',
   'analysis',
   'alignmentMode',
@@ -144,6 +154,8 @@ export type ProjectState = Pick<StudioState, ProjectKey>
 
 interface StudioState {
   activeStage: StageId
+  /** 网格是不是被「像素编辑」改过 —— 回规范化重新生成会丢掉这些修改 */
+  edited: boolean
 
   // --- 标签页与本地存档 ---
   tabs: ProjectTab[]
@@ -173,6 +185,16 @@ interface StudioState {
 
   // --- 阶段 3：转拼豆图纸 ---
   paletteSource: PaletteSource
+  /**
+   * 像素编辑器的工具状态。这几个只是「当前在用什么」，
+   * 和项目内容无关，所以切标签页/重开都无所谓，放全局就够。
+   */
+  editTool: EditTool
+  /** 油漆桶按什么填：一模一样的颜色，还是同一类（同色系） */
+  editFillMode: 'color' | 'cluster'
+  editColor: string | null
+  /** 自己加进来的颜色（吸管取的、配色器挑的），最多 MAX_ADDED_SWATCHES 个 */
+  editSwatches: string[]
   /** 选了「套装」时用哪一档：24 / 48 / 72 / 96 / 120 */
   kitSize: KitSize
   /**
@@ -218,6 +240,15 @@ interface StudioState {
   setDirectBlock: (n: number) => void
   detectDirectBlock: () => void
   buildGrid: () => void
+  /** 像素编辑：提交编辑后的网格（透明格 = 忽略） */
+  applyGridEdit: (next: Pixmap) => void
+  /** 规范化里看过「网格被改过」的强制提示，确认掉这个标记 */
+  clearEdited: () => void
+  setEditTool: (tool: EditTool) => void
+  setEditFillMode: (mode: 'color' | 'cluster') => void
+  setEditColor: (hex: string | null) => void
+  /** 往「新增色」里放一个颜色（已存在则不动，满了挤掉最早的那个） */
+  addEditSwatch: (hex: string) => void
 
   setPaletteSource: (s: PaletteSource) => void
   setKitSize: (size: KitSize) => void
@@ -278,7 +309,9 @@ export function getTabSnapshot(id: string): ProjectState | undefined {
 function freshProject(): ProjectState {
   const library = buildLibraryPalette({ includeExtended: false })
   return {
-    visited: { regularize: true, optimize: false, pattern: false },
+    visited: { regularize: true, edit: false, optimize: false, pattern: false },
+    activeStage: 'regularize',
+    edited: false,
     source: null,
     analysis: null,
     alignmentMode: 'auto',
@@ -367,7 +400,8 @@ function persistSession(s: StudioState): void {
  */
 const tabSnapshots = new Map<string, ProjectState>()
 
-function tabNameOf(s: StudioState): string {
+/** 当前项目的名字（就是标签页标题）：导出文件名等地方用 */
+export function tabNameOf(s: StudioState): string {
   return s.tabs.find((t) => t.id === s.activeTabId)?.name ?? NEW_TAB_NAME
 }
 
@@ -471,10 +505,17 @@ function serializeProject(s: StudioState): PersistedProject {
     optimizeTargetMode: s.optimizeTargetMode,
     optimizeConfig: s.optimizeConfig,
     optimizedHex: s.optimizedPalette.map((e) => e.hex),
+    activeStage: s.activeStage,
+    edited: s.edited,
     source: encodeSource(s),
     sourceOmitted: false,
     grid: encodeGrid(s),
   }
+}
+
+/** 存档里的阶段名可能来自旧版本 / 被手改过，认不出来就退回第一步 */
+function restoreStage(stage: unknown): StageId {
+  return STAGE_ORDER.includes(stage as StageId) ? (stage as StageId) : 'regularize'
 }
 
 /**
@@ -512,7 +553,16 @@ async function deserializeProject(p: PersistedProject): Promise<ProjectState> {
   }
 
   return {
-    visited: { regularize: true, optimize: false, pattern: false },
+    // 存的时候在哪一步，读回来就还在哪一步（顺带把那一步标成「进过」）
+    activeStage: restoreStage(p.activeStage),
+    edited: Boolean(p.edited),
+    visited: {
+      regularize: true,
+      edit: false,
+      optimize: false,
+      pattern: false,
+      [restoreStage(p.activeStage)]: true,
+    },
     source,
     analysis: null,
     alignmentMode: p.alignmentMode as AlignmentMode,
@@ -575,8 +625,6 @@ async function decodeImage(blob: Blob): Promise<{ pixmap: Pixmap; url: string }>
 }
 
 export const useStudio = create<StudioState>((set, get) => ({
-  activeStage: 'regularize',
-
   tabs: [{ id: FIRST_TAB_ID, name: NEW_TAB_NAME }],
   activeTabId: FIRST_TAB_ID,
   recent: [],
@@ -586,6 +634,10 @@ export const useStudio = create<StudioState>((set, get) => ({
 
   loading: false,
   error: null,
+  editTool: 'paint',
+  editFillMode: 'color',
+  editColor: '#000000',
+  editSwatches: [],
   libraryPalette: buildLibraryPalette({ includeExtended: false }),
   optimizeRun: { ...EMPTY_RUN },
   // 方案存在本地，跨项目共享，所以随 store 一起初始化
@@ -595,12 +647,12 @@ export const useStudio = create<StudioState>((set, get) => ({
 
   setStage: (s) => set((prev) => ({ activeStage: s, visited: { ...prev.visited, [s]: true } })),
   goNext: () => {
-    const order: StageId[] = ['regularize', 'optimize', 'pattern']
+    const order: StageId[] = STAGE_ORDER
     const idx = order.indexOf(get().activeStage)
     if (idx < order.length - 1) get().setStage(order[idx + 1])
   },
   goPrev: () => {
-    const order: StageId[] = ['regularize', 'optimize', 'pattern']
+    const order: StageId[] = STAGE_ORDER
     const idx = order.indexOf(get().activeStage)
     if (idx > 0) get().setStage(order[idx - 1])
   },
@@ -622,6 +674,7 @@ export const useStudio = create<StudioState>((set, get) => ({
         analysis: null,
         grid: null,
         result: null,
+        edited: false,
         loading: false,
       })
       get().detectDirectBlock()
@@ -640,6 +693,7 @@ export const useStudio = create<StudioState>((set, get) => ({
       analysis: null,
       grid: null,
       result: null,
+      edited: false,
       error: null,
       optimizedPalette: [],
       optimizeRun: { ...EMPTY_RUN },
@@ -704,6 +758,25 @@ export const useStudio = create<StudioState>((set, get) => ({
     set({ manualCols: Math.max(1, Math.round(cols)), manualRows: Math.max(1, Math.round(rows)) })
     get().buildGrid()
   },
+
+  applyGridEdit: (next) => {
+    set({ grid: next, result: null, edited: true })
+    get().recomputeResult()
+  },
+
+  clearEdited: () => {
+    set({ edited: false })
+  },
+
+  setEditTool: (tool) => set({ editTool: tool }),
+  setEditFillMode: (mode) => set({ editFillMode: mode }),
+  setEditColor: (hex) => set({ editColor: hex }),
+  addEditSwatch: (hex) => {
+    const current = get().editSwatches
+    const next = appendSwatch(current, hex)
+    if (next.join() !== current.join()) set({ editSwatches: next })
+  },
+
   setDirectBlock: (n) => {
     set({ directBlock: Math.max(1, Math.round(n)) })
     get().buildGrid()
@@ -748,7 +821,8 @@ export const useStudio = create<StudioState>((set, get) => ({
           : { width: src.pixmap.width, height: src.pixmap.height, data: new Uint8ClampedArray(src.pixmap.data) }
     }
 
-    set({ grid })
+    // 重新生成 = 丢掉编辑过的东西
+    set({ grid, edited: false })
     get().recomputeResult()
   },
 
@@ -1085,7 +1159,11 @@ export const useStudio = create<StudioState>((set, get) => ({
   },
 
   renameTab: (id, name) => {
-    set({ tabs: withRenamedTab(get().tabs, id, name || NEW_TAB_NAME) })
+    const next = name.trim() || NEW_TAB_NAME
+    set({ tabs: withRenamedTab(get().tabs, id, next) })
+    // 最近项目列表里的名字也跟着改（只动索引那一条，不重写整个项目）
+    renameProjectEntry(id, next)
+    set({ recent: listProjects() })
     persistSession(get())
   },
 

@@ -3,6 +3,20 @@
  *   npm test
  */
 import { analyzePeriods, sampleImage } from '../src/core/regularize.ts'
+import {
+  appendSwatch,
+  clusterColors,
+  colorUsage,
+  countIgnored,
+  EDIT_PRESETS,
+  floodFill,
+  historyLimit,
+  IGNORED_ALPHA,
+  isIgnoredAt,
+  MAX_ADDED_SWATCHES,
+  readCell,
+  writeCell,
+} from '../src/core/edit.ts'
 import { detectUniformBlock, collapseBlocks } from '../src/core/direct.ts'
 import { defaultCorners, sampleQuad } from '../src/core/warp.ts'
 import { quantizeToPalette, countUniqueColors, usageCounts } from '../src/core/quantize.ts'
@@ -26,6 +40,7 @@ import {
 } from '../src/core/palette.ts'
 import { PaletteOptimizer, targetsFromPixmap, DEFAULT_OPTIMIZE_CONFIG } from '../src/core/optimize.ts'
 import { deltaE, hexToRgb, rgbToHex, rgbToLab } from '../src/core/color.ts'
+import { buildPaletteExport, packPixels, safeFileName, unpackPixels } from '../src/core/export.ts'
 import {
   buildPatternSvg,
   clampPreviewCellSize,
@@ -239,6 +254,29 @@ const fullpalette = buildLibraryPalette({ includeExtended: true })
       parsePaletteText('B02', palette, 'COCO')[0] !== '#63F347',
   )
   check('解析结果随色号体系可取回色号', codeOf({ hex: '#FAF4C8', rgb: hexToRgb('#FAF4C8'), lab: rgbToLab(hexToRgb('#FAF4C8')), codes: { MARD: 'A01' } }, 'MARD') === 'A01')
+
+  // 下载文件名：项目名里可能有文件名不允许的字符
+  check('文件名去掉非法字符', safeFileName('a/b:c*d?e"f<g>h|i') === 'a b c d e f g h i', safeFileName('a/b:c*d?e"f<g>h|i'))
+  check('文件名不留开头的点', safeFileName('...隐藏名') === '隐藏名', safeFileName('...隐藏名'))
+  check('文件名空时用兜底', safeFileName('   ') === 'beads-studio', safeFileName('   '))
+  check('正常中文名原样保留', safeFileName('小狐狸 拼豆') === '小狐狸 拼豆', safeFileName('小狐狸 拼豆'))
+
+  // 导出的色板 JSON：版本号得是自己的（以前写着原工具的 '3.0'）
+  const three = palette.slice(0, 3)
+  const paletteJson = JSON.parse(buildPaletteExport(three, 'MARD', 'json')) as Record<string, unknown>
+  check(
+    '色板 JSON 带 app 与 version=1',
+    paletteJson.app === 'beads-studio' && paletteJson.version === 1,
+    JSON.stringify({ app: paletteJson.app, version: paletteJson.version }),
+  )
+  check('色板 JSON 里没有 3.0', !buildPaletteExport(three, 'MARD', 'json').includes('3.0'))
+  check('色板 JSON 记下色号体系与数量', paletteJson.codeSystem === 'MARD' && paletteJson.totalColors === 3)
+  check('色板 JSON 里颜色按色号排好', (paletteJson.codes as { code: string }[]).map((c) => c.code).join() === three.map((e) => e.codes.MARD).join())
+  check(
+    'HEX / 色号导出各一行',
+    buildPaletteExport(three, 'MARD', 'hex').split('\n').length === 3 &&
+      buildPaletteExport(three, 'MARD', 'code').split('\n').length === 3,
+  )
 }
 
 section('基础 24 / 48 色与 wplace 色板')
@@ -341,6 +379,136 @@ section('基础 24 / 48 色与 wplace 色板')
     '界面色板来源不含旧的基础31色',
     VISIBLE_PALETTE_SOURCES.every((s) => s !== ('basic' as never)),
   )
+}
+
+// ---------------------------------------------------------------- 像素编辑
+section('像素编辑（第 2 步）')
+{
+  const w = 3
+  const h = 2
+  const pixmap: Pixmap = { width: w, height: h, data: new Uint8ClampedArray(w * h * 4).fill(255) }
+  // 先把底色都刷成红，方便看覆盖效果
+  for (let y = 0; y < h; y++) for (let x = 0; x < w; x++) writeCell(pixmap.data, w, x, y, '#E53935')
+  // 预设色板 = MARD 24 色套装，其中 H01 当作「透明（忽略）」
+  const presetCodes = EDIT_PRESETS.map((p) => p.code)
+  const libraryByCode = new Map(palette.map((e) => [e.codes.MARD, e.hex]))
+  check('预设色板就是 24 色套装', EDIT_PRESETS.length === 24 && presetCodes.join() === [...KIT_MARD[24]].join(), presetCodes.join())
+  check('预设里 H01 是透明档', EDIT_PRESETS.find((p) => p.code === 'H01')?.transparent === true)
+  check('预设其它颜色都是真实色号色值', EDIT_PRESETS.filter((p) => !p.transparent).every((p) => libraryByCode.get(p.code) === p.hex), '')
+  check('预设里有白（H02）和黑（H07）', presetCodes.includes('H02') && presetCodes.includes('H07'))
+
+  writeCell(pixmap.data, w, 1, 0, '#1E88E5')
+  check('涂色写入指定格子', readCell(pixmap, 1, 0) === '#1E88E5', String(readCell(pixmap, 1, 0)))
+  check('只改了那一格', readCell(pixmap, 0, 0) === '#E53935' && readCell(pixmap, 2, 0) === '#E53935')
+  check('初始没有被忽略的格子', countIgnored(pixmap) === 0)
+
+  // 涂成透明 = 忽略
+  writeCell(pixmap.data, w, 0, 0, null)
+  writeCell(pixmap.data, w, 2, 1, null)
+  check('涂透明后 alpha 归零', pixmap.data[3] === 0 && pixmap.data[3] < IGNORED_ALPHA)
+  check('涂透明的格子被判定为忽略', isIgnoredAt(pixmap, 0, 0) && isIgnoredAt(pixmap, 2, 1))
+  check('被忽略的格子取色返回 null', readCell(pixmap, 0, 0) === null)
+  check('越界当作忽略', isIgnoredAt(pixmap, -1, 0) && isIgnoredAt(pixmap, w, 0))
+  check('忽略计数正确', countIgnored(pixmap) === 2, String(countIgnored(pixmap)))
+
+  const usage = colorUsage(pixmap)
+  // 6 格里：1 格改成蓝、2 格涂成透明 → 红色剩 3 格
+  check('忽略的格子不计入颜色统计', usage.find((u) => u.hex === '#E53935')?.count === 3, JSON.stringify(usage))
+  check('统计里没有透明格', usage.every((u) => u.count > 0) && usage.length === 2, JSON.stringify(usage))
+  check('统计按数量从多到少', usage[0].count >= usage[usage.length - 1].count)
+  check(
+    '撤销栈容量随网格大小收缩',
+    historyLimit(pixmap) > historyLimit({ width: 400, height: 400, data: new Uint8ClampedArray(0) }),
+    `${historyLimit(pixmap)} / ${historyLimit({ width: 400, height: 400, data: new Uint8ClampedArray(0) })}`,
+  )
+
+  // 下游：优化目标必须跳过忽略的格子
+  const target = targetsFromPixmap(pixmap)
+  const targetPixels = target.samples.reduce((a, s) => a + s.count, 0)
+  check('优化目标跳过被忽略的格子', targetPixels === w * h - 2, `${targetPixels} / ${w * h}`)
+
+  // 下游：用料清单不能把忽略的格子算成豆子
+  const red = palette.find((e) => e.hex === '#E53935') ?? { hex: '#E53935', rgb: hexToRgb('#E53935'), lab: rgbToLab(hexToRgb('#E53935')), codes: {} }
+  const blue = palette.find((e) => e.hex === '#1E88E5') ?? { hex: '#1E88E5', rgb: hexToRgb('#1E88E5'), lab: rgbToLab(hexToRgb('#1E88E5')), codes: {} }
+  const smallPalette = [red, blue]
+  const counts = usageCounts(pixmap, smallPalette)
+  check('用量统计跳过被忽略的格子', counts[0] === 3 && counts[1] === 1, [...counts].join())
+
+  // 下游：出图不给忽略的格子画豆子，也不写色号
+  const chart = buildPatternSvg(pixmap, smallPalette, { ...DEFAULT_RENDER_OPTIONS, codes: true, grid: false, rulers: false })
+  const cells = (chart.svg.match(/h1v1h-1z/g) ?? []).length
+  check('图纸里只画有效格子', cells === w * h - 2, `${cells} 个格子元素`)
+
+  // 存档往返：忽略状态（alpha=0）必须原样带回
+  const roundTrip = unpackPixels(w, h, packPixels(pixmap))
+  check('存档往返保留透明格', countIgnored({ width: w, height: h, data: roundTrip }) === 2)
+
+  // 油漆桶：整片同色区域一次填掉
+  const fillCanvas: Pixmap = { width: 4, height: 3, data: new Uint8ClampedArray(4 * 3 * 4).fill(255) }
+  for (let y = 0; y < 3; y++) for (let x = 0; x < 4; x++) writeCell(fillCanvas.data, 4, x, y, x < 2 ? '#FFFFFF' : '#000000')
+  const filled = floodFill(fillCanvas.data, 4, 3, 0, 0, '#FF0000')
+  check('油漆桶填满整片同色区域', filled === 6, `${filled} 格`)
+  check('油漆桶不越过边界', readCell(fillCanvas, 0, 0) === '#FF0000' && readCell(fillCanvas, 2, 0) === '#000000')
+  check('油漆桶填充同色时不做事', floodFill(fillCanvas.data, 4, 3, 0, 0, '#FF0000') === 0)
+  // 整张图和起点同色时，重复填充同一个颜色不产生变化
+  const oneColor: Pixmap = { width: 3, height: 1, data: new Uint8ClampedArray(3 * 4).fill(255) }
+  check('油漆桶可以填成透明', floodFill(oneColor.data, 3, 1, 1, 0, null) === 3 && countIgnored(oneColor) === 3)
+
+  // 油漆桶的两种口径：按颜色只认一模一样的，按聚类把同色系一起填
+  const band: Pixmap = { width: 6, height: 1, data: new Uint8ClampedArray(6 * 4) }
+  writeCell(band.data, 6, 0, 0, '#E53935')
+  writeCell(band.data, 6, 1, 0, '#E43834') // 和 0 号差一点点的红
+  writeCell(band.data, 6, 2, 0, '#E53733') // 还是那一片红
+  writeCell(band.data, 6, 3, 0, '#1E88E5') // 蓝：另一类
+  writeCell(band.data, 6, 4, 0, '#1E88E5')
+  writeCell(band.data, 6, 5, 0, '#000000')
+  const bandClusters = clusterColors(band, 24)
+  const byColor: Pixmap = { width: 6, height: 1, data: new Uint8ClampedArray(band.data) }
+  check('按颜色只填一模一样的相邻格', floodFill(byColor.data, 6, 1, 0, 0, '#00FF00') === 1)
+  const byCluster: Pixmap = { width: 6, height: 1, data: new Uint8ClampedArray(band.data) }
+  check(
+    '按聚类把同色系的相邻格一起填',
+    floodFill(byCluster.data, 6, 1, 0, 0, '#00FF00', { mode: 'cluster', clusters: bandClusters }) === 3,
+    String(readCell(byCluster, 0, 0)),
+  )
+  check('按聚类不越到别的类', readCell(byCluster, 3, 0) === '#1E88E5' && readCell(byCluster, 5, 0) === '#000000')
+  const noClusters: Pixmap = { width: 6, height: 1, data: new Uint8ClampedArray(band.data) }
+  check(
+    '按聚类但没给类时退回按颜色',
+    floodFill(noClusters.data, 6, 1, 0, 0, '#00FF00', { mode: 'cluster' }) === 1,
+  )
+  const withHole: Pixmap = { width: 6, height: 1, data: new Uint8ClampedArray(band.data) }
+  writeCell(withHole.data, 6, 1, 0, null)
+  check(
+    '按聚类不会跨过被忽略的格子',
+    floodFill(withHole.data, 6, 1, 0, 0, '#00FF00', { mode: 'cluster', clusters: bandClusters }) === 1,
+  )
+
+  // 调色板：新增色按加入顺序排，最多 24 个（满了挤掉最早的）
+  check('新增色上限 24', MAX_ADDED_SWATCHES === 24)
+  let added: string[] = []
+  for (let i = 1; i <= 26; i++) added = appendSwatch(added, `#${i.toString(16).padStart(2, '0').toUpperCase()}0000`)
+  check('超过 24 个会挤掉最早的', added.length === 24 && !added.includes('#010000') && added[0] === '#030000', `${added.length} 个，首个 ${added[0]}`)
+  check('新加的排在最后', added[added.length - 1] === '#1A0000', added[added.length - 1])
+  const again = appendSwatch(added, added[3])
+  check('重复添加同一个颜色不重排', again === added)
+
+  // 颜色聚类：相近的颜色并成一类，最多 24 类，代表色取该类里出现最多的那个
+  const photo: Pixmap = { width: 20, height: 10, data: new Uint8ClampedArray(20 * 10 * 4) }
+  for (let y = 0; y < 10; y++) {
+    for (let x = 0; x < 20; x++) {
+      // 左半 10×10 是两种几乎一样的红，右半是蓝色（渐变出 20 种）
+      const hex = x < 10 ? (y < 5 ? '#E53935' : '#E43834') : `#${(0x20 + x * 3).toString(16).padStart(2, '0')}88E5`
+      writeCell(photo.data, 20, x, y, hex)
+    }
+  }
+  const clusters = clusterColors(photo, 24)
+  check('聚类把相近的红并成一类', clusters.filter((c) => c.hex.startsWith('#E4') || c.hex.startsWith('#E5')).length === 1, JSON.stringify(clusters.slice(0, 4)))
+  check('聚类结果按出现次数排序', clusters.every((c, i) => i === 0 || clusters[i - 1].count >= c.count))
+  check('聚类代表色是图里真实存在的颜色', clusters.every((c) => colorUsage(photo).some((u) => u.hex === c.hex)))
+  const manyColors: Pixmap = { width: 40, height: 10, data: new Uint8ClampedArray(40 * 10 * 4) }
+  for (let y = 0; y < 10; y++) for (let x = 0; x < 40; x++) writeCell(manyColors.data, 40, x, y, `#${(x * 6).toString(16).padStart(2, '0')}${(y * 25).toString(16).padStart(2, '0')}80`)
+  check('颜色很多时聚成 24 类', clusterColors(manyColors, 24).length <= 24, `${clusterColors(manyColors, 24).length}`)
 }
 
 // ---------------------------------------------------------------- 量化
@@ -510,8 +678,14 @@ section('③ 转拼豆图纸 · 矢量 SVG')
   const out = buildPatternSvg(png, palette, opts)
 
   check('输出是 SVG', out.svg.startsWith('<svg') && out.svg.endsWith('</svg>'))
-  check('带 viewBox（可任意缩放）', out.svg.includes('viewBox="0 0 21 12"'), out.svg.slice(0, 80))
-  check('固有尺寸 = 格数 × 格子大小', out.width === W * opts.cellSize && out.height === H * opts.cellSize)
+  check('带 viewBox（可任意缩放）', out.svg.includes('viewBox="0 0 26.2 17.2"'), out.svg.slice(0, 80))
+  check('图纸四边留出同样的边距', out.svg.includes('transform="translate(2.6 2.6)"'), out.svg.slice(0, 160))
+  check(
+    '固有尺寸 = (格数 + 两边边距) × 格子大小',
+    out.width === Math.round((W + opts.margin * 2) * opts.cellSize) &&
+      out.height === Math.round((H + opts.margin * 2) * opts.cellSize),
+    `${out.width}×${out.height}`,
+  )
   check('没有把文字转成像素', !out.svg.includes('<image'))
 
   const horizontalThick = countVerticalThick(out.svg)
@@ -562,7 +736,16 @@ section('③ 转拼豆图纸 · 矢量 SVG')
   const small = buildPatternSvg(makePixmap(4, 4, [10, 10, 10]), palette, opts)
   check('4×4 小图也能生成', small.svg.startsWith('<svg'))
 
-  check('标尺会让固有尺寸变大', estimateSvgSize(png, { ...opts, rulers: true }).width > out.width)
+  // 标尺数字写在留白里，不再自己撑开一条边
+  check('标尺不改变图纸尺寸', estimateSvgSize(png, { ...opts, rulers: true }).width === out.width)
+  const withRulers = buildPatternSvg(png, palette, { ...opts, rulers: true })
+  check('标尺数字写在留白里', withRulers.svg.includes(`<text x="3.1" y="1.5"`), withRulers.svg.slice(0, 200))
+  const tight = buildPatternSvg(png, palette, { ...opts, margin: 0 })
+  check(
+    '边距设 0 时图纸贴边',
+    tight.svg.includes('viewBox="0 0 21 12"') && tight.width === W * opts.cellSize,
+    `${tight.width}`,
+  )
   check(
     '超大图纸预览会自动降格子尺寸',
     clampPreviewCellSize(makePixmap(600, 400, [0, 0, 0]), DEFAULT_RENDER_OPTIONS, 1600) <

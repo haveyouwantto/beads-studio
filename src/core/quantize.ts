@@ -104,6 +104,8 @@ export function usageCounts(img: Pixmap, palette: PaletteEntry[]): Uint32Array {
 
   const data = img.data
   for (let i = 0; i < data.length; i += 4) {
+    // 透明格 = 忽略：不算一颗豆，别进用料清单
+    if (data[i + 3] < 8) continue
     const hex =
       '#' +
       data[i].toString(16).padStart(2, '0').toUpperCase() +

@@ -163,7 +163,9 @@ a {
   color: var(--accent);
 }
 
-input:not([type='checkbox']):not([type='radio']),
+/* 注意排除 color：它是拿「背景色」画那个色块的，
+   一旦被这条规则刷成透明，控件就变成一片空白（全站的颜色选择器都会失效）。 */
+input:not([type='checkbox']):not([type='radio']):not([type='color']),
 select,
 textarea {
   border: 1px solid var(--md-outline-strong) !important;
@@ -616,54 +618,6 @@ button {
   min-width: 22px;
 }
 
-.candidate-grid {
-  display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(62px, 1fr));
-  gap: 6px;
-}
-
-.candidate {
-  position: relative;
-  aspect-ratio: 1 / 1;
-  border-radius: 8px;
-  border: 2px solid transparent;
-  padding: 4px 5px;
-  display: flex;
-  flex-direction: column;
-  justify-content: flex-end;
-  align-items: flex-start;
-  opacity: 0.34;
-  filter: grayscale(0.55);
-  transition: opacity 0.12s, filter 0.12s, border-color 0.12s, transform 0.12s;
-}
-
-.candidate:hover {
-  transform: translateY(-2px);
-  opacity: 0.85;
-}
-
-.candidate.on {
-  opacity: 1;
-  filter: none;
-  border-color: rgba(255, 255, 255, 0.75);
-  box-shadow: 0 3px 10px rgba(0, 0, 0, 0.45);
-}
-
-.candidate-code {
-  font-size: 11px;
-  font-weight: 700;
-  font-family: var(--font-sans); font-variant-numeric: tabular-nums;
-}
-
-.candidate-check {
-  position: absolute;
-  top: 3px;
-  right: 4px;
-  font-size: 11px;
-  font-weight: 800;
-  line-height: 1;
-}
-
 .body {
   flex: 1;
   display: flex;
@@ -912,7 +866,7 @@ input[type='color'] {
   width: 42px;
   height: 30px;
   padding: 2px;
-  background: transparent;
+  /* 别设置背景色，色块就是它自己画的 */
   border: 1px solid var(--md-outline-strong);
   border-radius: var(--md-radius);
 }
@@ -1184,13 +1138,9 @@ input[type='checkbox'] {
   transition: transform 0.12s, box-shadow 0.12s;
 }
 
-.swatch:hover {
+button.swatch:hover {
   transform: translateY(-2px);
   box-shadow: 0 6px 14px rgba(0, 0, 0, 0.4);
-}
-
-.swatch.static {
-  cursor: default;
 }
 
 .swatch .code {
@@ -1230,6 +1180,19 @@ input[type='checkbox'] {
   vertical-align: 0;
   color: #fff;
   text-shadow: 0 1px 2px rgba(0, 0, 0, 0.8);
+}
+
+/* 选中态的小对勾（候选色用） */
+.swatch .pick {
+  position: absolute;
+  top: 3px;
+  right: 4px;
+  color: currentColor;
+}
+
+.swatch .pick .material-icons {
+  font-size: 13px;
+  vertical-align: 0;
 }
 
 .swatch.dimmed {
@@ -1279,12 +1242,18 @@ table.bom td.num {
   font-family: var(--font-sans); font-variant-numeric: tabular-nums;
 }
 
-table.bom .chip {
+.swatch.dot {
   display: inline-block;
   width: 14px;
   height: 14px;
+  padding: 0;
+  aspect-ratio: auto;
   border-radius: 4px;
   border: 1px solid rgba(255, 255, 255, 0.15);
+  box-shadow: none;
+}
+
+table.bom .swatch.dot {
   vertical-align: -2px;
   margin-right: 7px;
 }
@@ -1426,7 +1395,6 @@ table.bom .chip {
 .tab-new,
 .tab-close,
 .swatch,
-.candidate,
 .segmented button {
   position: relative;
   overflow: hidden;
@@ -1822,18 +1790,6 @@ span.badge {
   vertical-align: -4px;
 }
 
-.btn.disabled,
-.btn:disabled,
-button:disabled {
-  background-color: rgba(255, 255, 255, 0.12);
-  color: var(--md-on-surface-disabled);
-  box-shadow: none;
-}
-
-.btn-flat:disabled {
-  background-color: transparent;
-}
-
 /* ---------- Modal ----------
    Materialize 的弹窗默认由它的 JS 打开（display:none → 内联样式）。
    这里是 React 控制显隐，所以补上 .open 状态；其余布局仍走它自己的规则。 */
@@ -2087,11 +2043,39 @@ select option {
   background-color: rgba(207, 102, 121, 0.12);
 }
 
-/* Materialize 的 button:disabled 会把禁用按钮刷成浅灰 */
-button:disabled {
-  background-color: var(--panel-3);
-  color: var(--muted-2);
-  box-shadow: none;
+/* ---------- 禁用态（全站在这一处定义）----------
+   Materialize 自己有一条 !important 的禁用样式（#DFDFDF 底 / #9F9F9F 字），
+   深色主题下实心按钮会变成一块浅灰，文字按钮反而比正常时更亮、根本看不出禁用。
+   所以这里必须用 !important 顶掉它，按 MD2 来：容器叠 12% on-surface、内容 38%。
+   内容再压一档，保证「点不动」一眼能看出来。 */
+
+button:disabled,
+button.disabled,
+.btn:disabled,
+.btn.disabled {
+  background-color: rgba(255, 255, 255, 0.12) !important;
+  color: var(--md-on-surface-disabled) !important;
+  box-shadow: none !important;
+  cursor: not-allowed;
+  opacity: 1;
+}
+
+/* 文字 / 图标按钮本来就没有容器，禁用后只剩淡掉的内容。
+   Materialize 那条用的是 .btn-flat.btn-flat[disabled]（特异性 0,3,0 + !important），
+   所以这里得再加一档（[disabled]:disabled）才压得住。 */
+button.btn-flat[disabled]:disabled,
+button.btn-floating[disabled]:disabled,
+button.btn-flat.disabled,
+button.btn-floating.disabled {
+  background-color: transparent !important;
+  color: rgba(255, 255, 255, 0.3) !important;
+  cursor: not-allowed;
+}
+
+.btn.ghost:disabled,
+.btn.danger:disabled {
+  background-color: transparent;
+  border-color: var(--md-outline);
 }
 
 /* 文字层级按 MD2 类型比例（用长写属性，避免 font 简写与 var() 的兼容坑） */
@@ -2401,11 +2385,103 @@ button:disabled {
   margin-top: 4px;
 }
 
-.set-chips .chip {
-  width: 14px;
-  height: 14px;
-  border-radius: 3px;
-  border: 1px solid rgba(255, 255, 255, 0.18);
+/* ---------- 像素编辑（第 2 步）---------- */
+
+.canvas-wrap.edit-host {
+  /* 默认居中；格子放大到超过容器时 safe 会退回左对齐，免得左上角被裁掉滚不到 */
+  place-items: center;
+  place-items: safe center;
+  max-height: 62vh;
+  max-height: 62dvh;
+  padding: 14px;
+}
+
+.canvas-wrap.edit-host canvas {
+  image-rendering: pixelated;
+  cursor: crosshair;
+  /* 画的时候不要触发浏览器自己的滚动/缩放手势 */
+  touch-action: none;
+}
+
+.canvas-wrap.edit-host canvas.picking {
+  cursor: copy;
+}
+
+/* 画笔调色板：一排小方块（Swatch size="chip"） */
+.tool-row {
+  display: flex;
+  flex: 0 0 auto;
+  gap: 2px;
+}
+
+/* 选中的工具：primary 状态层 + primary 图标（和侧栏选中项同一套语义） */
+.btn-flat.icon-only.on {
+  background-color: rgba(144, 202, 249, var(--md-state-selected));
+  color: var(--md-primary);
+}
+
+.swatch-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+}
+
+.swatch.chip {
+  flex: 0 0 auto;
+  width: 26px;
+  height: 26px;
+  padding: 0;
+  border: 2px solid transparent;
+  border-radius: var(--radius-sm);
+  aspect-ratio: auto;
+  justify-content: center;
+  align-items: center;
+  box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.18);
+}
+
+.swatch.chip:hover {
+  transform: none;
+  box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.45);
+}
+
+.swatch.on {
+  border-color: var(--md-primary);
+  box-shadow: inset 0 0 0 1px rgba(0, 0, 0, 0.35);
+}
+
+/* 「透明」= 忽略：画成棋盘格，免得和白色混在一起 */
+.swatch.transparent {
+  background-color: #4a4a4a;
+  background-image: linear-gradient(45deg, #3a3a3a 25%, transparent 25%, transparent 75%, #3a3a3a 75%),
+    linear-gradient(45deg, #3a3a3a 25%, transparent 25%, transparent 75%, #3a3a3a 75%);
+  background-size: 10px 10px;
+  background-position: 0 0, 5px 5px;
+}
+
+/* 「+」：选一个新颜色加进调色板 */
+.swatch.add {
+  display: grid;
+  place-items: center;
+  background-color: transparent;
+  color: var(--md-on-surface-medium);
+  border-color: var(--md-outline-strong);
+  box-shadow: none;
+}
+
+.swatch.add:hover {
+  background-color: rgba(255, 255, 255, var(--md-state-hover));
+  color: var(--md-on-surface);
+  transform: none;
+}
+
+/* 取色对话框里那个大色块：点它唤起系统取色器，也可以直接填 HEX */
+.picker-swatch {
+  width: 88px;
+  height: 88px;
+  padding: 4px;
+  border: 1px solid var(--md-outline-strong);
+  border-radius: var(--md-radius);
+  background-color: transparent;
 }
 
 /* 规范化预览：画布按源图比例绘制，上限是 760×540 的固定像素。
@@ -2689,4 +2765,26 @@ button:disabled {
     letter-spacing: 0;
     padding: 0;
   }
+}
+
+/* ---------- 强制确认 ----------
+   编辑过的网格重新生成会丢掉修改：直接把整个画面盖住，只有点掉按钮才能继续。
+   放在文件最后，免得被上面各断点里的 .modal 定位规则覆盖。 */
+
+.modal.guard {
+  top: 50%;
+  transform: translateY(-50%);
+  width: min(420px, 92%);
+}
+
+.modal.guard .guard-body {
+  display: flex;
+  align-items: flex-start;
+  gap: var(--sp-3);
+}
+
+.modal.guard .guard-body .material-icons {
+  color: var(--warn);
+  font-size: 24px;
+  line-height: 1.4;
 }

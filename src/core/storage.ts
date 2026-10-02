@@ -129,6 +129,10 @@ export interface PersistedProject {
   paletteSource: string
   /** 选了「套装」色板时用哪一档（24/48/72/96/120）；老存档没有这个字段 */
   kitSize?: number
+  /** 保存时停在哪一步；读回来直接跳过去（老存档没有就回第一步） */
+  activeStage?: string
+  /** 网格是否被像素编辑改过 */
+  edited?: boolean
   /** 配色优化的候选色；空数组 = 全库参与 */
   candidateHex?: string[]
   includeExtended: boolean
@@ -259,6 +263,16 @@ function writeIndex(entries: IndexEntry[]): void {
 
 export function listProjects(): IndexEntry[] {
   return readIndex().sort((a, b) => b.savedAt - a.savedAt)
+}
+
+/**
+ * 改个名字：只动索引里那一条。
+ * 改名不该把整个项目（含原图 PNG）重写一遍，那太贵了。
+ */
+export function renameProjectEntry(id: string, name: string): void {
+  const entries = readIndex()
+  if (!entries.some((e) => e.id === id)) return
+  writeIndex(entries.map((e) => (e.id === id ? { ...e, name } : e)))
 }
 
 export function readProject(id: string): ProjectRecord | null {

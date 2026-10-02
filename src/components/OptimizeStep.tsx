@@ -1,10 +1,9 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
-import { useStudio } from '../store/studio.ts'
-import { Check, Empty, Field, Notice, Panel, Segmented, Stat } from './ui.tsx'
+import { tabNameOf, useStudio } from '../store/studio.ts'
+import { Check, Empty, Field, Notice, Panel, Segmented, Stat, Swatch } from './ui.tsx'
 import { targetsFromPixmap } from '../core/optimize.ts'
 import { CODE_SYSTEMS, codeOf, compareByCode, swatchHex, type CodeSystem, type PaletteEntry } from '../core/palette.ts'
-import { buildPaletteExport, downloadText } from '../core/export.ts'
-import { idealTextColor } from '../core/color.ts'
+import { buildPaletteExport, downloadText, safeFileName } from '../core/export.ts'
 import { drawPixmap } from '../core/render.ts'
 import { CandidateColorsDialog } from './CandidateColorsDialog.tsx'
 import { STAGE_META } from './stages.ts'
@@ -13,6 +12,7 @@ export function OptimizeStep() {
   const grid = useStudio((s) => s.grid)
   const goPrev = useStudio((s) => s.goPrev)
   const goNext = useStudio((s) => s.goNext)
+  const setStage = useStudio((s) => s.setStage)
   const libraryPalette = useStudio((s) => s.libraryPalette)
   const includeExtended = useStudio((s) => s.includeExtended)
   const setIncludeExtended = useStudio((s) => s.setIncludeExtended)
@@ -35,6 +35,8 @@ export function OptimizeStep() {
   const candidateHex = useStudio((s) => s.candidateHex)
   const candidateCount = candidateHex.length ? candidateHex.length : libraryPalette.length
   const candidateSets = useStudio((s) => s.candidateSets)
+  // 导出文件名用项目名
+  const projectName = useStudio(tabNameOf)
 
   // 优化目标预览：直接来自「规范化」的网格
   const targetInfo = useMemo(() => (grid ? targetsFromPixmap(grid, { maxTargets: 1200 }) : null), [grid])
@@ -79,7 +81,7 @@ export function OptimizeStep() {
         </div>
         <Empty icon="palette" title="还没有可优化的网格">
           <div style={{ marginTop: 12 }}>
-            <button className="btn waves-effect waves-light" onClick={goPrev}>
+            <button className="btn waves-effect waves-light" onClick={() => setStage('regularize')}>
               <i className="material-icons sm">arrow_back</i>
               回到规范化
             </button>
@@ -102,7 +104,7 @@ export function OptimizeStep() {
           <span className="grow" />
           <button className="btn-flat btn-small waves-effect" onClick={goPrev}>
             <i className="material-icons sm">arrow_back</i>
-            规范化
+            编辑
           </button>
         </div>
 
@@ -170,23 +172,16 @@ export function OptimizeStep() {
           {sortedResult.length ? (
             <div className="swatch-grid">
               {sortedResult.map((e) => {
-                const text = idealTextColor(e.rgb)
                 const mandatory = config.mandatory && ['H02', 'H07'].includes(e.codes.MARD ?? '')
                 return (
-                  <div
+                  <Swatch
                     key={e.hex}
-                    className="swatch static"
-                    style={{ background: swatchHex(e), color: text }}
+                    hex={swatchHex(e)}
+                    code={codeOf(e, codeSystem)}
+                    hexLabel={e.hex}
+                    lock={mandatory}
                     title={`${codeOf(e, codeSystem)} · ${e.hex}`}
-                  >
-                    {mandatory && (
-                      <span className="lock">
-                        <i className="material-icons sm">lock</i>
-                      </span>
-                    )}
-                    <div className="code">{codeOf(e, codeSystem)}</div>
-                    <div className="hex">{e.hex}</div>
-                  </div>
+                  />
                 )
               })}
             </div>
@@ -202,14 +197,20 @@ export function OptimizeStep() {
               <div className="row tight">
                 <button
                   className="btn-flat btn-small waves-effect"
-                  onClick={() => downloadExport(sortedResult, codeSystem, 'json')}
+                  onClick={() => downloadExport(sortedResult, codeSystem, 'json', projectName)}
                 >
                   导出 JSON
                 </button>
-                <button className="btn-flat btn-small waves-effect" onClick={() => downloadExport(sortedResult, codeSystem, 'hex')}>
+                <button
+                  className="btn-flat btn-small waves-effect"
+                  onClick={() => downloadExport(sortedResult, codeSystem, 'hex', projectName)}
+                >
                   导出 HEX 列表
                 </button>
-                <button className="btn-flat btn-small waves-effect" onClick={() => downloadExport(sortedResult, codeSystem, 'code')}>
+                <button
+                  className="btn-flat btn-small waves-effect"
+                  onClick={() => downloadExport(sortedResult, codeSystem, 'code', projectName)}
+                >
                   导出色号列表
                 </button>
               </div>
@@ -377,9 +378,10 @@ function downloadExport(
   entries: PaletteEntry[],
   system: CodeSystem,
   format: 'json' | 'hex' | 'code',
+  projectName: string,
 ) {
   const text = buildPaletteExport(entries, system, format)
   const ext = format === 'json' ? 'json' : 'txt'
   const mime = format === 'json' ? 'application/json' : 'text/plain'
-  downloadText(text, `palette-${system}.${ext}`, mime)
+  downloadText(text, `${safeFileName(projectName)}-色板-${system}.${ext}`, mime)
 }
