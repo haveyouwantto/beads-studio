@@ -722,8 +722,12 @@ section('像素编辑（第 2 步）')
   }
   check('编辑步骤渲染无异常', err === null, err ?? '')
   check('渲染出画板', Boolean(host.querySelector('canvas')))
-  check('画笔里有透明档', Boolean(host.querySelector('.paint-swatch.transparent')))
-  check('预设色板有黑白两种', host.querySelectorAll('.paint-swatch').length >= 10, `${host.querySelectorAll('.paint-swatch').length}`)
+  check('画笔里有透明档（H01）', host.querySelector('.paint-swatch.transparent')?.getAttribute('aria-label') === 'H01 透明')
+  check(
+    '预设色板是 24 色套装',
+    host.querySelectorAll('.field .swatch-row .paint-swatch:not(.add)').length === 24,
+    `${host.querySelectorAll('.field .swatch-row .paint-swatch:not(.add)').length}`,
+  )
   // 工具用 Material 图标：画笔 / 填充 / 吸管
   const tools = [...host.querySelectorAll('.tool-row button')].map((b) => b.querySelector('.material-icons')?.textContent ?? '')
   check('三个工具都是 md 图标', tools.join() === 'brush,format_color_fill,colorize', tools.join())
@@ -732,8 +736,9 @@ section('像素编辑（第 2 步）')
 
   // 右键色块 = 以它为起点打开取色对话框
   useStudio.setState({ editSwatches: [] })
-  const firstSwatch = host.querySelector('.paint-swatch') as HTMLButtonElement
-  firstSwatch.dispatchEvent(new dom.window.MouseEvent('contextmenu', { bubbles: true, cancelable: true }))
+  const blackSwatch = [...host.querySelectorAll('.paint-swatch')].find((b) => b.getAttribute('aria-label') === 'H07') as HTMLButtonElement | undefined
+  check('预设里有黑色 H07', Boolean(blackSwatch))
+  blackSwatch?.dispatchEvent(new dom.window.MouseEvent('contextmenu', { bubbles: true, cancelable: true }))
   await flush()
   const dialog = host.querySelector('.modal.open')
   check('右键打开取色对话框', Boolean(dialog))

@@ -6,27 +6,34 @@
  * 用 alpha 而不是另一个 mask 字段，好处是它天然跟着网格一起存档、一起传下去。
  */
 import { deltaE, hexToRgb, rgbToLab, rgbToHex } from './color.ts'
+import { buildLibraryPalette, KIT_MARD } from './palette.ts'
 import type { Pixmap } from './types.ts'
 
 /** alpha 低于这个值就算「忽略」 */
 export const IGNORED_ALPHA = 8
 
-/** 编辑器预设色板：黑白灰 + 常用彩色，够画像素画；另有一档「透明」（见下） */
-export const EDIT_PRESET_COLORS: { hex: string; name: string }[] = [
-  { hex: '#000000', name: '黑' },
-  { hex: '#FFFFFF', name: '白' },
-  { hex: '#808080', name: '灰' },
-  { hex: '#C0C0C0', name: '浅灰' },
-  { hex: '#E53935', name: '红' },
-  { hex: '#FB8C00', name: '橙' },
-  { hex: '#FDD835', name: '黄' },
-  { hex: '#43A047', name: '绿' },
-  { hex: '#00ACC1', name: '青' },
-  { hex: '#1E88E5', name: '蓝' },
-  { hex: '#8E24AA', name: '紫' },
-  { hex: '#EC407A', name: '粉' },
-  { hex: '#6D4C41', name: '棕' },
-]
+export interface EditPreset {
+  /** MARD 色号 */
+  code: string
+  /** 色块显示的颜色 */
+  hex: string
+  /** true = 这一格涂下去是「忽略」（完全透明），不是上色 */
+  transparent?: boolean
+}
+
+/**
+ * 编辑器预设色板 = **MARD 24 色套装**（`KIT_MARD[24]`），色值取色号库里的真值。
+ *
+ * 例外是 `H01`：现实中它是透明塑料，所以这里不当作白色，而是「透明（忽略）」那一档 ——
+ * 涂下去等于把格子标成不要（不参与配色、不出图）。
+ */
+const MARD_HEX = new Map(buildLibraryPalette({ includeExtended: true }).map((e) => [e.codes.MARD, e.hex]))
+
+export const EDIT_PRESETS: EditPreset[] = KIT_MARD[24].map((code) =>
+  code === 'H01'
+    ? { code, hex: '#FFFFFF', transparent: true }
+    : { code, hex: MARD_HEX.get(code) ?? '#000000' },
+)
 
 /** 「新增色」最多留多少个 */
 export const MAX_ADDED_SWATCHES = 24

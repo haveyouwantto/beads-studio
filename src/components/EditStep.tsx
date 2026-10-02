@@ -7,7 +7,7 @@ import {
   clusterColors,
   colorUsage,
   countIgnored,
-  EDIT_PRESET_COLORS,
+  EDIT_PRESETS,
   floodFill,
   historyLimit,
   IGNORED_ALPHA,
@@ -62,8 +62,8 @@ export function EditStep() {
 
   // 取色对话框：点「+」或右键某个色块时打开，初值就是那个颜色
   const [picker, setPicker] = useState<{ title: string; initial: string } | null>(null)
-  const openPicker = useCallback((from: string | null, title = '选择颜色') => {
-    setPicker({ title, initial: from ?? color ?? '#000000' })
+  const openPicker = useCallback((from: string | null) => {
+    setPicker({ title: '选择颜色', initial: from ?? color ?? '#000000' })
   }, [color])
 
   const onPickedColor = (hex: string) => {
@@ -380,32 +380,34 @@ export function EditStep() {
               <span>预设</span>
             </div>
             <div className="swatch-row">
-              {EDIT_PRESET_COLORS.map((c) => (
-                <button
-                  key={c.hex}
-                  className={color === c.hex && tool === 'paint' ? 'paint-swatch on' : 'paint-swatch'}
-                  style={{ background: c.hex }}
-                  title={c.name}
-                  aria-label={c.name}
-                  onClick={() => {
-                    setColor(c.hex)
-                    setTool('paint')
-                  }}
-                  onContextMenu={(e) => {
-                    e.preventDefault()
-                    openPicker(c.hex, `从 ${c.hex} 开始调`)
-                  }}
-                />
-              ))}
-              <button
-                className={color === null && tool === 'paint' ? 'paint-swatch transparent on' : 'paint-swatch transparent'}
-                title="透明（忽略这一格）"
-                aria-label="透明"
-                onClick={() => {
-                  setColor(null)
-                  setTool('paint')
-                }}
-              />
+              {EDIT_PRESETS.map((p) => {
+                // H01 现实中是透明塑料：这一格就是「透明（忽略）」
+                const active = tool === 'paint' && (p.transparent ? color === null : color === p.hex)
+                const cls = ['paint-swatch']
+                if (p.transparent) cls.push('transparent')
+                if (active) cls.push('on')
+                return (
+                  <button
+                    key={p.code}
+                    className={cls.join(' ')}
+                    style={p.transparent ? undefined : { background: p.hex }}
+                    title={p.transparent ? `${p.code} 透明（忽略）` : `${p.code} · ${p.hex}`}
+                    aria-label={p.transparent ? `${p.code} 透明` : p.code}
+                    onClick={() => {
+                      setColor(p.transparent ? null : p.hex)
+                      setTool('paint')
+                    }}
+                    onContextMenu={
+                      p.transparent
+                        ? undefined
+                        : (e) => {
+                            e.preventDefault()
+                            openPicker(p.hex)
+                          }
+                    }
+                  />
+                )
+              })}
             </div>
           </div>
 
@@ -420,7 +422,7 @@ export function EditStep() {
                   key={hex}
                   className={color === hex && tool === 'paint' ? 'paint-swatch on' : 'paint-swatch'}
                   style={{ background: hex }}
-                  title={`${hex}（右键从它开始调）`}
+                  title={hex}
                   aria-label={hex}
                   onClick={() => {
                     setColor(hex)
@@ -428,13 +430,13 @@ export function EditStep() {
                   }}
                   onContextMenu={(e) => {
                     e.preventDefault()
-                    openPicker(hex, `从 ${hex} 开始调`)
+                    openPicker(hex)
                   }}
                 />
               ))}
               <button
                 className="paint-swatch add"
-                title="选一个新颜色加进来"
+                title="新增颜色"
                 aria-label="新增颜色"
                 onClick={() => openPicker(null)}
               >
@@ -477,7 +479,7 @@ export function EditStep() {
                   key={c.hex}
                   className="swatch static"
                   style={{ background: c.hex }}
-                  title={`${c.hex} · ${c.count} 颗${c.merged > 1 ? ` · 合并了 ${c.merged} 种相近色` : ''}`}
+                  title={`${c.hex} · ${c.count} 颗`}
                   onClick={() => {
                     // 图里的颜色直接进「新增」，方便反复用
                     addSwatch(c.hex)
@@ -486,7 +488,7 @@ export function EditStep() {
                   }}
                   onContextMenu={(e) => {
                     e.preventDefault()
-                    openPicker(c.hex, `从 ${c.hex} 开始调`)
+                    openPicker(c.hex)
                   }}
                 >
                   <span className="count">{c.count}</span>

@@ -8,7 +8,7 @@ import {
   clusterColors,
   colorUsage,
   countIgnored,
-  EDIT_PRESET_COLORS,
+  EDIT_PRESETS,
   floodFill,
   historyLimit,
   IGNORED_ALPHA,
@@ -366,7 +366,13 @@ section('像素编辑（第 2 步）')
   const pixmap: Pixmap = { width: w, height: h, data: new Uint8ClampedArray(w * h * 4).fill(255) }
   // 先把底色都刷成红，方便看覆盖效果
   for (let y = 0; y < h; y++) for (let x = 0; x < w; x++) writeCell(pixmap.data, w, x, y, '#E53935')
-  check('预设调色板有黑白和若干彩色', EDIT_PRESET_COLORS.length >= 8 && EDIT_PRESET_COLORS[0].hex === '#000000' && EDIT_PRESET_COLORS[1].hex === '#FFFFFF')
+  // 预设色板 = MARD 24 色套装，其中 H01 当作「透明（忽略）」
+  const presetCodes = EDIT_PRESETS.map((p) => p.code)
+  const libraryByCode = new Map(palette.map((e) => [e.codes.MARD, e.hex]))
+  check('预设色板就是 24 色套装', EDIT_PRESETS.length === 24 && presetCodes.join() === [...KIT_MARD[24]].join(), presetCodes.join())
+  check('预设里 H01 是透明档', EDIT_PRESETS.find((p) => p.code === 'H01')?.transparent === true)
+  check('预设其它颜色都是真实色号色值', EDIT_PRESETS.filter((p) => !p.transparent).every((p) => libraryByCode.get(p.code) === p.hex), '')
+  check('预设里有白（H02）和黑（H07）', presetCodes.includes('H02') && presetCodes.includes('H07'))
 
   writeCell(pixmap.data, w, 1, 0, '#1E88E5')
   check('涂色写入指定格子', readCell(pixmap, 1, 0) === '#1E88E5', String(readCell(pixmap, 1, 0)))
