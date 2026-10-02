@@ -63,6 +63,11 @@ const markup = [
   '<div class="stat"><div class="k">平均</div><div class="v">12.3</div><div class="v sm">4</div></div>',
   '<div class="tiny muted">小字</div>',
   '<table class="bom"><thead><tr><th>色号</th></tr></thead></table>',
+  '<div class="canvas-wrap edit-host"><canvas></canvas></div>',
+  '<button class="btn-flat btn-small" id="flat-on">重来</button>',
+  '<button class="btn-flat btn-small" id="flat-off" disabled>重来</button>',
+  '<button class="btn" id="filled-on">导出文件</button>',
+  '<button class="btn" id="filled-off" disabled>导出文件</button>',
   '<header class="panel-head">面板标题</header>',
   '<div class="card panel"><div class="card-title panel-head">面板标题</div><div class="card-content panel-body">内容</div></div>',
   '<div class="stage-head"><h1><i class="material-icons">palette</i>规范化</h1><p>把图片变成网格</p></div>',
@@ -231,6 +236,38 @@ section('字体与图纸预览')
   check('正文用 Roboto 无衬线', norm(style('body', 'font-family')).includes('Roboto'), norm(style('body', 'font-family')))
   check('字体栈里没有等宽', !rootVar('--font-sans').includes('monospace'))
   check('图纸预览禁止选中文字', style('.pattern-svg', 'user-select') === 'none', style('.pattern-svg', 'user-select'))
+}
+
+// 像素编辑的画板：默认居中（以前是左上角对齐，图小了看着偏）
+section('编辑画板')
+{
+  check(
+    '编辑画板默认居中',
+    style('.canvas-wrap.edit-host', 'place-items').includes('center'),
+    style('.canvas-wrap.edit-host', 'place-items'),
+  )
+}
+
+// 禁用态：以前实心按钮的禁用容器和正常容器几乎一个色，看不出点不动
+section('禁用态一眼能看出')
+{
+  const flatOn = compact(style('#flat-on', 'color'))
+  const flatOff = compact(style('#flat-off', 'color'))
+  check('文字按钮禁用后文字更淡', flatOn === 'rgba(255,255,255,0.6)' && flatOff === 'rgba(255,255,255,0.3)', `${flatOn} → ${flatOff}`)
+  check('文字按钮禁用后没有容器', compact(style('#flat-off', 'background-color')) === 'rgba(0,0,0,0)', style('#flat-off', 'background-color'))
+
+  check(
+    '实心按钮禁用后换成 12% 容器',
+    compact(style('#filled-off', 'background-color')) === 'rgba(255,255,255,0.12)',
+    style('#filled-off', 'background-color'),
+  )
+  check('禁用按钮不抬升', style('#filled-off', 'box-shadow') === 'none', style('#filled-off', 'box-shadow'))
+  check('禁用按钮光标是 not-allowed', style('#filled-off', 'cursor') === 'not-allowed', style('#filled-off', 'cursor'))
+  check('正常按钮还是 primary 容器', toHex(style('#filled-on', 'background-color')) === '#90caf9', style('#filled-on', 'background-color'))
+  check(
+    '禁用容器和正常容器不是一个色',
+    compact(style('#filled-off', 'background-color')) !== compact(style('#filled-on', 'background-color')),
+  )
 }
 
 // 手机浏览器的地址栏也算视口：100% / vh 用的是「大视口」，界面会高出可见区域，

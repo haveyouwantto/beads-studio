@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { useStudio, type EditTool } from '../store/studio.ts'
-import { Empty, Notice, Panel, Stat, Swatch } from './ui.tsx'
+import { Empty, Notice, Panel, Segmented, Stat, Swatch } from './ui.tsx'
 import { ColorPickerDialog } from './ColorPickerDialog.tsx'
 import { STAGE_META } from './stages.ts'
 import {
@@ -59,6 +59,8 @@ export function EditStep() {
   const setColor = useStudio((s) => s.setEditColor)
   const tool = useStudio((s) => s.editTool)
   const setTool = useStudio((s) => s.setEditTool)
+  const fillMode = useStudio((s) => s.editFillMode)
+  const setFillMode = useStudio((s) => s.setEditFillMode)
   const swatches = useStudio((s) => s.editSwatches)
   const addSwatch = useStudio((s) => s.addEditSwatch)
   const [cell, setCell] = useState(16)
@@ -232,7 +234,12 @@ export function EditStep() {
     }
     pushHistory()
     if (tool === 'fill') {
-      if (draft.current) floodFill(draft.current, grid.width, grid.height, at.x, at.y, color)
+      if (draft.current) {
+        floodFill(draft.current, grid.width, grid.height, at.x, at.y, color, {
+          mode: fillMode,
+          clusters: stats?.clusters,
+        })
+      }
       draw()
       commit()
       return
@@ -391,6 +398,22 @@ export function EditStep() {
               style={{ flex: 1, minWidth: 100 }}
             />
           </div>
+
+          {tool === 'fill' && (
+            <div className="field" style={{ marginTop: 10 }}>
+              <div className="field-label">
+                <span>填充方式</span>
+              </div>
+              <Segmented
+                value={fillMode}
+                onChange={setFillMode}
+                options={[
+                  { value: 'color', label: '按颜色', title: '只填颜色一模一样的相连格子' },
+                  { value: 'cluster', label: '按聚类', title: '同色系（抗锯齿边、轻微渐变）当成一块' },
+                ]}
+              />
+            </div>
+          )}
 
           <div className="field" style={{ marginTop: 12 }}>
             <div className="field-label">

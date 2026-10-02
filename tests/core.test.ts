@@ -431,6 +431,36 @@ section('像素编辑（第 2 步）')
   const oneColor: Pixmap = { width: 3, height: 1, data: new Uint8ClampedArray(3 * 4).fill(255) }
   check('油漆桶可以填成透明', floodFill(oneColor.data, 3, 1, 1, 0, null) === 3 && countIgnored(oneColor) === 3)
 
+  // 油漆桶的两种口径：按颜色只认一模一样的，按聚类把同色系一起填
+  const band: Pixmap = { width: 6, height: 1, data: new Uint8ClampedArray(6 * 4) }
+  writeCell(band.data, 6, 0, 0, '#E53935')
+  writeCell(band.data, 6, 1, 0, '#E43834') // 和 0 号差一点点的红
+  writeCell(band.data, 6, 2, 0, '#E53733') // 还是那一片红
+  writeCell(band.data, 6, 3, 0, '#1E88E5') // 蓝：另一类
+  writeCell(band.data, 6, 4, 0, '#1E88E5')
+  writeCell(band.data, 6, 5, 0, '#000000')
+  const bandClusters = clusterColors(band, 24)
+  const byColor: Pixmap = { width: 6, height: 1, data: new Uint8ClampedArray(band.data) }
+  check('按颜色只填一模一样的相邻格', floodFill(byColor.data, 6, 1, 0, 0, '#00FF00') === 1)
+  const byCluster: Pixmap = { width: 6, height: 1, data: new Uint8ClampedArray(band.data) }
+  check(
+    '按聚类把同色系的相邻格一起填',
+    floodFill(byCluster.data, 6, 1, 0, 0, '#00FF00', { mode: 'cluster', clusters: bandClusters }) === 3,
+    String(readCell(byCluster, 0, 0)),
+  )
+  check('按聚类不越到别的类', readCell(byCluster, 3, 0) === '#1E88E5' && readCell(byCluster, 5, 0) === '#000000')
+  const noClusters: Pixmap = { width: 6, height: 1, data: new Uint8ClampedArray(band.data) }
+  check(
+    '按聚类但没给类时退回按颜色',
+    floodFill(noClusters.data, 6, 1, 0, 0, '#00FF00', { mode: 'cluster' }) === 1,
+  )
+  const withHole: Pixmap = { width: 6, height: 1, data: new Uint8ClampedArray(band.data) }
+  writeCell(withHole.data, 6, 1, 0, null)
+  check(
+    '按聚类不会跨过被忽略的格子',
+    floodFill(withHole.data, 6, 1, 0, 0, '#00FF00', { mode: 'cluster', clusters: bandClusters }) === 1,
+  )
+
   // 调色板：新增色按加入顺序排，最多 24 个（满了挤掉最早的）
   check('新增色上限 24', MAX_ADDED_SWATCHES === 24)
   let added: string[] = []

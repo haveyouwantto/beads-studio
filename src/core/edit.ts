@@ -166,6 +166,18 @@ export function clusterColors(img: Pixmap, maxClusters = 24, maxDeltaE = 4): Col
     .sort((a, b) => b.count - a.count)
 }
 
+/** 油漆桶的两种口径 */
+export interface FloodFillOptions {
+  /**
+   * 'color'：只填和起点颜色一模一样的连通块。
+   * 'cluster'：先把每个颜色归到「图中颜色」里最近的那一类，再按类填 ——
+   * 抗锯齿边、轻微渐变这些本属同色系的格子会被当成一块。
+   */
+  mode?: 'color' | 'cluster'
+  /** mode === 'cluster' 时用的类，直接用「图中颜色」那一组 */
+  clusters?: ColorCluster[]
+}
+
 /**
  * 油漆桶：把和起点同色（含同为「忽略」）的连通区域整片换成 `hex`（null = 涂成忽略）。
  * 用显式栈而不是递归，几万格也不会爆栈。
@@ -177,6 +189,7 @@ export function floodFill(
   x: number,
   y: number,
   hex: string | null,
+  options: FloodFillOptions = {},
 ): number {
   if (x < 0 || y < 0 || x >= width || y >= height) return 0
   const at = (px: number, py: number) => (py * width + px) * 4
@@ -184,9 +197,35 @@ export function floodFill(
   const start = at(x, y)
   const startIgnored = data[start + 3] < IGNORED_ALPHA
   const target = [data[start], data[start + 1], data[start + 2], data[start + 3]]
+
+  // 按类填：把「这个颜色属于哪一类」算一次就缓存住，一张图来回问很多次
+  const clusterLabs =
+    options.mode === 'cluster' ? (options.clusters ?? []).map((c) => rgbToLab(hexToRgb(c.hex))) : []
+  const clusterCache = new Map<number, number>()
+  const clusterOf = (i: number): number => {
+    const key = (data[i] << 16) | (data[i + 1] << 8) | data[i + 2]
+    const cached = clusterCache.get(key)
+    if (cached !== undefined) return cached
+    const lab = rgbToLab([data[i], data[i + 1], data[i + 2]])
+    let best = 0
+    let bestDist = Infinity
+    for (let k = 0; k < clusterLabs.length; k++) {
+      const d = deltaE(lab, clusterLabs[k])
+      if (d < bestDist) {
+        bestDist = d
+        best = k
+      }
+    }
+    clusterCache.set(key, best)
+    return best
+  }
+  const byCluster = clusterLabs.length > 0
+  const startCluster = byCluster ? clusterOf(start) : -1
+
   const sameColor = (i: number) => {
     const ignored = data[i + 3] < IGNORED_ALPHA
     if (ignored || startIgnored) return ignored === startIgnored
+    if (byCluster) return clusterOf(i) === startCluster
     return data[i] === target[0] && data[i + 1] === target[1] && data[i + 2] === target[2] && data[i + 3] === target[3]
   }
 

@@ -189,6 +189,8 @@ interface StudioState {
    * 和项目内容无关，所以切标签页/重开都无所谓，放全局就够。
    */
   editTool: EditTool
+  /** 油漆桶按什么填：一模一样的颜色，还是同一类（同色系） */
+  editFillMode: 'color' | 'cluster'
   editColor: string | null
   /** 自己加进来的颜色（吸管取的、配色器挑的），最多 MAX_ADDED_SWATCHES 个 */
   editSwatches: string[]
@@ -242,6 +244,7 @@ interface StudioState {
   /** 规范化里看过「网格被改过」的强制提示，确认掉这个标记 */
   clearEdited: () => void
   setEditTool: (tool: EditTool) => void
+  setEditFillMode: (mode: 'color' | 'cluster') => void
   setEditColor: (hex: string | null) => void
   /** 往「新增色」里放一个颜色（已存在则不动，满了挤掉最早的那个） */
   addEditSwatch: (hex: string) => void
@@ -630,6 +633,7 @@ export const useStudio = create<StudioState>((set, get) => ({
   loading: false,
   error: null,
   editTool: 'paint',
+  editFillMode: 'color',
   editColor: '#000000',
   editSwatches: [],
   libraryPalette: buildLibraryPalette({ includeExtended: false }),
@@ -763,6 +767,7 @@ export const useStudio = create<StudioState>((set, get) => ({
   },
 
   setEditTool: (tool) => set({ editTool: tool }),
+  setEditFillMode: (mode) => set({ editFillMode: mode }),
   setEditColor: (hex) => set({ editColor: hex }),
   addEditSwatch: (hex) => {
     const current = get().editSwatches

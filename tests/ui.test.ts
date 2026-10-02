@@ -822,7 +822,21 @@ section('像素编辑（第 2 步）')
   check('点色块不会把工具切成画笔', useStudio.getState().editTool === 'fill', useStudio.getState().editTool)
   check('点色块就是换颜色', useStudio.getState().editColor === '#000000', String(useStudio.getState().editColor))
   check('填充工具下当前色照样有选中框', chipOn())
-  useStudio.setState({ editTool: 'paint', editSwatches: [] })
+
+  // 填充方式：只有选了填充才出现，默认按颜色
+  useStudio.setState({ editTool: 'paint' })
+  await flush()
+  check('没选填充时不显示填充方式', !(host.textContent ?? '').includes('填充方式'))
+  useStudio.setState({ editTool: 'fill' })
+  await flush()
+  const fillTabs = [...host.querySelectorAll('.segmented .tab a')].map((a) => (a.textContent ?? '').trim())
+  check('选了填充才出现「按颜色 / 按聚类」', fillTabs.join() === '按颜色,按聚类', fillTabs.join())
+  check('填充默认按颜色', useStudio.getState().editFillMode === 'color', useStudio.getState().editFillMode)
+  ;(host.querySelectorAll('.segmented .tab a')[1] as HTMLAnchorElement | undefined)?.click()
+  await flush()
+  check('能切到按聚类', useStudio.getState().editFillMode === 'cluster', useStudio.getState().editFillMode)
+
+  useStudio.setState({ editTool: 'paint', editFillMode: 'color', editSwatches: [] })
   await flush()
 
   // 撤销 / 重做：必须真的能退回上一笔（以前每落一笔都会把历史清空，按钮等于摆设）

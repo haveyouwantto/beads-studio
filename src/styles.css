@@ -1790,18 +1790,6 @@ span.badge {
   vertical-align: -4px;
 }
 
-.btn.disabled,
-.btn:disabled,
-button:disabled {
-  background-color: rgba(255, 255, 255, 0.12);
-  color: var(--md-on-surface-disabled);
-  box-shadow: none;
-}
-
-.btn-flat:disabled {
-  background-color: transparent;
-}
-
 /* ---------- Modal ----------
    Materialize 的弹窗默认由它的 JS 打开（display:none → 内联样式）。
    这里是 React 控制显隐，所以补上 .open 状态；其余布局仍走它自己的规则。 */
@@ -2055,11 +2043,39 @@ select option {
   background-color: rgba(207, 102, 121, 0.12);
 }
 
-/* Materialize 的 button:disabled 会把禁用按钮刷成浅灰 */
-button:disabled {
-  background-color: var(--panel-3);
-  color: var(--muted-2);
-  box-shadow: none;
+/* ---------- 禁用态（全站在这一处定义）----------
+   Materialize 自己有一条 !important 的禁用样式（#DFDFDF 底 / #9F9F9F 字），
+   深色主题下实心按钮会变成一块浅灰，文字按钮反而比正常时更亮、根本看不出禁用。
+   所以这里必须用 !important 顶掉它，按 MD2 来：容器叠 12% on-surface、内容 38%。
+   内容再压一档，保证「点不动」一眼能看出来。 */
+
+button:disabled,
+button.disabled,
+.btn:disabled,
+.btn.disabled {
+  background-color: rgba(255, 255, 255, 0.12) !important;
+  color: var(--md-on-surface-disabled) !important;
+  box-shadow: none !important;
+  cursor: not-allowed;
+  opacity: 1;
+}
+
+/* 文字 / 图标按钮本来就没有容器，禁用后只剩淡掉的内容。
+   Materialize 那条用的是 .btn-flat.btn-flat[disabled]（特异性 0,3,0 + !important），
+   所以这里得再加一档（[disabled]:disabled）才压得住。 */
+button.btn-flat[disabled]:disabled,
+button.btn-floating[disabled]:disabled,
+button.btn-flat.disabled,
+button.btn-floating.disabled {
+  background-color: transparent !important;
+  color: rgba(255, 255, 255, 0.3) !important;
+  cursor: not-allowed;
+}
+
+.btn.ghost:disabled,
+.btn.danger:disabled {
+  background-color: transparent;
+  border-color: var(--md-outline);
 }
 
 /* 文字层级按 MD2 类型比例（用长写属性，避免 font 简写与 var() 的兼容坑） */
@@ -2372,7 +2388,9 @@ button:disabled {
 /* ---------- 像素编辑（第 2 步）---------- */
 
 .canvas-wrap.edit-host {
-  place-items: start;
+  /* 默认居中；格子放大到超过容器时 safe 会退回左对齐，免得左上角被裁掉滚不到 */
+  place-items: center;
+  place-items: safe center;
   max-height: 62vh;
   max-height: 62dvh;
   padding: 14px;
