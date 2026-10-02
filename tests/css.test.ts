@@ -301,9 +301,14 @@ section('移动端视口单位')
     check(`${selector} 的 ${prop} 用 dvh`, v.includes('dvh'), v)
   }
 
-  // 像素编辑的画板：自己吞掉触摸手势（否则手机上画两笔就变成滚页面）
+  // 像素编辑的画板：自己吞掉触摸手势（否则手机上画两笔就变成滚页面）；
+  // 画板本身限高，画布在里面自由大小、装不下就在画板里滚
   check('编辑画板接管触摸手势', declared('.canvas-wrap.edit-host canvas', 'touch-action') === 'none', declared('.canvas-wrap.edit-host canvas', 'touch-action'))
-  check('编辑画板限高用 dvh', declared('.canvas-wrap.edit-host', 'max-height') === '62dvh', declared('.canvas-wrap.edit-host', 'max-height'))
+  check(
+    '编辑画板本身限高用 dvh',
+    declared('.canvas-wrap.edit-host', 'max-height') === '62dvh',
+    declared('.canvas-wrap.edit-host', 'max-height'),
+  )
 }
 
 // 媒体查询在 jsdom 里算不出 computed style（它不做视口匹配），
@@ -354,10 +359,14 @@ section('响应式断点')
   check('窄屏步骤栏占满宽度', value(narrow, 'nav.rail', 'width') === '100%', value(narrow, 'nav.rail', 'width'))
   check('窄屏主体改成纵向堆叠', value(narrow, '.body', 'flex-direction') === 'column', value(narrow, '.body', 'flex-direction'))
   check(
-    '窄屏步骤项等分宽度',
-    ['0', '0px'].includes(value(narrow, '.rail-step', 'flex-basis')),
-    value(narrow, '.rail-step', 'flex-basis'),
+    // 四步挤一行会把字压没：每项保持自己的宽度，装不下就横向滚动
+    '窄屏步骤项不挤成一团',
+    value(narrow, '.rail-step', 'flex-basis') === 'auto' && value(narrow, '.rail-step', 'flex-shrink') === '0',
+    `${value(narrow, '.rail-step', 'flex-basis')} / ${value(narrow, '.rail-step', 'flex-shrink')}`,
   )
+  check('窄屏步骤栏可以横向滚动', value(narrow, 'nav.rail', 'overflow-x') === 'auto', value(narrow, 'nav.rail', 'overflow-x'))
+  check('窄屏步骤栏不露出滚动条', value(narrow, 'nav.rail', 'scrollbar-width') === 'none')
+  check('窄屏步骤标题不省略号截断', value(narrow, '.rail-label', 'text-overflow') !== 'ellipsis')
   check('窄屏步骤项保留标题', value(narrow, '.rail-label', 'display') === 'block', value(narrow, '.rail-label', 'display'))
 
   // 顶栏：标签栏独占一行，不然会和按钮挤在一起

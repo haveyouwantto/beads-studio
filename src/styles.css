@@ -648,7 +648,8 @@ button {
   text-align: left;
   transition: background-color var(--md-dur-short) var(--md-ease-standard),
     color var(--md-dur-short) var(--md-ease-standard);
-  width: 100%;
+  /* 不写 width: 100%：竖排时靠列向 flex 的 stretch 撑满，
+     横排（窄屏）时要按内容宽度，写了反而会盖掉窄屏的 width: auto */
 }
 
 .rail-step:hover {
@@ -1712,7 +1713,8 @@ span.badge {
 }
 
 .rail .collection-item {
-  width: 100%;
+  /* 不锁宽度：竖排时列向 flex 的 stretch 就会撑满，
+     写死 100% 会把窄屏「按内容宽度 + 横向滚动」盖掉 */
   padding: var(--sp-3) var(--sp-4);
   color: var(--md-on-surface-medium);
 }
@@ -2401,6 +2403,8 @@ button.btn-floating.disabled {
   /* 默认居中；格子放大到超过容器时 safe 会退回左对齐，免得左上角被裁掉滚不到 */
   place-items: center;
   place-items: safe center;
+  /* 画板本身还是限高（矮屏上不要顶掉下面的调色板）；
+     画布可以在里面自由大小，装不下就在画板里滚。 */
   max-height: 62vh;
   max-height: 62dvh;
   padding: 14px;
@@ -2409,12 +2413,23 @@ button.btn-floating.disabled {
 .canvas-wrap.edit-host canvas {
   image-rendering: pixelated;
   cursor: crosshair;
+  /* 画布按自己的格子大小来，别被缩进画板：装不下就靠双指 / 「移动」工具滚 */
+  max-width: none;
   /* 画的时候不要触发浏览器自己的滚动/缩放手势 */
   touch-action: none;
 }
 
 .canvas-wrap.edit-host canvas.picking {
   cursor: copy;
+}
+
+/* 「移动」工具：拖动滚动画布 / 页面（手机上双指拖动也是这个） */
+.canvas-wrap.edit-host canvas.panning {
+  cursor: grab;
+}
+
+.canvas-wrap.edit-host canvas.panning:active {
+  cursor: grabbing;
 }
 
 /* 画笔调色板：一排小方块（Swatch size="chip"） */
@@ -2537,6 +2552,13 @@ button.btn-floating.disabled {
     background-color: var(--md-surface-1);
     overflow-x: auto;
     overflow-y: hidden;
+    /* 手机上四步挤一行会把字压没，所以保持每项自己的宽度、横向滚动 */
+    scrollbar-width: none;
+    -webkit-overflow-scrolling: touch;
+  }
+
+  nav.rail::-webkit-scrollbar {
+    display: none;
   }
 
   .rail-foot {
@@ -2544,9 +2566,11 @@ button.btn-floating.disabled {
   }
 
   .rail-step {
-    flex-grow: 1;
-    flex-shrink: 1;
-    flex-basis: 0;
+    flex-grow: 0;
+    flex-shrink: 0;
+    flex-basis: auto;
+    /* 基础样式里是 width:100%（竖排时撑满侧栏），横排时要按内容宽度 */
+    width: auto;
     min-width: 0;
     height: 40px;
     align-items: center;
@@ -2562,8 +2586,6 @@ button.btn-floating.disabled {
     font-weight: 500;
     line-height: 1.2;
     white-space: nowrap;
-    overflow: hidden;
-    text-overflow: ellipsis;
   }
 
   .rail-num {

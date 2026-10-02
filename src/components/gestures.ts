@@ -95,3 +95,27 @@ export function usePinchPan(handlers: {
 export function clampZoom(value: number, min: number, max: number): number {
   return Math.min(max, Math.max(min, value))
 }
+
+/**
+ * 平移一段距离：先把滚动量交给最近的滚动容器，容器滚到头了再交给外层。
+ * 画布上双指拖动（或选了「移动」工具单指拖动）就靠它把画布 / 页面滚起来 ——
+ * 画布的 touch-action 是 none，浏览器不会替我们滚，只能自己算。
+ */
+export function panScrollable(from: HTMLElement | null, dx: number, dy: number): void {
+  let node: HTMLElement | null = from
+  let restX = dx
+  let restY = dy
+  while (node && (Math.abs(restX) > 0.5 || Math.abs(restY) > 0.5)) {
+    const canX = node.scrollWidth > node.clientWidth
+    const canY = node.scrollHeight > node.clientHeight
+    if (canX || canY) {
+      const beforeX = node.scrollLeft
+      const beforeY = node.scrollTop
+      if (canX) node.scrollLeft = beforeX + restX
+      if (canY) node.scrollTop = beforeY + restY
+      restX -= node.scrollLeft - beforeX
+      restY -= node.scrollTop - beforeY
+    }
+    node = node.parentElement
+  }
+}

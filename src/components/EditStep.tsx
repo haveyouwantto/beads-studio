@@ -2,6 +2,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { useStudio, type EditTool } from '../store/studio.ts'
 import { Empty, Notice, Panel, Segmented, Stat, Swatch } from './ui.tsx'
 import { ColorPickerDialog } from './ColorPickerDialog.tsx'
+import { panScrollable } from './gestures.ts'
 import { STAGE_META } from './stages.ts'
 import {
   clusterColors,
@@ -27,6 +28,7 @@ const TOOLS: { id: EditTool; icon: string; label: string }[] = [
   { id: 'paint', icon: 'brush', label: '画笔' },
   { id: 'fill', icon: 'format_color_fill', label: '填充（油漆桶）' },
   { id: 'pick', icon: 'colorize', label: '吸管（取色并加入调色板）' },
+  { id: 'pan', icon: 'pan_tool', label: '移动（拖动滚动画布）' },
 ]
 
 /**
@@ -54,6 +56,10 @@ export function EditStep() {
   const ownGrid = useRef<Pixmap | null>(null)
   const painting = useRef(false)
   const lastCell = useRef<{ x: number; y: number } | null>(null)
+  /** 现在按着的手指；双指按下就是「要滚动」，不再画 */
+  const pointers = useRef(new Map<number, { x: number; y: number }>())
+  /** 平移中：上一次的手指中点（屏幕坐标） */
+  const panFrom = useRef<{ x: number; y: number } | null>(null)
 
   const color = useStudio((s) => s.editColor)
   const setColor = useStudio((s) => s.setEditColor)
@@ -221,10 +227,48 @@ export function EditStep() {
     draw()
   }
 
+  /** 手指中点：平移按它算位移 */
+  const pointerMid = () => {
+    const list = [...pointers.current.values()]
+    if (!list.length) return null
+    return {
+      x: list.reduce((a, p) => a + p.x, 0) / list.length,
+      y: list.reduce((a, p) => a + p.y, 0) / list.length,
+    }
+  }
+
+  /** 手指落下第二根 = 想滚动：把这一笔已经涂的还原掉，别留孤零零一个点 */
+  const cancelStroke = () => {
+    if (strokeStart.current && draft.current) {
+      draft.current.set(strokeStart.current)
+      draw()
+      setVersion((v) => v + 1)
+    }
+    strokeStart.current = null
+    painting.current = false
+    lastCell.current = null
+  }
+
   const onPointerDown = (e: React.PointerEvent<HTMLCanvasElement>) => {
+    pointers.current.set(e.pointerId, { x: e.clientX, y: e.clientY })
+    try {
+      e.currentTarget.setPointerCapture(e.pointerId)
+    } catch {
+      /* 不支持捕获就退化成普通拖动 */
+    }
+
+    if (pointers.current.size >= 2) {
+      cancelStroke()
+      panFrom.current = pointerMid()
+      return
+    }
+    if (tool === 'pan') {
+      panFrom.current = pointerMid()
+      return
+    }
+
     const at = cellAt(e)
     if (!at || !grid) return
-    e.currentTarget.setPointerCapture(e.pointerId)
     if (tool === 'pick') {
       const picked = draft.current ? readCell({ width: grid.width, height: grid.height, data: draft.current }, at.x, at.y) : null
       // 取色 = 把颜色加进「新增色」并设为当前色；工具不动
@@ -250,6 +294,18 @@ export function EditStep() {
   }
 
   const onPointerMove = (e: React.PointerEvent<HTMLCanvasElement>) => {
+    if (pointers.current.has(e.pointerId)) pointers.current.set(e.pointerId, { x: e.clientX, y: e.clientY })
+
+    // 平移中（双指，或选了「移动」工具）：按中点位移滚动
+    if (panFrom.current) {
+      const mid = pointerMid()
+      if (mid) {
+        panScrollable(hostRef.current, panFrom.current.x - mid.x, panFrom.current.y - mid.y)
+        panFrom.current = mid
+      }
+      return
+    }
+
     if (!painting.current || tool !== 'paint') return
     const at = cellAt(e)
     if (!at) return
@@ -267,14 +323,19 @@ export function EditStep() {
   }
 
   const onPointerUp = (e: React.PointerEvent<HTMLCanvasElement>) => {
-    if (!painting.current) return
-    painting.current = false
-    lastCell.current = null
     try {
       e.currentTarget.releasePointerCapture(e.pointerId)
     } catch {
       /* 已经释放 */
     }
+
+    pointers.current.delete(e.pointerId)
+    // 手指还有剩就继续平移（换手指时不跳），全松开了才结束
+    panFrom.current = pointers.current.size ? pointerMid() : null
+
+    if (!painting.current) return
+    painting.current = false
+    lastCell.current = null
     commit()
   }
 
@@ -366,7 +427,7 @@ export function EditStep() {
           <div className="canvas-wrap edit-host" ref={hostRef}>
             <canvas
               ref={canvasRef}
-              className={tool === 'pick' ? 'picking' : ''}
+              className={tool === 'pan' ? 'panning' : tool === 'pick' ? 'picking' : ''}
               onPointerDown={onPointerDown}
               onPointerMove={onPointerMove}
               onPointerUp={onPointerUp}

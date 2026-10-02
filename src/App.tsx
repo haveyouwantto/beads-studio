@@ -39,9 +39,19 @@ export default function App() {
   const [showMenu, setShowMenu] = useState(false)
   const fileRef = useRef<HTMLInputElement>(null)
   const projectRef = useRef<HTMLInputElement>(null)
+  const activeRailRef = useRef<HTMLButtonElement>(null)
 
   const openFile = useCallback(() => fileRef.current?.click(), [])
   useMaterialRipple()
+
+  // 手机上步骤栏是横向滚动的：切到某一步时把它滚进可视区，
+  // 不然用快捷键 / 恢复存档跳到第 4 步时，选中的那一项在屏幕外面。
+  useEffect(() => {
+    const el = activeRailRef.current
+    if (el && typeof el.scrollIntoView === 'function') {
+      el.scrollIntoView({ block: 'nearest', inline: 'center' })
+    }
+  }, [activeStage])
 
   const onPickFile = (files: FileList | null) => {
     const file = files?.[0]
@@ -278,6 +288,7 @@ export default function App() {
           {STAGES.map((s) => (
             <button
               key={s.id}
+              ref={activeStage === s.id ? activeRailRef : undefined}
               className={`rail-step collection-item ${activeStage === s.id ? 'active' : ''} ${stageDone[s.id] ? 'done' : ''}`}
               onClick={() => setStage(s.id)}
             >

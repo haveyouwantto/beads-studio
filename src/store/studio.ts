@@ -55,7 +55,7 @@ export type StageId = 'regularize' | 'edit' | 'optimize' | 'pattern'
 export const STAGE_ORDER: StageId[] = ['regularize', 'edit', 'optimize', 'pattern']
 
 /** 编辑器工具：画笔 / 油漆桶 / 吸管 */
-export type EditTool = 'paint' | 'fill' | 'pick'
+export type EditTool = 'paint' | 'fill' | 'pick' | 'pan'
 
 /**
  * 规范化的三种输入方式：

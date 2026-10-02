@@ -736,7 +736,7 @@ section('像素编辑（第 2 步）')
   )
   // 工具用 Material 图标：画笔 / 填充 / 吸管
   const tools = [...host.querySelectorAll('.tool-row button')].map((b) => b.querySelector('.material-icons')?.textContent ?? '')
-  check('三个工具都是 md 图标', tools.join() === 'brush,format_color_fill,colorize', tools.join())
+  check('四个工具都是 md 图标', tools.join() === 'brush,format_color_fill,colorize,pan_tool', tools.join())
   check('工具按钮没有文字', [...host.querySelectorAll('.tool-row button')].every((b) => (b.textContent ?? '').trim() === tools[[...host.querySelectorAll('.tool-row button')].indexOf(b)]))
   check('新增色有「+」入口', Boolean(host.querySelector('.swatch.chip.add')))
 
@@ -900,6 +900,80 @@ section('像素编辑（第 2 步）')
     undoBtn.click()
     await flush(20)
     check('再撤销一次又回到原样', cellPx(useStudio.getState().grid as Pixmap, 0, 0) === first)
+  }
+
+  // 手机上画布要能滚动：双指拖动 = 滚动（把手势让给画布），「移动」工具单指也能拖
+  {
+    const canvas = host.querySelector('.canvas-wrap.edit-host canvas') as HTMLCanvasElement
+    const wrap = host.querySelector('.canvas-wrap.edit-host') as HTMLElement
+    const g = useStudio.getState().grid as Pixmap
+    const CELL_PX = 10
+    // jsdom 不做排版：给容器一个「能横向滚动」的假象，滚动量本身 jsdom 会存
+    Object.defineProperty(wrap, 'scrollWidth', { value: 600, configurable: true })
+    Object.defineProperty(wrap, 'clientWidth', { value: 300, configurable: true })
+    canvas.getBoundingClientRect = () =>
+      ({
+        left: 0,
+        top: 0,
+        width: g.width * CELL_PX,
+        height: g.height * CELL_PX,
+        right: g.width * CELL_PX,
+        bottom: g.height * CELL_PX,
+        x: 0,
+        y: 0,
+        toJSON: () => ({}),
+      }) as DOMRect
+
+    const send = (type: string, id: number, cx: number, cy: number) =>
+      canvas.dispatchEvent(
+        new dom.window.PointerEvent(type, {
+          pointerId: id,
+          clientX: (cx + 0.5) * CELL_PX,
+          clientY: (cy + 0.5) * CELL_PX,
+          pointerType: 'touch',
+          bubbles: true,
+          cancelable: true,
+        }),
+      )
+    const cellPx2 = (pm: Pixmap, x: number, y: number) => {
+      const i = (y * pm.width + x) * 4
+      return [pm.data[i], pm.data[i + 1], pm.data[i + 2]].join()
+    }
+
+    useStudio.setState({ editTool: 'paint', editColor: '#00FF00' })
+    await flush()
+    send('pointerdown', 1, 2, 0)
+    send('pointerup', 1, 2, 0)
+    await flush(20)
+    check('单指点一下就画一格', cellPx2(useStudio.getState().grid as Pixmap, 2, 0) === '0,255,0', cellPx2(useStudio.getState().grid as Pixmap, 2, 0))
+
+    // 双指：第二根手指一落下就改成滚动，这一笔已经涂的不能留下
+    const beforeTwo = cellPx2(useStudio.getState().grid as Pixmap, 5, 0)
+    wrap.scrollLeft = 100
+    send('pointerdown', 2, 5, 0)
+    send('pointerdown', 3, 6, 0)
+    send('pointermove', 3, 4, 0)
+    send('pointerup', 3, 4, 0)
+    send('pointerup', 2, 5, 0)
+    await flush(20)
+    check('双指拖动不画画', cellPx2(useStudio.getState().grid as Pixmap, 5, 0) === beforeTwo, cellPx2(useStudio.getState().grid as Pixmap, 5, 0))
+    check('双指拖动把画布滚起来', wrap.scrollLeft > 100, String(wrap.scrollLeft))
+
+    // 「移动」工具：单指拖动就是滚动
+    useStudio.setState({ editTool: 'pan' })
+    await flush()
+    check('移动工具的画布是抓取光标', canvas.className === 'panning', canvas.className)
+    const beforePan = cellPx2(useStudio.getState().grid as Pixmap, 8, 0)
+    wrap.scrollLeft = 50
+    send('pointerdown', 4, 8, 0)
+    send('pointermove', 4, 6, 0)
+    send('pointerup', 4, 6, 0)
+    await flush(20)
+    check('移动工具拖动不画画', cellPx2(useStudio.getState().grid as Pixmap, 8, 0) === beforePan)
+    check('移动工具拖动滚动画布', wrap.scrollLeft > 50, String(wrap.scrollLeft))
+
+    useStudio.setState({ editTool: 'paint', editColor: '#000000' })
+    await flush()
   }
 
   editRoot.unmount()
