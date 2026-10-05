@@ -247,6 +247,8 @@ interface StudioState {
   buildGrid: () => void
   /** 像素编辑：提交编辑后的网格（透明格 = 忽略） */
   applyGridEdit: (next: Pixmap) => void
+  /** 像素编辑：丢掉修改，回到规范化的原始结果（没有原图也能用） */
+  resetToRegularized: () => void
   /** 规范化里看过「网格被改过」的强制提示，确认掉这个标记 */
   clearEdited: () => void
   setEditTool: (tool: EditTool) => void
@@ -771,6 +773,22 @@ export const useStudio = create<StudioState>((set, get) => ({
     // 只改「工作用的网格」，规范化那份原始结果原封不动
     set({ grid: next, result: null, edited: true })
     get().recomputeResult()
+  },
+
+  resetToRegularized: () => {
+    const s = get()
+    // 优先用规范化的原始结果：不需要原图，也不用重跑一遍
+    if (s.regularizedGrid) {
+      set({
+        grid: { width: s.regularizedGrid.width, height: s.regularizedGrid.height, data: new Uint8ClampedArray(s.regularizedGrid.data) },
+        result: null,
+        edited: false,
+      })
+      get().recomputeResult()
+      return
+    }
+    // 老存档没有这一份，只能按原图重新生成
+    get().buildGrid()
   },
 
   clearEdited: () => {

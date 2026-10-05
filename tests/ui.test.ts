@@ -1043,6 +1043,27 @@ section('像素编辑（第 2 步）')
       after.regularizedGrid !== after.grid && countIgnored(after.regularizedGrid as Pixmap) === 0,
       JSON.stringify({ same: after.regularizedGrid === after.grid, ignored: countIgnored(after.regularizedGrid as Pixmap) }),
     )
+    // 「回到规范化结果」不依赖原图：直接拿规范化那份原始结果换回来
+    useStudio.setState({ source: null })
+    useStudio.getState().resetToRegularized()
+    await flush(20)
+    check('回到规范化结果：忽略清零', countIgnored(useStudio.getState().grid as Pixmap) === 0)
+    check('回到规范化结果：edited 清零', useStudio.getState().edited === false)
+    check(
+      '回到规范化结果：内容等于原始结果',
+      (() => {
+        const g = useStudio.getState().grid as Pixmap
+        const r = useStudio.getState().regularizedGrid as Pixmap
+        if (g.width !== r.width || g.height !== r.height) return false
+        for (let i = 0; i < g.data.length; i++) if (g.data[i] !== r.data[i]) return false
+        return true
+      })(),
+    )
+    // 后面的用例还要用原图，装回去
+    await act(async () => {
+      await useStudio.getState().loadImageBlob(new dom.window.Blob(['x'], { type: 'image/png' }), 'test.png')
+    })
+    await flush(20)
     const counts = usageCounts(after.result as Pixmap, after.palette)
     const beads = [...counts].reduce((a, b) => a + b, 0)
     check('用料清单里没有忽略的格子', beads === total - ignoredCount, `${beads} / ${total}`)

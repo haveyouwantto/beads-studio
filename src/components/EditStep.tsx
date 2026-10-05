@@ -42,7 +42,7 @@ export function EditStep() {
   const applyGridEdit = useStudio((s) => s.applyGridEdit)
   const goNext = useStudio((s) => s.goNext)
   const goPrev = useStudio((s) => s.goPrev)
-  const buildGrid = useStudio((s) => s.buildGrid)
+  const resetToRegularized = useStudio((s) => s.resetToRegularized)
 
   const canvasRef = useRef<HTMLCanvasElement>(null)
   const hostRef = useRef<HTMLDivElement>(null)
@@ -471,9 +471,9 @@ export function EditStep() {
               </button>
               <button
                 className="btn-flat btn-small icon-only waves-effect"
-                onClick={buildGrid}
-                title="丢弃修改，按规范化重新生成"
-                aria-label="丢弃修改"
+                onClick={resetToRegularized}
+                title="丢掉修改，回到规范化结果"
+                aria-label="回到规范化结果"
               >
                 <i className="material-icons sm">restart_alt</i>
               </button>
