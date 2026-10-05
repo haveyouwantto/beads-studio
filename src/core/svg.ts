@@ -23,6 +23,11 @@ export interface RenderOptions {
   rulerStep: number
   /** 四边的留白（以「格」为单位）：标尺数字就写在留白里 */
   margin: number
+  /**
+   * 拼豆板拆分：0 = 不拆分（整张一张图纸）；
+   * 50 / 52 = 按 50×50 或 52×52 的板切成若干块，每块各自生成一张图纸再排在一起。
+   */
+  boardSize: number
 }
 
 export const DEFAULT_RENDER_OPTIONS: RenderOptions = {
@@ -38,6 +43,7 @@ export const DEFAULT_RENDER_OPTIONS: RenderOptions = {
   rulerStep: 10,
   // 2.6 是标尺数字需要的地方：比这更窄，左上的数字就贴着图纸了
   margin: 2.6,
+  boardSize: 0,
 }
 
 /** 线宽以「格」为单位，保证跟着图一起缩放，永远是矢量 */
@@ -61,6 +67,10 @@ export const SVG_FONT =
 const CODE_CELL_LIMIT = 12000
 /** 珠子样式逐颗绘制，元素数量大，超过这个规模建议用方格 */
 const BEAD_CELL_LIMIT = 60000
+
+/** 拆分后板与板之间的空隙、每块板标题占的高度（都以「格」为单位，跟着图纸一起缩放） */
+const BOARD_GAP = 1.6
+const BOARD_LABEL = 2
 
 export interface PatternSvg {
   /** 完整的 SVG 源码，可直接插入 DOM，也可以直接存成 .svg 文件 */
@@ -107,6 +117,25 @@ export function buildPatternSvg(
   palette: PaletteEntry[],
   options: RenderOptions = DEFAULT_RENDER_OPTIONS,
 ): PatternSvg {
+  const body = patternBody(img, palette, options)
+  return {
+    svg: `<svg xmlns="http://www.w3.org/2000/svg" width="${body.outW}" height="${body.outH}" viewBox="0 0 ${n(body.vbW)} ${n(body.vbH)}" font-family="${SVG_FONT}">${body.body}</svg>`,
+    width: body.outW,
+    height: body.outH,
+    codesSuppressed: body.codesSuppressed,
+    beadSuppressed: body.beadSuppressed,
+  }
+}
+
+/**
+ * 单张图纸的内容（不含最外层 <svg> 标签）。
+ * 拆成若干块拼豆板时，每块都拿它生成一次，再按排版拼到一起。
+ */
+function patternBody(
+  img: Pixmap,
+  palette: PaletteEntry[],
+  options: RenderOptions,
+): { body: string; outW: number; outH: number; vbW: number; vbH: number; codesSuppressed: boolean; beadSuppressed: boolean } {
   const { width: W, height: H, data } = img
   const {
     style,
@@ -162,9 +191,6 @@ export function buildPatternSvg(
   const rulerColor = bgIsLight ? '#0f172a' : '#e2e8f0'
 
   const parts: string[] = []
-  parts.push(
-    `<svg xmlns="http://www.w3.org/2000/svg" width="${outW}" height="${outH}" viewBox="0 0 ${n(vbW)} ${n(vbH)}" font-family="${SVG_FONT}">`,
-  )
   parts.push(`<rect x="0" y="0" width="${n(vbW)}" height="${n(vbH)}" fill="${escapeAttr(background)}"/>`)
 
   if (beads) {
@@ -309,10 +335,133 @@ export function buildPatternSvg(
     )
   }
 
-  parts.push('</svg>')
+  return { body: parts.join(''), outW, outH, vbW, vbH, codesSuppressed, beadSuppressed }
+}
+
+export interface BoardTile {
+  /** 第几块板，从 1 开始，先左到右、再上到下 */
+  index: number
+  col: number
+  row: number
+  /** 这块板在原图里的起点（格） */
+  x0: number
+  y0: number
+  cols: number
+  rows: number
+  /** 这块板在整张排版里的起点（格） */
+  x: number
+  y: number
+}
+
+export interface BoardLayout {
+  boards: BoardTile[]
+  boardCols: number
+  boardRows: number
+  /** 整张排版占多少格（含板与板之间的空隙和标题） */
+  widthCells: number
+  heightCells: number
+}
+
+/**
+ * 拼豆板拆分排版：把图纸按 boardSize 切成若干块，算出每块的位置。
+ * boardSize = 0 时就是「一块板 = 整张图」，和没拆分时完全一样。
+ */
+export function boardLayout(img: Pixmap, options: RenderOptions): BoardLayout {
+  const pad = marginOf(options)
+  const size = Math.floor(options.boardSize ?? 0)
+  if (!Number.isFinite(size) || size <= 0) {
+    return {
+      boards: [{ index: 1, col: 0, row: 0, x0: 0, y0: 0, cols: img.width, rows: img.height, x: 0, y: 0 }],
+      boardCols: 1,
+      boardRows: 1,
+      widthCells: img.width + pad * 2,
+      heightCells: img.height + pad * 2,
+    }
+  }
+
+  const boardCols = Math.ceil(img.width / size)
+  const boardRows = Math.ceil(img.height / size)
+  // 每块板的框一样大（最后一行/列可能不满），这样排版是整齐的网格
+  const boxW = Math.min(size, img.width) + pad * 2
+  const boxH = Math.min(size, img.height) + pad * 2
+
+  const boards: BoardTile[] = []
+  for (let row = 0; row < boardRows; row++) {
+    for (let col = 0; col < boardCols; col++) {
+      const x0 = col * size
+      const y0 = row * size
+      boards.push({
+        index: row * boardCols + col + 1,
+        col,
+        row,
+        x0,
+        y0,
+        cols: Math.min(size, img.width - x0),
+        rows: Math.min(size, img.height - y0),
+        x: col * (boxW + BOARD_GAP),
+        y: row * (boxH + BOARD_LABEL + BOARD_GAP) + BOARD_LABEL,
+      })
+    }
+  }
 
   return {
-    svg: parts.join(''),
+    boards,
+    boardCols,
+    boardRows,
+    widthCells: boardCols * boxW + (boardCols - 1) * BOARD_GAP,
+    heightCells: boardRows * (boxH + BOARD_LABEL) + (boardRows - 1) * BOARD_GAP,
+  }
+}
+
+/** 从整张网格里切出某一块板 */
+function slicePixmap(img: Pixmap, x0: number, y0: number, w: number, h: number): Pixmap {
+  const data = new Uint8ClampedArray(w * h * 4)
+  for (let y = 0; y < h; y++) {
+    const from = ((y0 + y) * img.width + x0) * 4
+    data.set(img.data.subarray(from, from + w * 4), y * w * 4)
+  }
+  return { width: w, height: h, data }
+}
+
+/**
+ * 转图纸：按拼豆板拆分后拼成一张大图。
+ * 每块板都是拿同一套设置单独生成一次图纸（各自的色号、网格、标尺都从 1 开始），
+ * 上面标「板 N」。boardSize = 0 或者整张图本来就装得下一块板时，退化成普通图纸。
+ */
+export function buildBoardPatternSvg(
+  img: Pixmap,
+  palette: PaletteEntry[],
+  options: RenderOptions = DEFAULT_RENDER_OPTIONS,
+): PatternSvg {
+  const layout = boardLayout(img, options)
+  if (layout.boards.length <= 1) return buildPatternSvg(img, palette, options)
+
+  const cellSize = options.cellSize
+  const outW = Math.max(1, Math.round(layout.widthCells * cellSize))
+  const outH = Math.max(1, Math.round(layout.heightCells * cellSize))
+  const bgIsLight = luminance(hexToRgbSafe(options.background)) > 0.5
+  const labelColor = bgIsLight ? '#0f172a' : '#e2e8f0'
+  const pad = marginOf(options)
+
+  const parts: string[] = [
+    `<rect x="0" y="0" width="${n(layout.widthCells)}" height="${n(layout.heightCells)}" fill="${escapeAttr(options.background)}"/>`,
+  ]
+  let codesSuppressed = false
+  let beadSuppressed = false
+
+  for (const board of layout.boards) {
+    const tile = slicePixmap(img, board.x0, board.y0, board.cols, board.rows)
+    const inner = patternBody(tile, palette, options)
+    codesSuppressed = codesSuppressed || inner.codesSuppressed
+    beadSuppressed = beadSuppressed || inner.beadSuppressed
+    parts.push(`<g transform="translate(${n(board.x)} ${n(board.y)})">${inner.body}</g>`)
+    parts.push(
+      `<text x="${n(board.x + (board.cols + pad * 2) / 2)}" y="${n(board.y - BOARD_LABEL / 2)}" fill="${labelColor}" font-size="1.1" font-weight="600" text-anchor="middle" dominant-baseline="central">板 ${board.index}</text>`,
+    )
+  }
+
+  return {
+    svg: `<svg xmlns="http://www.w3.org/2000/svg" width="${outW}" height="${outH}" viewBox="0 0 ${n(layout.widthCells)} ${n(layout.heightCells)}" font-family="${SVG_FONT}">${parts.join('')}</svg>`,
     width: outW,
     height: outH,
     codesSuppressed,
@@ -332,17 +481,17 @@ function hexToRgbSafe(hex: string): [number, number, number] {
 
 /** 给定渲染设置后 SVG 的固有尺寸（用来提前判断导出会不会过大） */
 export function estimateSvgSize(img: Pixmap, options: RenderOptions): { width: number; height: number } {
-  const pad = marginOf(options)
+  const layout = boardLayout(img, options)
   return {
-    width: Math.round((img.width + pad * 2) * options.cellSize),
-    height: Math.round((img.height + pad * 2) * options.cellSize),
+    width: Math.round(layout.widthCells * options.cellSize),
+    height: Math.round(layout.heightCells * options.cellSize),
   }
 }
 
 /** 预览用：把固有尺寸限制在 maxSide 以内，超大图纸自动缩小显示 */
 export function clampPreviewCellSize(img: Pixmap, options: RenderOptions, maxSide = 2048): number {
-  const pad = marginOf(options)
-  const longest = Math.max(img.width, img.height) + pad * 2
+  const layout = boardLayout(img, options)
+  const longest = Math.max(layout.widthCells, layout.heightCells)
   if (longest <= 0) return options.cellSize
   return Math.max(1, Math.min(options.cellSize, Math.floor(maxSide / longest)))
 }

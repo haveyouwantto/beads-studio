@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
-import { buildPatternSvg } from '../core/svg.ts'
+import { buildBoardPatternSvg } from '../core/svg.ts'
 import { useStudio } from '../store/studio.ts'
 import type { Pixmap } from '../core/types.ts'
 import { clampZoom, usePinchPan } from './gestures.ts'
@@ -69,7 +69,8 @@ export function FullscreenPreview({
 
   const pattern = useMemo(
     () =>
-      buildPatternSvg(pixmap, palette, {
+      // 和图纸页一样：选了拼豆板拆分，全屏看图也跟着拆
+      buildBoardPatternSvg(pixmap, palette, {
         ...renderOptions,
         rulers: true,
         grid: true,

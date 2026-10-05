@@ -408,6 +408,7 @@ check(
 
 // 优化器可直接驱动的兜底校验（确保 store 与核心算法一致）
 section('优化器与 store 一致性')
+section('优化器与 store 一致性')
 {
   const palette = buildLibraryPalette({ includeExtended: false })
   const grid = useStudio.getState().grid
@@ -1379,6 +1380,42 @@ section('项目名：改名与导出文件名')
   check('下载文件名用项目名', downloadName === '小狐狸拼豆.json', downloadName)
   const saved = JSON.parse(exportedJson || '{}') as { name?: string }
   check('存档里记下了项目名', saved.name === '小狐狸拼豆', String(saved.name))
+}
+
+section('转图纸 · 拼豆板拆分')
+{
+  await act(async () => {
+    useStudio.setState({ activeStage: 'pattern' })
+  })
+  await flush(20)
+
+  const splitTabs = [...container.querySelectorAll('.segmented .tab a')].filter((a) =>
+    ['不拆分', '50×50', '52×52'].includes((a.textContent ?? '').trim()),
+  )
+  check('图纸页有拼豆板拆分选择', splitTabs.length === 3, `${splitTabs.length} 个`)
+  check(
+    '默认不拆分',
+    useStudio.getState().renderOptions.boardSize === 0,
+    String(useStudio.getState().renderOptions.boardSize),
+  )
+
+  const fifty = splitTabs.find((a) => (a.textContent ?? '').trim() === '50×50') as HTMLAnchorElement | undefined
+  await act(async () => {
+    fifty?.click()
+  })
+  await flush(20)
+  check('选 50×50 写回设置', useStudio.getState().renderOptions.boardSize === 50)
+
+  // 这张测试图只有 12×10，装得下一块板：不该硬拆出「板 N」的标题
+  const previewHtml = container.querySelector('.pattern-svg')?.innerHTML ?? ''
+  check('图纸仍然画出来了', previewHtml.includes('<path'))
+  check('装得下一块板时不硬拆', !previewHtml.includes('板 1'))
+
+  await act(async () => {
+    useStudio.getState().setRenderOptions({ boardSize: 0 })
+  })
+  await flush(20)
+  check('能切回不拆分', useStudio.getState().renderOptions.boardSize === 0)
 }
 
 console.log(`\n${'─'.repeat(52)}`)

@@ -3,7 +3,8 @@ import { tabNameOf, useStudio } from '../store/studio.ts'
 import { Check, Empty, Field, Notice, Panel, Segmented, Stat, Swatch } from './ui.tsx'
 import { buildHexLookup } from '../core/render.ts'
 import {
-  buildPatternSvg,
+  buildBoardPatternSvg,
+  boardLayout,
   clampPreviewCellSize,
   estimateSvgSize,
   MAX_EXPORT_SIDE,
@@ -75,14 +76,19 @@ export function PatternStep({ onOpenFullscreen }: { onOpenFullscreen: () => void
   )
 
   const preview = useMemo(
-    () => (result ? buildPatternSvg(result, palette, previewOptions) : null),
+    () => (result ? buildBoardPatternSvg(result, palette, previewOptions) : null),
     [result, palette, previewOptions],
   )
 
   const fullPattern = useMemo(
-    () => (result ? buildPatternSvg(result, palette, renderOptions) : null),
+    () => (result ? buildBoardPatternSvg(result, palette, renderOptions) : null),
     [result, palette, renderOptions],
   )
+
+  // 拆分成了几块板（不拆就是 1 × 1）
+  const layout = useMemo(() => (result ? boardLayout(result, renderOptions) : null), [result, renderOptions])
+  /** 文件名后缀：拆了板就标出来，免得和整张的导出互相覆盖 */
+  const splitTag = layout && layout.boards.length > 1 ? `-${renderOptions.boardSize}分板` : ''
 
   const counts = useMemo(() => (result ? usageCounts(result, palette) : new Uint32Array(0)), [result, palette])
   const bom = useMemo(() => buildBom(palette, counts, codeSystem), [palette, counts, codeSystem])
@@ -130,7 +136,7 @@ export function PatternStep({ onOpenFullscreen }: { onOpenFullscreen: () => void
     setBusy(true)
     try {
       const blob = await svgToPngBlob(fullPattern.svg, fullPattern.width, fullPattern.height, exportScale)
-      downloadBlob(blob, `${fileBase}-图纸-${result.width}x${result.height}@${exportScale}x.png`)
+      downloadBlob(blob, `${fileBase}-图纸-${result.width}x${result.height}${splitTag}@${exportScale}x.png`)
     } catch (err) {
       useStudio.setState({ error: err instanceof Error ? err.message : 'PNG 导出失败' })
     } finally {
@@ -140,7 +146,7 @@ export function PatternStep({ onOpenFullscreen }: { onOpenFullscreen: () => void
 
   const exportChartSvg = () => {
     if (!result || !fullPattern) return
-    downloadText(fullPattern.svg, `${fileBase}-图纸-${result.width}x${result.height}.svg`, 'image/svg+xml')
+    downloadText(fullPattern.svg, `${fileBase}-图纸-${result.width}x${result.height}${splitTag}.svg`, 'image/svg+xml')
   }
 
   const exportPixelPng = () => {
@@ -394,6 +400,18 @@ export function PatternStep({ onOpenFullscreen }: { onOpenFullscreen: () => void
             />
           </Field>
 
+          <Field label="拼豆板拆分">
+            <Segmented
+              value={String(renderOptions.boardSize)}
+              onChange={(v) => setRenderOptions({ boardSize: Number(v) })}
+              options={[
+                { value: '0', label: '不拆分', title: '整张图就是一张图纸' },
+                { value: '50', label: '50×50', title: '按 50×50 的拼豆板切成若干块' },
+                { value: '52', label: '52×52', title: '按 52×52 的拼豆板切成若干块' },
+              ]}
+            />
+          </Field>
+
           <div style={{ display: 'grid', gap: 9 }}>
             <Check checked={renderOptions.codes} onChange={(v) => setRenderOptions({ codes: v })}>
               在格子上标注<b>色号</b>
@@ -522,6 +540,9 @@ export function PatternStep({ onOpenFullscreen }: { onOpenFullscreen: () => void
             <Stat k="总豆数" v={totalBeads.toLocaleString()} small />
             <Stat k="用到色号" v={bom.length} small />
             <Stat k="色板总量" v={palette.length} small />
+            {layout && layout.boards.length > 1 && (
+              <Stat k="拼豆板" v={`${layout.boardCols} × ${layout.boardRows} = ${layout.boards.length} 块`} small />
+            )}
           </div>
         </Panel>
       </div>

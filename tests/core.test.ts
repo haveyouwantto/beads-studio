@@ -42,6 +42,8 @@ import { PaletteOptimizer, targetsFromPixmap, DEFAULT_OPTIMIZE_CONFIG } from '..
 import { deltaE, hexToRgb, rgbToHex, rgbToLab } from '../src/core/color.ts'
 import { buildPaletteExport, packPixels, safeFileName, unpackPixels } from '../src/core/export.ts'
 import {
+  boardLayout,
+  buildBoardPatternSvg,
   buildPatternSvg,
   clampPreviewCellSize,
   estimateSvgSize,
@@ -784,6 +786,77 @@ section('③ 转拼豆图纸 · 矢量 SVG')
     clampPreviewCellSize(makePixmap(600, 400, [0, 0, 0]), DEFAULT_RENDER_OPTIONS, 1600) <
       DEFAULT_RENDER_OPTIONS.cellSize,
   )
+}
+
+section('③ 转拼豆图纸 · 拼豆板拆分')
+{
+  // 120×80 的图按 50×50 的板拆：3 × 2 = 6 块，最后一块是零头 20×30
+  const boardOpts: RenderOptions = { ...DEFAULT_RENDER_OPTIONS, boardSize: 50, rulers: true }
+  const big = makePixmap(120, 80, [200, 60, 60])
+  const layout = boardLayout(big, boardOpts)
+  check(
+    '120×80 按 50 拆成 3 × 2 = 6 块',
+    layout.boardCols === 3 && layout.boardRows === 2 && layout.boards.length === 6,
+    `${layout.boardCols}×${layout.boardRows} / ${layout.boards.length} 块`,
+  )
+  check('板按 1..6 从左到右、从上到下编号', layout.boards.map((b) => b.index).join() === '1,2,3,4,5,6')
+  check('第一块是完整的 50×50', layout.boards[0].cols === 50 && layout.boards[0].rows === 50)
+  check('最后一块是剩下的 20×30', layout.boards[5].cols === 20 && layout.boards[5].rows === 30)
+  check(
+    '板与板之间留了空隙（排版比原图宽）',
+    layout.widthCells > 120 && layout.heightCells > 80,
+    `${layout.widthCells.toFixed(1)} × ${layout.heightCells.toFixed(1)} 格`,
+  )
+
+  const split = buildBoardPatternSvg(big, palette, boardOpts)
+  check('每块板各生成一张图纸', (split.svg.match(/<g transform="translate/g) ?? []).length === 6)
+  check('每块板都标了编号', (split.svg.match(/板 \d+/g) ?? []).length === 6)
+  check(
+    '格子总数不变（拆分只是排版）',
+    (split.svg.match(/h1v1h-1z/g) ?? []).length === 120 * 80,
+    `${(split.svg.match(/h1v1h-1z/g) ?? []).length} 格`,
+  )
+  check(
+    '固有尺寸 = 排版格数 × 格子大小',
+    split.width === Math.round(layout.widthCells * boardOpts.cellSize) &&
+      split.height === Math.round(layout.heightCells * boardOpts.cellSize),
+    `${split.width}×${split.height}`,
+  )
+  check(
+    '拆分后预估尺寸变大',
+    estimateSvgSize(big, boardOpts).width > estimateSvgSize(big, { ...boardOpts, boardSize: 0 }).width,
+  )
+  check(
+    '预览降档按拆分后的排版算',
+    clampPreviewCellSize(big, boardOpts, 400) < clampPreviewCellSize(big, { ...boardOpts, boardSize: 0 }, 400),
+  )
+
+  // 不拆分 / 整张图本来就装得下一块板：和原来的图纸一模一样
+  const plain = buildPatternSvg(big, palette, { ...boardOpts, boardSize: 0 })
+  check('不拆分就是普通图纸', buildBoardPatternSvg(big, palette, { ...boardOpts, boardSize: 0 }).svg === plain.svg)
+  const smallImg = makePixmap(30, 20, [10, 120, 200])
+  check(
+    '装得下一块板的图不会硬拆',
+    buildBoardPatternSvg(smallImg, palette, boardOpts).svg ===
+      buildPatternSvg(smallImg, palette, { ...boardOpts, boardSize: 0 }).svg,
+  )
+  check('默认不拆分', DEFAULT_RENDER_OPTIONS.boardSize === 0)
+
+  // 每格一个唯一颜色：验证第 N 块板切到的确实是那一片
+  const uniq = makePixmap(120, 80, [0, 0, 0])
+  for (let y = 0; y < 80; y++) {
+    for (let x = 0; x < 120; x++) setPixel(uniq, x, y, [(x * 2) % 256, (y * 3) % 256, ((x + y) * 5) % 256])
+  }
+  const hexOf = (x: number, y: number) =>
+    '#' + [(x * 2) % 256, (y * 3) % 256, ((x + y) * 5) % 256].map((v) => v.toString(16).padStart(2, '0').toUpperCase()).join('')
+  const splitGroups = buildBoardPatternSvg(uniq, palette, boardOpts).svg.split('<g transform="translate')
+  // splitGroups[0] 是根节点到第一块板之间，[1] 就是第一块板
+  check('第 1 块板画的是左上角那一片', splitGroups[1].includes(hexOf(0, 0)) && splitGroups[1].includes(hexOf(49, 49)))
+  check(
+    '第 2 块板接的是第 51–100 列',
+    splitGroups[2].includes(hexOf(50, 0)) && !splitGroups[2].includes(hexOf(49, 0)),
+  )
+  check('第 4 块板是第二行的第一块', splitGroups[4].includes(hexOf(0, 50)) && !splitGroups[4].includes(hexOf(0, 49)))
 }
 
 // ---------------------------------------------------------------- 汇总
