@@ -28,6 +28,12 @@ export interface RenderOptions {
    * 50 / 52 = 按 50×50 或 52×52 的板切成若干块，每块各自生成一张图纸再排在一起。
    */
   boardSize: number
+  /**
+   * 拆分模式下每块板怎么画：
+   * 'ring'（默认）四周留一圈空白，格子从第二个开始画 —— 打印出来边缘好裁；
+   * 'flush' 直接从板边开始画。
+   */
+  boardEdge: 'ring' | 'flush'
 }
 
 export const DEFAULT_RENDER_OPTIONS: RenderOptions = {
@@ -44,6 +50,7 @@ export const DEFAULT_RENDER_OPTIONS: RenderOptions = {
   // 2.6 是标尺数字需要的地方：比这更窄，左上的数字就贴着图纸了
   margin: 2.6,
   boardSize: 0,
+  boardEdge: 'ring',
 }
 
 /** 线宽以「格」为单位，保证跟着图一起缩放，永远是矢量 */
@@ -71,6 +78,8 @@ const BEAD_CELL_LIMIT = 60000
 /** 拆分后板与板之间的空隙、每块板标题占的高度（都以「格」为单位，跟着图纸一起缩放） */
 const BOARD_GAP = 1.6
 const BOARD_LABEL = 2
+/** 只有这一档板子有「留一圈」的画法（带边框的板） */
+const RING_BOARD_SIZE = 52
 
 export interface PatternSvg {
   /** 完整的 SVG 源码，可直接插入 DOM，也可以直接存成 .svg 文件 */
@@ -135,6 +144,7 @@ function patternBody(
   img: Pixmap,
   palette: PaletteEntry[],
   options: RenderOptions,
+  inset = 0,
 ): { body: string; outW: number; outH: number; vbW: number; vbH: number; codesSuppressed: boolean; beadSuppressed: boolean } {
   const { width: W, height: H, data } = img
   const {
@@ -180,8 +190,11 @@ function patternBody(
   // 四边留同样的白（以「格」为单位），标尺数字写在留白里。
   // 以前只有左上的标尺占位、右下贴边，看起来是歪的。
   const pad = marginOf(options)
-  const vbW = W + pad * 2
-  const vbH = H + pad * 2
+  // inset：拆分模式下每块板四周再留一圈空白，格子从第二个开始画（0 = 直接从板边开始）
+  const off = Math.max(0, Math.round(inset))
+  const g0 = pad + off
+  const vbW = W + g0 * 2
+  const vbH = H + g0 * 2
   const outW = Math.max(1, Math.round(vbW * cellSize))
   const outH = Math.max(1, Math.round(vbH * cellSize))
 
@@ -202,8 +215,8 @@ function patternBody(
         // 透明格 = 忽略：不出豆子，背景直接透出来
         if (data[(y * W + x) * 4 + 3] < IGNORED_ALPHA) continue
         const hex = hexOf(data, (y * W + x) * 4)
-        const cx = n(pad + x + 0.5)
-        const cy = n(pad + y + 0.5)
+        const cx = n(g0 + x + 0.5)
+        const cy = n(g0 + y + 0.5)
         const key = groupKey(hex)
         let list = byColor.get(key)
         if (!list) {
@@ -223,7 +236,7 @@ function patternBody(
     for (let y = 0; y < H; y++) {
       for (let x = 0; x < W; x++) {
         if (data[(y * W + x) * 4 + 3] < IGNORED_ALPHA) continue
-        hl.push(`<circle cx="${n(pad + x + 0.34)}" cy="${n(pad + y + 0.34)}" r="${hr}"/>`)
+        hl.push(`<circle cx="${n(g0 + x + 0.34)}" cy="${n(g0 + y + 0.34)}" r="${hr}"/>`)
       }
     }
     parts.push(hl.join(''))
@@ -246,7 +259,7 @@ function patternBody(
     }
     for (const [key, rects] of byColor) {
       parts.push(
-        `<path transform="translate(${n(pad)} ${n(pad)})" d="${rects.join('')}" ${groupFill(key)} shape-rendering="crispEdges"/>`,
+        `<path transform="translate(${n(g0)} ${n(g0)})" d="${rects.join('')}" ${groupFill(key)} shape-rendering="crispEdges"/>`,
       )
     }
   }
@@ -258,11 +271,11 @@ function patternBody(
     const thick: string[] = []
     for (let x = 0; x <= W; x++) {
       const target = x % step === 0 ? thick : thin
-      target.push(`M${n(pad + x)} ${n(pad)}V${n(pad + H)}`)
+      target.push(`M${n(g0 + x)} ${n(g0)}V${n(g0 + H)}`)
     }
     for (let y = 0; y <= H; y++) {
       const target = y % step === 0 ? thick : thin
-      target.push(`M${n(pad)} ${n(pad + y)}H${n(pad + W)}`)
+      target.push(`M${n(g0)} ${n(g0 + y)}H${n(g0 + W)}`)
     }
     if (thin.length) {
       parts.push(
@@ -303,7 +316,7 @@ function patternBody(
           list = []
           groups.set(dark ? 'light' : 'dark', list)
         }
-        list.push(`<text x="${n(pad + x + 0.5)}" y="${n(pad + y + 0.5)}">${escapeAttr(label)}</text>`)
+        list.push(`<text x="${n(g0 + x + 0.5)}" y="${n(g0 + y + 0.5)}">${escapeAttr(label)}</text>`)
       }
     }
     for (const [kind, texts] of groups) {
@@ -321,13 +334,13 @@ function patternBody(
     for (let x = 0; x < W; x++) {
       if ((x + 1) % step !== 0 && x !== 0) continue
       texts.push(
-        `<text x="${n(pad + x + 0.5)}" y="${n(pad - 1.1)}" text-anchor="middle" dominant-baseline="central">${x + 1}</text>`,
+        `<text x="${n(g0 + x + 0.5)}" y="${n(g0 - 1.1)}" text-anchor="middle" dominant-baseline="central">${x + 1}</text>`,
       )
     }
     for (let y = 0; y < H; y++) {
       if ((y + 1) % step !== 0 && y !== 0) continue
       texts.push(
-        `<text x="${n(pad - 1.1)}" y="${n(pad + y + 0.5)}" text-anchor="middle" dominant-baseline="central">${y + 1}</text>`,
+        `<text x="${n(g0 - 1.1)}" y="${n(g0 + y + 0.5)}" text-anchor="middle" dominant-baseline="central">${y + 1}</text>`,
       )
     }
     parts.push(
@@ -366,6 +379,16 @@ export interface BoardLayout {
  * 拼豆板拆分排版：把图纸按 boardSize 切成若干块，算出每块的位置。
  * boardSize = 0 时就是「一块板 = 整张图」，和没拆分时完全一样。
  */
+/**
+ * 板边留白（格）：只对 52×52 这种带边框的板有意义 ——
+ * 留一圈时格子从第二个开始画，最外一圈空着，打印出来好裁；
+ * 50×50 没有这个选择，一律直接从板边开始画。
+ */
+export function boardInset(options: RenderOptions): number {
+  const size = Math.floor(options.boardSize ?? 0)
+  return size === RING_BOARD_SIZE && options.boardEdge !== 'flush' ? 1 : 0
+}
+
 export function boardLayout(img: Pixmap, options: RenderOptions): BoardLayout {
   const pad = marginOf(options)
   const size = Math.floor(options.boardSize ?? 0)
@@ -381,23 +404,23 @@ export function boardLayout(img: Pixmap, options: RenderOptions): BoardLayout {
 
   const boardCols = Math.ceil(img.width / size)
   const boardRows = Math.ceil(img.height / size)
-  // 每块板的框一样大（最后一行/列可能不满），这样排版是整齐的网格
-  const boxW = Math.min(size, img.width) + pad * 2
-  const boxH = Math.min(size, img.height) + pad * 2
+  // 每块板都按整块画：最后一行/列不满时补空，别把板切成半块
+  const off = boardInset(options)
+  const boxW = size + (pad + off) * 2
+  const boxH = size + (pad + off) * 2
 
   const boards: BoardTile[] = []
   for (let row = 0; row < boardRows; row++) {
     for (let col = 0; col < boardCols; col++) {
-      const x0 = col * size
-      const y0 = row * size
       boards.push({
         index: row * boardCols + col + 1,
         col,
         row,
-        x0,
-        y0,
-        cols: Math.min(size, img.width - x0),
-        rows: Math.min(size, img.height - y0),
+        x0: col * size,
+        y0: row * size,
+        // 整块板：超出去的格子补成空的（透明 = 不放豆子）
+        cols: size,
+        rows: size,
         x: col * (boxW + BOARD_GAP),
         y: row * (boxH + BOARD_LABEL + BOARD_GAP) + BOARD_LABEL,
       })
@@ -413,12 +436,18 @@ export function boardLayout(img: Pixmap, options: RenderOptions): BoardLayout {
   }
 }
 
-/** 从整张网格里切出某一块板 */
-function slicePixmap(img: Pixmap, x0: number, y0: number, w: number, h: number): Pixmap {
+/**
+ * 从整张网格里切出一整块板。
+ * 板子超出原图的部分补成透明（= 这个位置没有豆子），既不画豆子也不写色号，
+ * 但网格线和标尺照常铺满整块板。
+ */
+function sliceBoard(img: Pixmap, x0: number, y0: number, w: number, h: number): Pixmap {
   const data = new Uint8ClampedArray(w * h * 4)
-  for (let y = 0; y < h; y++) {
+  const copyW = Math.max(0, Math.min(w, img.width - x0))
+  const copyH = Math.max(0, Math.min(h, img.height - y0))
+  for (let y = 0; y < copyH; y++) {
     const from = ((y0 + y) * img.width + x0) * 4
-    data.set(img.data.subarray(from, from + w * 4), y * w * 4)
+    data.set(img.data.subarray(from, from + copyW * 4), y * w * 4)
   }
   return { width: w, height: h, data }
 }
@@ -442,6 +471,7 @@ export function buildBoardPatternSvg(
   const bgIsLight = luminance(hexToRgbSafe(options.background)) > 0.5
   const labelColor = bgIsLight ? '#0f172a' : '#e2e8f0'
   const pad = marginOf(options)
+  const off = boardInset(options)
 
   const parts: string[] = [
     `<rect x="0" y="0" width="${n(layout.widthCells)}" height="${n(layout.heightCells)}" fill="${escapeAttr(options.background)}"/>`,
@@ -450,13 +480,13 @@ export function buildBoardPatternSvg(
   let beadSuppressed = false
 
   for (const board of layout.boards) {
-    const tile = slicePixmap(img, board.x0, board.y0, board.cols, board.rows)
-    const inner = patternBody(tile, palette, options)
+    const tile = sliceBoard(img, board.x0, board.y0, board.cols, board.rows)
+    const inner = patternBody(tile, palette, options, off)
     codesSuppressed = codesSuppressed || inner.codesSuppressed
     beadSuppressed = beadSuppressed || inner.beadSuppressed
     parts.push(`<g transform="translate(${n(board.x)} ${n(board.y)})">${inner.body}</g>`)
     parts.push(
-      `<text x="${n(board.x + (board.cols + pad * 2) / 2)}" y="${n(board.y - BOARD_LABEL / 2)}" fill="${labelColor}" font-size="1.1" font-weight="600" text-anchor="middle" dominant-baseline="central">板 ${board.index}</text>`,
+      `<text x="${n(board.x + (board.cols + (pad + off) * 2) / 2)}" y="${n(board.y - BOARD_LABEL / 2)}" fill="${labelColor}" font-size="1.1" font-weight="600" text-anchor="middle" dominant-baseline="central">板 ${board.index}</text>`,
     )
   }
 

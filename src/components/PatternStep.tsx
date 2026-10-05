@@ -412,6 +412,20 @@ export function PatternStep({ onOpenFullscreen }: { onOpenFullscreen: () => void
             />
           </Field>
 
+          {/* 留一圈只对 52×52 的板有意义：格子从第二个开始画，最外一圈空着好裁 */}
+          {renderOptions.boardSize === 52 && (
+            <Field label="板边">
+              <Segmented
+                value={renderOptions.boardEdge}
+                onChange={(v) => setRenderOptions({ boardEdge: v })}
+                options={[
+                  { value: 'ring', label: '留一圈', title: '四周留一圈空白，格子从第二个开始画' },
+                  { value: 'flush', label: '直接画', title: '格子从板边开始画' },
+                ]}
+              />
+            </Field>
+          )}
+
           <div style={{ display: 'grid', gap: 9 }}>
             <Check checked={renderOptions.codes} onChange={(v) => setRenderOptions({ codes: v })}>
               在格子上标注<b>色号</b>

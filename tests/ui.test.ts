@@ -1406,13 +1406,36 @@ section('转图纸 · 拼豆板拆分')
   await flush(20)
   check('选 50×50 写回设置', useStudio.getState().renderOptions.boardSize === 50)
 
+  // 板边（留一圈 / 直接画）只有 52×52 才有
+  const edgeTabs = () =>
+    [...container.querySelectorAll('.segmented .tab a')].filter((a) =>
+      ['留一圈', '直接画'].includes((a.textContent ?? '').trim()),
+    )
+  check('50×50 没有板边选择', edgeTabs().length === 0, `${edgeTabs().length} 个`)
+
+  const fiftyTwo = splitTabs.find((a) => (a.textContent ?? '').trim() === '52×52') as HTMLAnchorElement | undefined
+  await act(async () => {
+    fiftyTwo?.click()
+  })
+  await flush(20)
+  check('选 52×52 写回设置', useStudio.getState().renderOptions.boardSize === 52)
+  check('52×52 才有板边选择', edgeTabs().length === 2, `${edgeTabs().length} 个`)
+  check('板边默认留一圈', useStudio.getState().renderOptions.boardEdge === 'ring', useStudio.getState().renderOptions.boardEdge)
+
+  const flushTab = edgeTabs().find((a) => (a.textContent ?? '').trim() === '直接画') as HTMLAnchorElement | undefined
+  await act(async () => {
+    flushTab?.click()
+  })
+  await flush(20)
+  check('能切成直接画', useStudio.getState().renderOptions.boardEdge === 'flush')
+
   // 这张测试图只有 12×10，装得下一块板：不该硬拆出「板 N」的标题
   const previewHtml = container.querySelector('.pattern-svg')?.innerHTML ?? ''
   check('图纸仍然画出来了', previewHtml.includes('<path'))
   check('装得下一块板时不硬拆', !previewHtml.includes('板 1'))
 
   await act(async () => {
-    useStudio.getState().setRenderOptions({ boardSize: 0 })
+    useStudio.getState().setRenderOptions({ boardSize: 0, boardEdge: 'ring' })
   })
   await flush(20)
   check('能切回不拆分', useStudio.getState().renderOptions.boardSize === 0)

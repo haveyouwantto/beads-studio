@@ -43,6 +43,7 @@ import { deltaE, hexToRgb, rgbToHex, rgbToLab } from '../src/core/color.ts'
 import { buildPaletteExport, packPixels, safeFileName, unpackPixels } from '../src/core/export.ts'
 import {
   boardLayout,
+  boardInset,
   buildBoardPatternSvg,
   buildPatternSvg,
   clampPreviewCellSize,
@@ -801,11 +802,28 @@ section('③ 转拼豆图纸 · 拼豆板拆分')
   )
   check('板按 1..6 从左到右、从上到下编号', layout.boards.map((b) => b.index).join() === '1,2,3,4,5,6')
   check('第一块是完整的 50×50', layout.boards[0].cols === 50 && layout.boards[0].rows === 50)
-  check('最后一块是剩下的 20×30', layout.boards[5].cols === 20 && layout.boards[5].rows === 30)
+  check(
+    '最后一块也是整块板（超出的补空，不切半块）',
+    layout.boards[5].cols === 50 && layout.boards[5].rows === 50,
+    `${layout.boards[5].cols}×${layout.boards[5].rows}`,
+  )
   check(
     '板与板之间留了空隙（排版比原图宽）',
     layout.widthCells > 120 && layout.heightCells > 80,
     `${layout.widthCells.toFixed(1)} × ${layout.heightCells.toFixed(1)} 格`,
+  )
+
+  // 「留一圈」只对 52×52 有意义：50×50 一律直接画
+  check('50×50 没有留一圈这一步', boardInset({ ...boardOpts, boardSize: 50 }) === 0)
+  check('52×52 默认留一圈', boardInset({ ...boardOpts, boardSize: 52 }) === 1)
+  check('52×52 也能切成直接画', boardInset({ ...boardOpts, boardSize: 52, boardEdge: 'flush' }) === 0)
+  const ring52 = boardLayout(big, { ...boardOpts, boardSize: 52 })
+  const flush52 = boardLayout(big, { ...boardOpts, boardSize: 52, boardEdge: 'flush' })
+  check(
+    '留一圈时每块板四周多一格',
+    ring52.widthCells - flush52.widthCells === ring52.boardCols * 2 &&
+      ring52.heightCells - flush52.heightCells === ring52.boardRows * 2,
+    `${ring52.widthCells.toFixed(1)} vs ${flush52.widthCells.toFixed(1)}`,
   )
 
   const split = buildBoardPatternSvg(big, palette, boardOpts)
