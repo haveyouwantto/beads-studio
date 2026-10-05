@@ -412,15 +412,15 @@ export function PatternStep({ onOpenFullscreen }: { onOpenFullscreen: () => void
             />
           </Field>
 
-          {/* 留一圈只对 52×52 的板有意义：格子从第二个开始画，最外一圈空着好裁 */}
+          {/* 标尺从哪一格开始数：52×52 的板最外一圈放不了豆子，第二格才是真正的原点 */}
           {renderOptions.boardSize === 52 && (
-            <Field label="板边">
+            <Field label="标尺起点">
               <Segmented
-                value={renderOptions.boardEdge}
-                onChange={(v) => setRenderOptions({ boardEdge: v })}
+                value={renderOptions.rulerStart}
+                onChange={(v) => setRenderOptions({ rulerStart: v })}
                 options={[
-                  { value: 'ring', label: '留一圈', title: '四周留一圈空白，格子从第二个开始画' },
-                  { value: 'flush', label: '直接画', title: '格子从板边开始画' },
+                  { value: 'second', label: '从第二格', title: '把第二格的左上角当原点：第二格标 1，最外一圈不标数字' },
+                  { value: 'first', label: '从第一格', title: '第一格就标 1（和以前一样）' },
                 ]}
               />
             </Field>

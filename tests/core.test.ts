@@ -43,7 +43,7 @@ import { deltaE, hexToRgb, rgbToHex, rgbToLab } from '../src/core/color.ts'
 import { buildPaletteExport, packPixels, safeFileName, unpackPixels } from '../src/core/export.ts'
 import {
   boardLayout,
-  boardInset,
+  rulerOffset,
   buildBoardPatternSvg,
   buildPatternSvg,
   clampPreviewCellSize,
@@ -813,17 +813,61 @@ section('③ 转拼豆图纸 · 拼豆板拆分')
     `${layout.widthCells.toFixed(1)} × ${layout.heightCells.toFixed(1)} 格`,
   )
 
-  // 「留一圈」只对 52×52 有意义：50×50 一律直接画
-  check('50×50 没有留一圈这一步', boardInset({ ...boardOpts, boardSize: 50 }) === 0)
-  check('52×52 默认留一圈', boardInset({ ...boardOpts, boardSize: 52 }) === 1)
-  check('52×52 也能切成直接画', boardInset({ ...boardOpts, boardSize: 52, boardEdge: 'flush' }) === 0)
+  // 标尺起点只对 52×52 有意义：50×50 一律从第一格开始数
+  check('50×50 只能用第一格当起点', rulerOffset({ ...boardOpts, boardSize: 50 }) === 0)
+  check('52×52 默认从第二格开始数', rulerOffset({ ...boardOpts, boardSize: 52 }) === 1)
+  check('52×52 也能切回从第一格数', rulerOffset({ ...boardOpts, boardSize: 52, rulerStart: 'first' }) === 0)
+  // 标尺起点只改数字，不改排版尺寸
   const ring52 = boardLayout(big, { ...boardOpts, boardSize: 52 })
-  const flush52 = boardLayout(big, { ...boardOpts, boardSize: 52, boardEdge: 'flush' })
+  const flush52 = boardLayout(big, { ...boardOpts, boardSize: 52, rulerStart: 'first' })
   check(
-    '留一圈时每块板四周多一格',
-    ring52.widthCells - flush52.widthCells === ring52.boardCols * 2 &&
-      ring52.heightCells - flush52.heightCells === ring52.boardRows * 2,
+    '标尺起点不改变排版尺寸',
+    ring52.widthCells === flush52.widthCells && ring52.heightCells === flush52.heightCells,
     `${ring52.widthCells.toFixed(1)} vs ${flush52.widthCells.toFixed(1)}`,
+  )
+  // 从第二格开始时，数字整体后移一格：第一格的 1 跑到第二格上
+  const ringSvg = buildBoardPatternSvg(big, palette, { ...boardOpts, boardSize: 52 })
+  const flushSvg = buildBoardPatternSvg(big, palette, { ...boardOpts, boardSize: 52, rulerStart: 'first' })
+  const rulerTexts = (svg: string) => {
+    const group = /<g fill="#0f172a" font-size="0.9"[^>]*>([\s\S]*?)<\/g>/.exec(svg)
+    return [...(group?.[1].matchAll(/<text x="([\d.]+)" y="([\d.]+)"[^>]*>(\d+)<\/text>/g) ?? [])].map((m) => ({
+      x: Number(m[1]),
+      y: Number(m[2]),
+      label: Number(m[3]),
+    }))
+  }
+  const first = rulerTexts(flushSvg.svg)[0]
+  const shifted = rulerTexts(ringSvg.svg)[0]
+  check(
+    '从第一格数时 1 在第一格上',
+    first?.label === 1 && Math.abs(first.x - (2.6 + 0.5)) < 0.01,
+    JSON.stringify(first),
+  )
+  check(
+    '从第二格数时 1 挪到第二格上，最外一圈不标数字',
+    shifted?.label === 1 && Math.abs(shifted.x - (2.6 + 1 + 0.5)) < 0.01,
+    JSON.stringify(shifted),
+  )
+  check(
+    '标尺数字个数不变（只是整体挪了一格）',
+    rulerTexts(ringSvg.svg).length === rulerTexts(flushSvg.svg).length,
+  )
+  // 粗参考线也要跟着挪：从第一格数时第一条竖粗线在板边（x=2.6），
+  // 从第二格数时挪到第二格左上角（x=3.6）
+  const firstThickX = (svg: string) => {
+    const d = strokePathD(svg, THICK_ATTR)
+    const m = /M([\d.]+) [\d.]+V/.exec(d)
+    return m ? Number(m[1]) : NaN
+  }
+  check(
+    '从第一格数时粗参考线落在板边',
+    Math.abs(firstThickX(flushSvg.svg) - 2.6) < 0.01,
+    String(firstThickX(flushSvg.svg)),
+  )
+  check(
+    '从第二格数时粗参考线跟着挪一格',
+    Math.abs(firstThickX(ringSvg.svg) - 3.6) < 0.01,
+    String(firstThickX(ringSvg.svg)),
   )
 
   const split = buildBoardPatternSvg(big, palette, boardOpts)
