@@ -1482,6 +1482,10 @@ section('转图纸 · 拼豆板拆分')
   const previewHtml = container.querySelector('.pattern-svg')?.innerHTML ?? ''
   check('图纸仍然画出来了', previewHtml.includes('<path'))
   check('装得下一块板时不硬拆', !previewHtml.includes('板 1'))
+  check(
+    '图纸页有导出 PDF 按钮',
+    [...container.querySelectorAll('.main button')].some((b) => (b.textContent ?? '').trim() === '导出 PDF'),
+  )
 
   await act(async () => {
     useStudio.getState().setRenderOptions({ boardSize: 0, rulerStart: 'second' })

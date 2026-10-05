@@ -41,6 +41,7 @@ import {
 import { PaletteOptimizer, targetsFromPixmap, DEFAULT_OPTIMIZE_CONFIG } from '../src/core/optimize.ts'
 import { deltaE, hexToRgb, rgbToHex, rgbToLab } from '../src/core/color.ts'
 import { buildPaletteExport, packPixels, safeFileName, unpackPixels } from '../src/core/export.ts'
+import { buildPatternPdf } from '../src/core/pdf.ts'
 import {
   boardLayout,
   rulerOffset,
@@ -919,6 +920,58 @@ section('③ 转拼豆图纸 · 拼豆板拆分')
     splitGroups[2].includes(hexOf(50, 0)) && !splitGroups[2].includes(hexOf(49, 0)),
   )
   check('第 4 块板是第二行的第一块', splitGroups[4].includes(hexOf(0, 50)) && !splitGroups[4].includes(hexOf(0, 49)))
+}
+
+section('③ 转拼豆图纸 · 矢量 PDF')
+{
+  const pdfOpts: RenderOptions = { ...DEFAULT_RENDER_OPTIONS, boardSize: 50 }
+  const img = makePixmap(120, 80, [200, 60, 60])
+  for (let y = 0; y < 80; y++) {
+    for (let x = 0; x < 120; x++) setPixel(img, x, y, [(x * 2) % 256, (y * 3) % 256, ((x + y) * 5) % 256])
+  }
+
+  const asText = async (blob: Blob): Promise<string> => {
+    const bytes = new Uint8Array(await blob.arrayBuffer())
+    let s = ''
+    for (const b of bytes) s += String.fromCharCode(b)
+    return s
+  }
+
+  const pdf = await asText(buildPatternPdf(img, palette, pdfOpts))
+  check('是 PDF 文件（头尾齐全）', pdf.startsWith('%PDF-1.4') && pdf.trimEnd().endsWith('%%EOF'))
+  check(
+    '6 块板 = 6 页',
+    (pdf.match(/\/Type \/Page\b/g) ?? []).length === 6 && pdf.includes('/Count 6'),
+    `${(pdf.match(/\/Type \/Page\b/g) ?? []).length} 页`,
+  )
+  check(
+    '是矢量：没有嵌位图',
+    !pdf.includes('/Subtype /Image') && !pdf.includes('/DCTDecode') && !pdf.includes('<image'),
+  )
+  check('画了方块（re f）', /[0-9. ]+re[ 0-9.re]*f/.test(pdf))
+  check('画了网格线（m/l + S）', pdf.includes(' m ') && pdf.includes(' l') && pdf.includes(' S'))
+  check('色号用标准字体写的（不用嵌字体）', pdf.includes('/BaseFont /Helvetica') && pdf.includes('Tj'))
+  check('多页时页脚有页码', pdf.includes('(1 / 6) Tj') && pdf.includes('(6 / 6) Tj'))
+
+  // 交叉引用表：每个偏移都要正好落在 "N 0 obj" 上
+  const startxref = Number(/startxref\n(\d+)/.exec(pdf)?.[1] ?? -1)
+  check('startxref 指向 xref 表', pdf.slice(startxref, startxref + 4) === 'xref', String(startxref))
+  const xrefBody = pdf.slice(startxref).split('\n')
+  const total = Number(xrefBody[1].split(' ')[1])
+  const badOffsets: number[] = []
+  for (let n = 1; n < total; n++) {
+    // xrefBody[2] 是对象 0 的条目，所以对象 n 在下标 2 + n
+    const offset = Number(xrefBody[2 + n].slice(0, 10))
+    if (!pdf.startsWith(`${n} 0 obj`, offset)) badOffsets.push(n)
+  }
+  check('每个对象的偏移都对得上', badOffsets.length === 0, badOffsets.join(','))
+
+  // 不拆分：整张一页、没有页码
+  const single = await asText(buildPatternPdf(img, palette, { ...pdfOpts, boardSize: 0 }))
+  check(
+    '不拆分就是一张一页',
+    (single.match(/\/Type \/Page\b/g) ?? []).length === 1 && single.includes('/Count 1') && !single.includes('(1 / 1)'),
+  )
 }
 
 // ---------------------------------------------------------------- 汇总

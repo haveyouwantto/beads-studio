@@ -10,6 +10,7 @@ import {
   MAX_EXPORT_SIDE,
   svgToPngBlob,
 } from '../core/svg.ts'
+import { buildPatternPdf } from '../core/pdf.ts'
 import { usageCounts } from '../core/quantize.ts'
 import {
   CODE_SYSTEMS,
@@ -149,6 +150,21 @@ export function PatternStep({ onOpenFullscreen }: { onOpenFullscreen: () => void
     downloadText(fullPattern.svg, `${fileBase}-图纸-${result.width}x${result.height}${splitTag}.svg`, 'image/svg+xml')
   }
 
+  /**
+   * 导出 PDF：纯矢量，一页一块板（不拆分就是整张一页）。
+   */
+  const exportPdf = () => {
+    if (!result) return
+    try {
+      downloadBlob(
+        buildPatternPdf(result, palette, renderOptions),
+        `${fileBase}-图纸-${result.width}x${result.height}${splitTag}.pdf`,
+      )
+    } catch (err) {
+      useStudio.setState({ error: err instanceof Error ? err.message : 'PDF 导出失败' })
+    }
+  }
+
   const exportPixelPng = () => {
     if (!result) return
     // 半透明豆（H01 这类）导出成真正的 RGBA（#FFFFFF40），
@@ -231,6 +247,9 @@ export function PatternStep({ onOpenFullscreen }: { onOpenFullscreen: () => void
               </button>
               <button className="btn-flat btn-small waves-effect" onClick={exportChartSvg}>
                 导出 SVG
+              </button>
+              <button className="btn-flat btn-small waves-effect" onClick={exportPdf}>
+                导出 PDF
               </button>
             </>
           }

@@ -1,4 +1,4 @@
-import { luminance } from './color.ts'
+﻿import { luminance } from './color.ts'
 import { IGNORED_ALPHA } from './edit.ts'
 import { blendOver, codeOf, type CodeSystem, type PaletteEntry } from './palette.ts'
 import type { Pixmap, RGB } from './types.ts'
@@ -62,7 +62,7 @@ const THICK_WIDTH = 0.18
  * 标尺数字写在留白里，不再自己额外撑开一条边 —— 四边永远一样宽。
  * 老存档里没有这个字段，缺省按默认值走。
  */
-function marginOf(options: RenderOptions): number {
+export function patternMargin(options: RenderOptions): number {
   return Number.isFinite(options.margin) ? Math.max(0, options.margin) : DEFAULT_RENDER_OPTIONS.margin
 }
 
@@ -190,7 +190,7 @@ function patternBody(
 
   // 四边留同样的白（以「格」为单位），标尺数字写在留白里。
   // 以前只有左上的标尺占位、右下贴边，看起来是歪的。
-  const pad = marginOf(options)
+  const pad = patternMargin(options)
   const g0 = pad
   const vbW = W + g0 * 2
   const vbH = H + g0 * 2
@@ -397,7 +397,7 @@ export function rulerOffset(options: RenderOptions): number {
 }
 
 export function boardLayout(img: Pixmap, options: RenderOptions): BoardLayout {
-  const pad = marginOf(options)
+  const pad = patternMargin(options)
   const size = Math.floor(options.boardSize ?? 0)
   if (!Number.isFinite(size) || size <= 0) {
     return {
@@ -447,7 +447,7 @@ export function boardLayout(img: Pixmap, options: RenderOptions): BoardLayout {
  * 板子超出原图的部分补成透明（= 这个位置没有豆子），既不画豆子也不写色号，
  * 但网格线和标尺照常铺满整块板。
  */
-function sliceBoard(img: Pixmap, x0: number, y0: number, w: number, h: number): Pixmap {
+export function sliceBoard(img: Pixmap, x0: number, y0: number, w: number, h: number): Pixmap {
   const data = new Uint8ClampedArray(w * h * 4)
   const copyW = Math.max(0, Math.min(w, img.width - x0))
   const copyH = Math.max(0, Math.min(h, img.height - y0))
@@ -476,7 +476,7 @@ export function buildBoardPatternSvg(
   const outH = Math.max(1, Math.round(layout.heightCells * cellSize))
   const bgIsLight = luminance(hexToRgbSafe(options.background)) > 0.5
   const labelColor = bgIsLight ? '#0f172a' : '#e2e8f0'
-  const pad = marginOf(options)
+  const pad = patternMargin(options)
   // 标尺从第几格开始数（52×52 时可选：第二格左上角当原点）
   const rulerFrom = rulerOffset(options)
 
@@ -568,3 +568,4 @@ export async function svgToPngBlob(svg: string, width: number, height: number, s
     URL.revokeObjectURL(url)
   }
 }
+
