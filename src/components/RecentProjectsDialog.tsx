@@ -80,7 +80,6 @@ export function RecentProjectsDialog({
                     <div className="tiny muted">
                       {item.gridWidth > 0 ? `${item.gridWidth} × ${item.gridHeight} 格` : '尚未生成网格'} ·{' '}
                       {formatTime(item.savedAt)} · {formatBytes(item.bytes)}
-                      {!item.hasSource && ' · 未存原图'}
                     </div>
                   </div>
 

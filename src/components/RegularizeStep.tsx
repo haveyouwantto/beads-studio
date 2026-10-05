@@ -271,6 +271,57 @@ export function RegularizeStep({ onOpenFile }: { onOpenFile: () => void }) {
   }
 
   if (!source) {
+    // 存档里只留了规格化结果（不再存原图）：这时没什么可调的，
+    // 直接把结果摆出来，想重来就重新上传一张。
+    if (grid) {
+      return (
+        <div className="columns">
+          <div className="stage-head">
+            <div>
+              <h1>
+                <i className="material-icons">{STAGE_META.regularize.icon}</i>
+                {STAGE_META.regularize.label}
+              </h1>
+            </div>
+            <span className="grow" />
+            <button className="btn btn-small waves-effect waves-light" onClick={goNext}>
+              下一步：编辑
+              <i className="material-icons sm">arrow_forward</i>
+            </button>
+          </div>
+
+          <Panel title="规范化结果" hint={`${grid.width} × ${grid.height} 格`} tight>
+            <div className="canvas-wrap">
+              <canvas ref={gridRef} />
+            </div>
+            <div className="row" style={{ marginTop: 12 }}>
+              <button className="btn-flat btn-small waves-effect" onClick={onOpenFile}>
+                <i className="material-icons sm">upload</i>
+                重新上传图片
+              </button>
+            </div>
+          </Panel>
+
+          {edited && (
+            <div className="modal-overlay open" role="presentation">
+              <div className="modal open guard" role="alertdialog" aria-modal="true" aria-label="网格已被编辑">
+                <div className="modal-content modal-body guard-body">
+                  <i className="material-icons">warning</i>
+                  <div>这个网格在「编辑」里改过，重新上传会丢掉修改。</div>
+                </div>
+                <footer className="modal-foot">
+                  <span style={{ flex: 1 }} />
+                  <button className="btn waves-effect waves-light" onClick={clearEdited}>
+                    继续
+                  </button>
+                </footer>
+              </div>
+            </div>
+          )}
+        </div>
+      )
+    }
+
     return (
       <div className="columns">
         <div className="stage-head">

@@ -21,7 +21,6 @@ import {
   dataUrlToPixmap,
   listProjects,
   makeThumbnail,
-  pixmapToDataUrl,
   readCandidateSets,
   readSession,
   readProject,
@@ -456,21 +455,9 @@ function fingerprint(s: StudioState): string {
   ].join('|')
 }
 
-// 原图 / 网格编码结果缓存：像素对象没换就不用重新编码
-let sourceCacheKey: object | null = null
-let sourceCacheValue = ''
+// 网格编码结果缓存：像素对象没换就不用重新编码
 let gridCacheKey: object | null = null
 let gridCacheValue = ''
-
-function encodeSource(s: StudioState): PersistedProject['source'] {
-  if (!s.source) return null
-  const pm = s.source.pixmap
-  if (sourceCacheKey !== pm) {
-    sourceCacheValue = pixmapToDataUrl(pm)
-    sourceCacheKey = pm
-  }
-  return { name: s.source.name, width: s.source.width, height: s.source.height, png: sourceCacheValue }
-}
 
 function encodeGrid(s: StudioState): PersistedProject['grid'] {
   if (!s.grid) return null
@@ -507,7 +494,9 @@ function serializeProject(s: StudioState): PersistedProject {
     optimizedHex: s.optimizedPalette.map((e) => e.hex),
     activeStage: s.activeStage,
     edited: s.edited,
-    source: encodeSource(s),
+    // 不存原图：原图动辄几 MB，localStorage 放不下；下次打开只需要规格化结果，
+    // 想重新规范化就从「规范化」页的「重新上传」重来。
+    source: null,
     sourceOmitted: false,
     grid: encodeGrid(s),
   }
@@ -1206,14 +1195,6 @@ export const useStudio = create<StudioState>((set, get) => ({
 
     if (!outcome.ok) {
       set({ notice: { kind: 'error', text: outcome.error ?? '保存失败' } })
-    } else if (outcome.sourceOmitted) {
-      set({
-        savedAt: Date.now(),
-        notice: {
-          kind: 'warn',
-          text: '本地空间不足，这张原图没有存进自动存档（网格、配色、设置都已保存）。',
-        },
-      })
     } else {
       set({ savedAt: Date.now(), notice: null })
     }

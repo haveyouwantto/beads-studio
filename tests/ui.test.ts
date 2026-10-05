@@ -567,7 +567,11 @@ section('本地自动保存')
   const record = storage.readProject(firstTabId)
   check('项目正文可读回', record !== null)
   check('正文包含网格像素数据', (record?.project.grid?.data.length ?? 0) > 0)
-  check('正文包含原图 PNG', Boolean(record?.project.source?.png))
+  check(
+    '正文不再存原图（只存规格化结果）',
+    record?.project.source === null && (record?.project.grid?.data.length ?? 0) > 0,
+    JSON.stringify({ source: record?.project.source, grid: (record?.project.grid?.data.length ?? 0) > 0 }),
+  )
   check('正文包含色板', (record?.project.paletteHex.length ?? 0) > 0)
   check('正文包含渲染设置', record?.project.renderOptions !== undefined)
 
@@ -631,8 +635,15 @@ section('最近项目弹窗')
   const st = useStudio.getState()
   check('能从存档打开项目', opened)
   check('打开后网格恢复', Boolean(st.grid))
-  check('打开后原图也恢复', Boolean(st.source))
+  check('打开后只有网格，没有原图', st.source === null && Boolean(st.grid))
   check('打开的标签页成为当前标签', st.tabs.some((t) => t.id === st.activeTabId))
+
+  // 存档里不再有原图：后面的用例需要原图，这里重新载入一张
+  await act(async () => {
+    await useStudio.getState().loadImageBlob(new dom.window.Blob(['x'], { type: 'image/png' }), 'test.png')
+  })
+  await flush(20)
+  check('重新载入后又有原图了', Boolean(useStudio.getState().source))
 
   const host = dom.window.document.createElement('div')
   dom.window.document.body.appendChild(host)
@@ -1300,7 +1311,13 @@ section('重启应用后恢复上次会话')
   )
   check('当前标签是存档里的那个', restored.tabs.some((t) => t.id === restored.activeTabId))
   check('网格被恢复', Boolean(restored.grid))
-  check('原图被恢复', Boolean(restored.source))
+  check('原图不再存档', restored.source === null, String(restored.source))
+  // 没有原图时，规范化页不再显示那一堆输入设置，只给出规格化结果 + 重新上传
+  useStudio.getState().setStage('regularize')
+  await flush(20)
+  const railText = container.textContent ?? ''
+  check('恢复后不显示输入设置', !railText.includes('输入方式') && !railText.includes('格内取样方式'))
+  check('恢复后给出重新上传入口', railText.includes('重新上传'))
   check('重新打开后回到存档里的那一步', restored.activeStage === 'edit', restored.activeStage)
   check('恢复后没有报错', restored.notice === null && restored.error === null)
 

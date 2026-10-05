@@ -300,8 +300,6 @@ export function removeProject(id: string): void {
 
 export interface SaveOutcome {
   ok: boolean
-  /** 原图因为空间不够被跳过了，网格与设置仍然保存了 */
-  sourceOmitted: boolean
   /** 为了腾地方被淘汰的其它项目 */
   evicted: string[]
   error?: string
@@ -324,11 +322,10 @@ export interface SaveInput {
 export function saveProject(input: SaveInput, keepIds: string[] = []): SaveOutcome {
   const ls = safeStorage()
   if (!ls) {
-    return { ok: false, sourceOmitted: false, evicted: [], error: '当前环境不支持本地存储', bytes: 0 }
+    return { ok: false, evicted: [], error: '当前环境不支持本地存储', bytes: 0 }
   }
 
   const evicted: string[] = []
-  let sourceOmitted = false
 
   const attempt = (payload: PersistedProject): { ok: boolean; error?: string; bytes: number } => {
     const record: ProjectRecord = { id: input.id, name: input.name, savedAt: Date.now(), project: payload }
@@ -341,17 +338,9 @@ export function saveProject(input: SaveInput, keepIds: string[] = []): SaveOutco
     }
   }
 
-  let payload = input.project
+  // 存档里只有网格（原图不存），空间不够就淘汰最旧的其它项目，逐个重试
+  const payload = input.project
   let result = attempt(payload)
-
-  // 1) 空间不够：先丢掉最占地方的原图
-  if (!result.ok && result.error === 'quota' && payload.source) {
-    sourceOmitted = true
-    payload = { ...payload, source: null, sourceOmitted: true }
-    result = attempt(payload)
-  }
-
-  // 2) 还不够：淘汰最旧的其它项目，逐个重试
   let guard = 0
   while (!result.ok && result.error === 'quota' && guard++ < 20) {
     const candidates = listProjects().filter((e) => e.id !== input.id && !keepIds.includes(e.id))
@@ -365,7 +354,6 @@ export function saveProject(input: SaveInput, keepIds: string[] = []): SaveOutco
   if (!result.ok) {
     return {
       ok: false,
-      sourceOmitted,
       evicted,
       error: result.error === 'quota' ? '本地存储空间不足，无法保存' : result.error,
       bytes: result.bytes,
@@ -386,7 +374,7 @@ export function saveProject(input: SaveInput, keepIds: string[] = []): SaveOutco
   next.push(entry)
   writeIndex(next)
 
-  return { ok: true, sourceOmitted, evicted, bytes: result.bytes }
+  return { ok: true, evicted, bytes: result.bytes }
 }
 
 /** 粗略估算当前已用空间，用于界面提示 */

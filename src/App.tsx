@@ -19,9 +19,7 @@ const STAGES = STAGE_ORDER.map((id) => ({ id, ...STAGE_META[id] }))
 export default function App() {
   const activeStage = useStudio((s) => s.activeStage)
   const setStage = useStudio((s) => s.setStage)
-  const source = useStudio((s) => s.source)
   const error = useStudio((s) => s.error)
-  const loading = useStudio((s) => s.loading)
   const grid = useStudio((s) => s.grid)
   const result = useStudio((s) => s.result)
   const optimizedPalette = useStudio((s) => s.optimizedPalette)
@@ -202,12 +200,6 @@ export default function App() {
   // 顶部工具：宽屏是图标按钮，窄屏收进侧边栏，两边用同一份定义
   const tools: DrawerItem[] = [
     {
-      icon: 'add_photo_alternate',
-      label: source ? '更换图片' : '打开图片',
-      disabled: loading,
-      onClick: openFile,
-    },
-    {
       icon: 'fullscreen',
       label: '全屏预览',
       disabled: !result,
@@ -245,10 +237,10 @@ export default function App() {
         <span className="topbar-spacer" />
 
         <div className="row tight topbar-actions">
-          {tools.map((t, i) => (
+          {tools.map((t) => (
             <button
               key={t.label}
-              className={i === 0 ? 'btn icon-only waves-effect waves-light' : 'btn-flat icon-only waves-effect'}
+              className="btn-flat icon-only waves-effect"
               onClick={t.onClick}
               disabled={t.disabled}
               title={t.label}
