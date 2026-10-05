@@ -572,6 +572,7 @@ section('本地自动保存')
     record?.project.source === null && (record?.project.grid?.data.length ?? 0) > 0,
     JSON.stringify({ source: record?.project.source, grid: (record?.project.grid?.data.length ?? 0) > 0 }),
   )
+  check('正文记下了规范化原始结果', (record?.project.regularizedGrid?.data.length ?? 0) > 0)
   check('正文包含色板', (record?.project.paletteHex.length ?? 0) > 0)
   check('正文包含渲染设置', record?.project.renderOptions !== undefined)
 
@@ -1036,6 +1037,12 @@ section('像素编辑（第 2 步）')
     const after = useStudio.getState()
     check('忽略格子写回了 store', countIgnored(after.grid as Pixmap) === ignoredCount)
     check('编辑过会打上 edited 标记', after.edited === true)
+    // 编辑只改「工作网格」，规范化页显示的那份原始结果不能被改到
+    check(
+      '编辑不会动到规范化结果',
+      after.regularizedGrid !== after.grid && countIgnored(after.regularizedGrid as Pixmap) === 0,
+      JSON.stringify({ same: after.regularizedGrid === after.grid, ignored: countIgnored(after.regularizedGrid as Pixmap) }),
+    )
     const counts = usageCounts(after.result as Pixmap, after.palette)
     const beads = [...counts].reduce((a, b) => a + b, 0)
     check('用料清单里没有忽略的格子', beads === total - ignoredCount, `${beads} / ${total}`)

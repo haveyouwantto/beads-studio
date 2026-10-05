@@ -134,6 +134,7 @@ const PROJECT_KEYS = [
   'manualRows',
   'directBlock',
   'grid',
+  'regularizedGrid',
   'paletteSource',
   'kitSize',
   'candidateHex',
@@ -181,6 +182,11 @@ interface StudioState {
   /** direct 模式：把 N×N 像素块压成一颗豆（自动探测原图被放大的倍数） */
   directBlock: number
   grid: Pixmap | null
+  /**
+   * 规范化的原始结果（像素编辑没动过的那份）。
+   * 规范化页显示它、编辑页改的是 grid，所以两边互不影响。
+   */
+  regularizedGrid: Pixmap | null
 
   // --- 阶段 3：转拼豆图纸 ---
   paletteSource: PaletteSource
@@ -324,6 +330,7 @@ function freshProject(): ProjectState {
     manualRows: DEFAULT_QUAD_SIZE,
     directBlock: 1,
     grid: null,
+    regularizedGrid: null,
     paletteSource: 'library',
     kitSize: 24,
     candidateHex: [],
@@ -455,17 +462,17 @@ function fingerprint(s: StudioState): string {
   ].join('|')
 }
 
-// 网格编码结果缓存：像素对象没换就不用重新编码
-let gridCacheKey: object | null = null
-let gridCacheValue = ''
+// 网格编码结果缓存：像素对象没换就不用重新编码（WeakMap 不会留垃圾）
+const gridCache = new WeakMap<Pixmap, string>()
 
-function encodeGrid(s: StudioState): PersistedProject['grid'] {
-  if (!s.grid) return null
-  if (gridCacheKey !== s.grid) {
-    gridCacheValue = packPixels(s.grid)
-    gridCacheKey = s.grid
+function encodeGrid(g: Pixmap | null): { width: number; height: number; data: string } | null {
+  if (!g) return null
+  let data = gridCache.get(g)
+  if (data === undefined) {
+    data = packPixels(g)
+    gridCache.set(g, data)
   }
-  return { width: s.grid.width, height: s.grid.height, data: gridCacheValue }
+  return { width: g.width, height: g.height, data }
 }
 
 /** store 状态 → 可写进 localStorage 的纯数据 */
@@ -498,7 +505,8 @@ function serializeProject(s: StudioState): PersistedProject {
     // 想重新规范化就从「规范化」页的「重新上传」重来。
     source: null,
     sourceOmitted: false,
-    grid: encodeGrid(s),
+    grid: encodeGrid(s.grid),
+    regularizedGrid: encodeGrid(s.regularizedGrid),
   }
 }
 
@@ -540,6 +548,14 @@ async function deserializeProject(p: PersistedProject): Promise<ProjectState> {
       data: unpackPixels(p.grid.width, p.grid.height, p.grid.data),
     }
   }
+  // 规范化原始结果：老存档没有这一份，就按当时的 grid 兜底
+  const regularizedGrid: Pixmap | null = p.regularizedGrid
+    ? {
+        width: p.regularizedGrid.width,
+        height: p.regularizedGrid.height,
+        data: unpackPixels(p.regularizedGrid.width, p.regularizedGrid.height, p.regularizedGrid.data),
+      }
+    : grid
 
   return {
     // 存的时候在哪一步，读回来就还在哪一步（顺带把那一步标成「进过」）
@@ -567,6 +583,7 @@ async function deserializeProject(p: PersistedProject): Promise<ProjectState> {
     manualRows: p.manualRows,
     directBlock: p.directBlock,
     grid,
+    regularizedGrid,
     ...resolveStoredPaletteSource(p),
     candidateHex: Array.isArray(p.candidateHex) ? [...p.candidateHex] : [],
     includeExtended: p.includeExtended,
@@ -662,6 +679,7 @@ export const useStudio = create<StudioState>((set, get) => ({
         corners: defaultCorners(pixmap.width, pixmap.height),
         analysis: null,
         grid: null,
+        regularizedGrid: null,
         result: null,
         edited: false,
         loading: false,
@@ -681,6 +699,7 @@ export const useStudio = create<StudioState>((set, get) => ({
       source: null,
       analysis: null,
       grid: null,
+      regularizedGrid: null,
       result: null,
       edited: false,
       error: null,
@@ -749,6 +768,7 @@ export const useStudio = create<StudioState>((set, get) => ({
   },
 
   applyGridEdit: (next) => {
+    // 只改「工作用的网格」，规范化那份原始结果原封不动
     set({ grid: next, result: null, edited: true })
     get().recomputeResult()
   },
@@ -810,8 +830,8 @@ export const useStudio = create<StudioState>((set, get) => ({
           : { width: src.pixmap.width, height: src.pixmap.height, data: new Uint8ClampedArray(src.pixmap.data) }
     }
 
-    // 重新生成 = 丢掉编辑过的东西
-    set({ grid, edited: false })
+    // 重新生成 = 丢掉编辑过的东西：grid 和「规范化原始结果」都换成新算出来的这份
+    set({ grid, regularizedGrid: grid, edited: false })
     get().recomputeResult()
   },
 

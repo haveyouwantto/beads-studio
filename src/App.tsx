@@ -142,12 +142,16 @@ export default function App() {
       if (project.app !== 'beads-studio') throw new Error('不是 Beads Studio 项目文件')
       const s = useStudio.getState()
       if (project.grid) {
+        const grid = {
+          width: project.grid.width,
+          height: project.grid.height,
+          data: unpackPixels(project.grid.width, project.grid.height, project.grid.data),
+        }
         useStudio.setState({
-          grid: {
-            width: project.grid.width,
-            height: project.grid.height,
-            data: unpackPixels(project.grid.width, project.grid.height, project.grid.data),
-          },
+          grid,
+          // 导入的项目文件里没有单独的「规范化原始结果」：没编辑过就按这份网格算，
+          // 编辑过的话规范化页退回显示工作网格（总比显示上一个项目的结果强）
+          regularizedGrid: project.edited ? null : grid,
         })
       }
       if (project.paletteHex?.length) {

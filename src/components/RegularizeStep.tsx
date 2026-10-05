@@ -114,6 +114,9 @@ export function RegularizeStep({ onOpenFile }: { onOpenFile: () => void }) {
   const setDirectBlock = useStudio((s) => s.setDirectBlock)
   const detectDirectBlock = useStudio((s) => s.detectDirectBlock)
   const grid = useStudio((s) => s.grid)
+  /** 规范化页只显示规范化的原始结果；编辑改的是 grid，不会改到这里 */
+  const regularizedGrid = useStudio((s) => s.regularizedGrid)
+  const shownGrid = regularizedGrid ?? grid
   const edited = useStudio((s) => s.edited)
   const clearEdited = useStudio((s) => s.clearEdited)
   const goNext = useStudio((s) => s.goNext)
@@ -234,11 +237,11 @@ export function RegularizeStep({ onOpenFile }: { onOpenFile: () => void }) {
 
   // 规范化结果
   useEffect(() => {
-    if (!gridRef.current || !grid) return
+    if (!gridRef.current || !shownGrid) return
     const maxSide = 320
-    const s = Math.max(1, Math.min(8, Math.floor(maxSide / Math.max(grid.width, grid.height)) || 1))
-    drawPixmap(gridRef.current, grid, s, false)
-  }, [grid])
+    const s = Math.max(1, Math.min(8, Math.floor(maxSide / Math.max(shownGrid.width, shownGrid.height)) || 1))
+    drawPixmap(gridRef.current, shownGrid, s, false)
+  }, [shownGrid])
 
   const uniqueColors = useMemo(() => (grid ? countUniqueColors(grid) : 0), [grid])
 
@@ -290,7 +293,11 @@ export function RegularizeStep({ onOpenFile }: { onOpenFile: () => void }) {
             </button>
           </div>
 
-          <Panel title="规范化结果" hint={`${grid.width} × ${grid.height} 格`} tight>
+          <Panel
+            title="规范化结果"
+            hint={`${shownGrid?.width ?? grid.width} × ${shownGrid?.height ?? grid.height} 格`}
+            tight
+          >
             <div className="canvas-wrap">
               <canvas ref={gridRef} />
             </div>
@@ -388,7 +395,7 @@ export function RegularizeStep({ onOpenFile }: { onOpenFile: () => void }) {
 
         <Panel
           title="规范化结果"
-          hint={grid ? `${grid.width} × ${grid.height} 格` : '尚未生成'}
+          hint={shownGrid ? `${shownGrid.width} × ${shownGrid.height} 格` : '尚未生成'}
           actions={
             <button className="btn btn-small waves-effect waves-light" onClick={goNext} disabled={!grid}>
               下一步：编辑
@@ -397,12 +404,12 @@ export function RegularizeStep({ onOpenFile }: { onOpenFile: () => void }) {
           }
           tight
         >
-          {grid ? (
+          {shownGrid ? (
             <>
               <div className="canvas-wrap">
                 <canvas ref={gridRef} />
               </div>
-              {grid.width * grid.height > 200000 && (
+              {shownGrid.width * shownGrid.height > 200000 && (
                 <div style={{ marginTop: 12 }}>
                   <Notice kind="warn">网格太大，后面的优化和出图会比较慢。</Notice>
                 </div>
@@ -570,7 +577,7 @@ export function RegularizeStep({ onOpenFile }: { onOpenFile: () => void }) {
         <Panel title="当前状态">
           <div className="stat-grid">
             <Stat k="源图尺寸" v={`${source.width}×${source.height}`} small />
-            <Stat k="网格尺寸" v={grid ? `${grid.width}×${grid.height}` : '—'} small />
+            <Stat k="网格尺寸" v={shownGrid ? `${shownGrid.width}×${shownGrid.height}` : '—'} small />
             <Stat k="唯一色" v={uniqueColors || '—'} small />
             <Stat k="格式" v={alignmentMode === 'auto' ? '自动' : alignmentMode === 'quad' ? '四角' : '1:1'} small />
           </div>

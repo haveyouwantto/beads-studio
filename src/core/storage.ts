@@ -143,6 +143,12 @@ export interface PersistedProject {
   optimizeTargetMode: string
   optimizeConfig: unknown
   optimizedHex: string[]
+  /**
+   * 规范化的原始结果（没被「像素编辑」动过的那份）。
+   * 规范化页显示的是它，编辑改的是 grid，所以编辑不会改到规范化结果。
+   * 老存档没有这个字段，读回来按当时的 grid 兜底。
+   */
+  regularizedGrid?: { width: number; height: number; data: string } | null
   source: PersistedSource | null
   sourceOmitted: boolean
   grid: { width: number; height: number; data: string } | null
