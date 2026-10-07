@@ -96,6 +96,13 @@ export function CropDialog() {
   }
 
   const cropped = rect.width < img.width || rect.height < img.height
+  // 遮罩拆成四块，而不是给裁剪框加 9999px 的 box-shadow ——
+  // 那样会把外层 .crop-body 的滚动区域撑到几万像素，四角的手柄被挤到滚动条底下，
+  // 拖一小段就抓不住了（尤其是框拉到最大的时候）。
+  const rl = rect.x * scale
+  const rt = rect.y * scale
+  const rw = rect.width * scale
+  const rh = rect.height * scale
 
   return (
     <div className="modal-overlay open" role="presentation">
@@ -124,13 +131,17 @@ export function CropDialog() {
             onPointerCancel={onPointerUp}
           >
             <canvas ref={canvasRef} />
+            <div className="crop-mask" style={{ left: 0, top: 0, right: 0, height: rt }} />
+            <div className="crop-mask" style={{ left: 0, top: rt + rh, right: 0, bottom: 0 }} />
+            <div className="crop-mask" style={{ left: 0, top: rt, width: rl, height: rh }} />
+            <div className="crop-mask" style={{ left: rl + rw, top: rt, right: 0, height: rh }} />
             <div
               className="crop-rect"
               style={{
-                left: rect.x * scale,
-                top: rect.y * scale,
-                width: rect.width * scale,
-                height: rect.height * scale,
+                left: rl,
+                top: rt,
+                width: rw,
+                height: rh,
               }}
             >
               {(['nw', 'ne', 'sw', 'se'] as const).map((h) => (
