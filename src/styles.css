@@ -2850,6 +2850,7 @@ button.btn-floating.disabled {
   cursor: crosshair;
   /* 画布外的区域压暗：只在裁剪框里留出原色 */
   background: #0b0f16;
+  user-select: none;
 }
 
 .crop-stage canvas {
