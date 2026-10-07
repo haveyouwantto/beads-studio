@@ -16,6 +16,14 @@ export interface Pixmap {
   data: Uint8ClampedArray
 }
 
+/** 矩形（像素坐标，原点在左上角） */
+export interface Rect {
+  x: number
+  y: number
+  width: number
+  height: number
+}
+
 /** 格内取样方式（对应 pixelart-regualizer 的 sampleMode） */
 export type SampleMode = 'center' | 'mean' | 'median' | 'geometric' | 'mode'
 

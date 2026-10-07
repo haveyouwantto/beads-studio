@@ -286,6 +286,11 @@ section('① 规范化 → 载入图片并自动识别')
     const blob = new dom.window.Blob(['x'], { type: 'image/png' })
     await useStudio.getState().loadImageBlob(blob, 'test.png')
   })
+  // 上传后先停在裁剪这一步：不裁就「整张使用」
+  check('上传后先等裁剪', useStudio.getState().crop !== null && useStudio.getState().source === before)
+  await act(async () => {
+    useStudio.getState().applyCrop(null)
+  })
   const st = useStudio.getState()
   check('source 已写入', st.source !== null && st.source.name === 'test.png')
   check('source 尺寸来自解码结果', st.source?.width === 96 && st.source?.height === 80)
@@ -593,6 +598,10 @@ section('标签页切换与关闭')
   check('第一个标签有网格', Boolean(firstGrid))
 
   await useStudio.getState().openInNewTab(new dom.window.Blob(['x'], { type: 'image/png' }), 'second.png')
+  await act(async () => {
+    useStudio.getState().applyCrop(null)
+  })
+  await flush(20)
 
   const after = useStudio.getState()
   check('打开新图会新建标签页', after.tabs.length === 2, `${after.tabs.length} 个标签`)
@@ -642,6 +651,9 @@ section('最近项目弹窗')
   // 存档里不再有原图：后面的用例需要原图，这里重新载入一张
   await act(async () => {
     await useStudio.getState().loadImageBlob(new dom.window.Blob(['x'], { type: 'image/png' }), 'test.png')
+  })
+  await act(async () => {
+    useStudio.getState().applyCrop(null)
   })
   await flush(20)
   check('重新载入后又有原图了', Boolean(useStudio.getState().source))
@@ -1063,6 +1075,9 @@ section('像素编辑（第 2 步）')
     await act(async () => {
       await useStudio.getState().loadImageBlob(new dom.window.Blob(['x'], { type: 'image/png' }), 'test.png')
     })
+    await act(async () => {
+      useStudio.getState().applyCrop(null)
+    })
     await flush(20)
     const counts = usageCounts(after.result as Pixmap, after.palette)
     const beads = [...counts].reduce((a, b) => a + b, 0)
@@ -1435,6 +1450,77 @@ section('项目名：改名与导出文件名')
   check('下载文件名用项目名', downloadName === '小狐狸拼豆.json', downloadName)
   const saved = JSON.parse(exportedJson || '{}') as { name?: string }
   check('存档里记下了项目名', saved.name === '小狐狸拼豆', String(saved.name))
+}
+
+section('上传预处理 · 裁剪')
+{
+  const blob = () => new dom.window.Blob(['x'], { type: 'image/png' })
+
+  await act(async () => {
+    await useStudio.getState().loadImageBlob(blob(), 'crop.png')
+  })
+  await flush(20)
+  const pending = useStudio.getState().crop
+  check('上传后先停在裁剪这一步', Boolean(pending) && useStudio.getState().source === null)
+  check(
+    '裁剪用的是解码后的原图',
+    pending?.pixmap.width === 96 && pending?.pixmap.height === 80,
+    `${pending?.pixmap.width}×${pending?.pixmap.height}`,
+  )
+
+  await act(async () => {
+    // 按像素块对齐裁（测试图是 8×8 的块），裁完还能自动识别
+    useStudio.getState().applyCrop({ x: 8, y: 8, width: 80, height: 64 })
+  })
+  await flush(30)
+  const st = useStudio.getState()
+  check('确认裁剪后原图就是裁出来的尺寸', st.source?.width === 80 && st.source?.height === 64, `${st.source?.width}×${st.source?.height}`)
+  check('裁剪后照常开始规范化', Boolean(st.grid))
+  check('裁剪状态用完就清掉', st.crop === null)
+
+  // 「整张使用」= 不裁
+  await act(async () => {
+    await useStudio.getState().loadImageBlob(blob(), 'full.png')
+  })
+  await flush(20)
+  await act(async () => {
+    useStudio.getState().applyCrop(null)
+  })
+  await flush(30)
+  check('整张使用时原图尺寸不变', useStudio.getState().source?.width === 96)
+
+  // 取消：不产生原图
+  const beforeCancel = useStudio.getState().source
+  await act(async () => {
+    await useStudio.getState().loadImageBlob(blob(), 'cancel.png')
+  })
+  await flush(20)
+  await act(async () => {
+    useStudio.getState().cancelCrop()
+  })
+  await flush(20)
+  check(
+    '取消后不留原图',
+    useStudio.getState().crop === null && useStudio.getState().source === beforeCancel,
+  )
+
+  // 预处理是临时的：不写进项目存档
+  await act(async () => {
+    await useStudio.getState().loadImageBlob(blob(), 'pending.png')
+  })
+  await flush(20)
+  check('又进入裁剪', useStudio.getState().crop !== null)
+  useStudio.getState().saveCurrentProject()
+  await flush(40)
+  const record = storage.readProject(useStudio.getState().activeTabId)
+  check(
+    '裁剪状态不进存档',
+    Boolean(record) && !Object.prototype.hasOwnProperty.call(record?.project ?? {}, 'crop'),
+  )
+  await act(async () => {
+    useStudio.getState().cancelCrop()
+  })
+  await flush(20)
 }
 
 section('转图纸 · 拼豆板拆分')

@@ -39,6 +39,7 @@ import {
   VISIBLE_PALETTE_SOURCES,
 } from '../src/core/palette.ts'
 import { PaletteOptimizer, targetsFromPixmap, DEFAULT_OPTIMIZE_CONFIG } from '../src/core/optimize.ts'
+import { clampRect, cropPixmap } from '../src/core/crop.ts'
 import { deltaE, hexToRgb, rgbToHex, rgbToLab } from '../src/core/color.ts'
 import { buildPaletteExport, packPixels, parsePaletteFile, safeFileName, unpackPixels } from '../src/core/export.ts'
 import { buildPatternPdf } from '../src/core/pdf.ts'
@@ -972,6 +973,25 @@ section('③ 转拼豆图纸 · 矢量 PDF')
     '不拆分就是一张一页',
     (single.match(/\/Type \/Page\b/g) ?? []).length === 1 && single.includes('/Count 1') && !single.includes('(1 / 1)'),
   )
+}
+
+section('上传预处理 · 矩形裁剪')
+{
+  const src = makePixmap(6, 4, [0, 0, 0])
+  for (let y = 0; y < 4; y++) for (let x = 0; x < 6; x++) setPixel(src, x, y, [x * 20, y * 30, 0])
+
+  const cut = cropPixmap(src, { x: 2, y: 1, width: 3, height: 2 })
+  check('裁剪后尺寸就是框的尺寸', cut.width === 3 && cut.height === 2, `${cut.width}×${cut.height}`)
+  check(
+    '裁的是框里那一块',
+    getPixel(cut, 0, 0).join() === '40,30,0' && getPixel(cut, 2, 1).join() === '80,60,0',
+    `${getPixel(cut, 0, 0).join()} / ${getPixel(cut, 2, 1).join()}`,
+  )
+
+  const clamped = cropPixmap(src, { x: -5, y: -5, width: 100, height: 100 })
+  check('超界的框会夹回图片内', clamped.width === 6 && clamped.height === 4, `${clamped.width}×${clamped.height}`)
+  check('小框也照样裁（不强行放大）', cropPixmap(src, { x: 0, y: 0, width: 1, height: 1 }).width === 1)
+  check('框不会跑出右边界', clampRect({ x: 95, y: 0, width: 20, height: 20 }, 100, 100).x === 80)
 }
 
 section('候选色方案 · 导入导出')

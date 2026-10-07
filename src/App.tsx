@@ -8,6 +8,7 @@ import { FullscreenPreview } from './components/FullscreenPreview.tsx'
 import { TabBar } from './components/TabBar.tsx'
 import { RecentProjectsDialog } from './components/RecentProjectsDialog.tsx'
 import { MenuDrawer, type DrawerItem } from './components/MenuDrawer.tsx'
+import { CropDialog } from './components/CropDialog.tsx'
 import { STAGE_META, STAGE_ORDER } from './components/stages.ts'
 import { BeadLogo } from './components/BeadLogo.tsx'
 import { Notice, useMaterialRipple } from './components/ui.tsx'
@@ -352,6 +353,9 @@ export default function App() {
       )}
 
       {showRecent && <RecentProjectsDialog onClose={() => setShowRecent(false)} />}
+
+      {/* 上传预处理：只在上传时出现一次，裁剪完才进规范化 */}
+      <CropDialog />
     </div>
   )
 }

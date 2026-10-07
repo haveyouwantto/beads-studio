@@ -17,6 +17,7 @@ import { defaultCorners, sampleQuad } from '../core/warp.ts'
 import { collapseBlocks, detectUniformBlock } from '../core/direct.ts'
 import { packPixels, unpackPixels } from '../core/export.ts'
 import { appendSwatch } from '../core/edit.ts'
+import { cropPixmap } from '../core/crop.ts'
 import {
   dataUrlToPixmap,
   listProjects,
@@ -33,7 +34,7 @@ import {
   type IndexEntry,
   type PersistedProject,
 } from '../core/storage.ts'
-import type { Pixmap, Quad, SampleMode } from '../core/types.ts'
+import type { Pixmap, Quad, Rect, SampleMode } from '../core/types.ts'
 import {
   DEFAULT_OPTIMIZE_CONFIG,
   PaletteOptimizer,
@@ -154,6 +155,11 @@ export type ProjectState = Pick<StudioState, ProjectKey>
 
 interface StudioState {
   activeStage: StageId
+  /**
+   * 上传后的临时状态：等着用户裁剪。
+   * 只活在内存里（不进存档、不进项目快照）—— 预处理只在上传时做一次。
+   */
+  crop: { name: string; pixmap: Pixmap; url: string } | null
   /** 网格是不是被「像素编辑」改过 —— 回规范化重新生成会丢掉这些修改 */
   edited: boolean
 
@@ -232,6 +238,10 @@ interface StudioState {
 
   loadImageFile: (file: File) => Promise<void>
   loadImageBlob: (blob: Blob, name: string) => Promise<void>
+  /** 上传预处理：确认裁剪（rect = null 表示不裁，整张用） */
+  applyCrop: (rect: Rect | null) => void
+  /** 上传预处理：放弃这张图 */
+  cancelCrop: () => void
   clearSource: () => void
 
   setAlignmentMode: (m: AlignmentMode) => void
@@ -642,6 +652,7 @@ export const useStudio = create<StudioState>((set, get) => ({
 
   loading: false,
   error: null,
+  crop: null,
   editTool: 'paint',
   editFillMode: 'color',
   editColor: '#000000',
@@ -673,25 +684,40 @@ export const useStudio = create<StudioState>((set, get) => ({
     set({ loading: true, error: null })
     try {
       const { pixmap, url } = await decodeImage(blob)
-      const prevUrl = get().source?.url
+      const prevUrl = get().crop?.url
       if (prevUrl) URL.revokeObjectURL(prevUrl)
-
-      set({
-        source: { name, width: pixmap.width, height: pixmap.height, pixmap, url },
-        corners: defaultCorners(pixmap.width, pixmap.height),
-        analysis: null,
-        grid: null,
-        regularizedGrid: null,
-        result: null,
-        edited: false,
-        loading: false,
-      })
-      get().detectDirectBlock()
-      if (get().alignmentMode === 'auto') get().runAnalysis()
-      else get().buildGrid()
+      // 上传时的预处理：先让用户裁一刀，确认或跳过后才真正开始规范化
+      set({ crop: { name, pixmap, url }, loading: false })
     } catch (err) {
       set({ loading: false, error: err instanceof Error ? err.message : '载入图片失败' })
     }
+  },
+
+  applyCrop: (rect) => {
+    const pending = get().crop
+    if (!pending) return
+    const pixmap = rect ? cropPixmap(pending.pixmap, rect) : pending.pixmap
+    set({
+      crop: null,
+      source: { name: pending.name, width: pixmap.width, height: pixmap.height, pixmap, url: pending.url },
+      corners: defaultCorners(pixmap.width, pixmap.height),
+      analysis: null,
+      grid: null,
+      regularizedGrid: null,
+      result: null,
+      edited: false,
+      error: null,
+    })
+    get().detectDirectBlock()
+    if (get().alignmentMode === 'auto') get().runAnalysis()
+    else get().buildGrid()
+  },
+
+  cancelCrop: () => {
+    const pending = get().crop
+    if (!pending) return
+    URL.revokeObjectURL(pending.url)
+    set({ crop: null })
   },
 
   clearSource: () => {
