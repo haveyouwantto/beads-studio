@@ -113,10 +113,12 @@ export interface OptimizeConfig {
   weighted: boolean
   /**
    * 对比损失权重（0 = 关闭，和旧版只看 ΔE 一样）。
-   * 优化时会把「输出的颜色离散度」按这个权重从成本里减掉 —— 也就是
-   * 罚「原图有明暗 / 色相差别，成品里被压没了」。
+   * 成本 = 匹配误差 + contrast × 对比损失，对比损失是
+   * 「原本差得远的颜色，在成品里被压得没那么分开了」的总量（ΔE 为单位）。
    */
   contrast: number
+  /** 对比损失的死区（ΔE）：差别本来就这么小的两个颜色，合并 / 靠得近都不算丢对比 */
+  contrastSlack: number
   /** 固定包含 MARD 黑白（H02 / H07），与旧工具一致 */
   mandatory: boolean
   /** 用贪心最远点做初始解（比随机初始解明显更好） */
@@ -134,13 +136,17 @@ export const DEFAULT_OPTIMIZE_CONFIG: OptimizeConfig = {
   alpha: 0.9995,
   objective: 'avg',
   weighted: true,
-  contrast: 0.25,
+  contrast: 1,
+  contrastSlack: 5,
   mandatory: true,
   greedyInit: true,
   polish: true,
 }
 
 export const MANDATORY_MARD = ['H02', 'H07']
+
+/** 目标色不超过这个数时，对比损失逐对精确算（拼豆图纸基本都在这个量级） */
+const PAIRWISE_LIMIT = 32
 
 export interface OptimizeStats {
   min: number
@@ -209,6 +215,12 @@ export class PaletteOptimizer {
   /** 目标色的 Lab（算输出离散度要用） */
   private labs = new Float64Array(0)
   private contrastWeight = 0
+  /** 对比损失的死区（ΔE） */
+  private contrastSlack = 0
+  /** 目标色两两之间的原始距离与权重（颜色少时用来精确算对比损失） */
+  private pairOrig = new Float64Array(0)
+  private pairWeight = new Float64Array(0)
+  private pairWeightSum = 0
 
   private selected: number[] = []
   private inState = new Uint8Array(0)
@@ -271,49 +283,99 @@ export class PaletteOptimizer {
     this.inState = new Uint8Array(this.c)
     // 老存档里的配置没有这个字段，缺省按默认走
     this.contrastWeight = Number.isFinite(this.config.contrast) ? Math.max(0, this.config.contrast) : DEFAULT_OPTIMIZE_CONFIG.contrast
+    this.contrastSlack = Number.isFinite(this.config.contrastSlack)
+      ? Math.max(0, this.config.contrastSlack)
+      : DEFAULT_OPTIMIZE_CONFIG.contrastSlack
+
+    // 颜色少（拼豆图纸通常就几种色）时把两两原始距离先算好：
+    // 对比损失要的是「这一对本来差多少、成品里还剩多少」，
+    // 逐对比较才不会被「挑极端颜色」这种歪招骗过去。
+    this.pairWeightSum = 0
+    if (this.t <= PAIRWISE_LIMIT) {
+      this.pairOrig = new Float64Array(this.t * this.t)
+      this.pairWeight = new Float64Array(this.t * this.t)
+      for (let i = 0; i < this.t; i++) {
+        for (let j = i + 1; j < this.t; j++) {
+          const orig = deltaE(samples[i].lab, samples[j].lab)
+          const w = Math.sqrt(this.weights[i] * this.weights[j])
+          this.pairOrig[i * this.t + j] = orig
+          this.pairWeight[i * this.t + j] = w
+          this.pairWeightSum += w
+        }
+      }
+    } else {
+      this.pairOrig = new Float64Array(0)
+      this.pairWeight = new Float64Array(0)
+    }
   }
 
   /**
-   * 输出的颜色离散度（Lab 空间的加权标准差）：越大说明成品保留的层次越足。
+   * 对比损失：原本差得远的两个颜色，成品里被压得没那么分开了，差多少就记多少。
    *
-   * 为什么它就等于「对比度」：所有颜色对的输出距离平方和可以整成
-   *   Σ_{i<j} w_i·w_j·|b_i − b_j|² = W · Σ_i w_i·|b_i − mean|²
-   * 原图那一份是常数、跟怎么选色无关，所以「尽量别让对比变小」等价于
-   * 「让输出的加权方差尽量大」。目标函数里按 contrast 权重把它减掉。
+   * 逐对算：loss = Σ_{i<j} w_ij · max(0, 原距离 − 输出距离 − 死区) / Σ w_ij
+   * 单位就是 ΔE，含义是「平均每对颜色丢了多少对比」。
    *
-   * 权重用 √出现次数：对比是「看得见 / 看不见」的问题 ——
-   * 几颗豆的红点被压成棕色时平均 ΔE 几乎不动，但成品上就是少了一处颜色。
+   * 为什么不能只看「输出的离散度」：那个量只要把颜色往黑白两头摊就能变大，
+   * 于是匹配会变得很差还很「高分」。逐对比较不会 —— 输出分得比原图还开时
+   * 损失就是 0，再极端也不加分，只有「本来有层次、被压没了」才罚。
+   *
+   * 权重 √(w_i·w_j)：几颗豆的小色块被压成棕色时平均 ΔE 几乎不动，
+   * 但成品上就是少了一处颜色，所以不做面积折扣。
+   *
+   * 颜色特别多（照片）时逐对是 O(T²) 会拖垮优化，退化成
+   * 「同一颗豆下面挂的颜色离这颗豆的主色多远」这个同向的近似。
    */
-  outputSpreadOf(assignment: Int32Array = this.nearestI): number {
-    if (this.t === 0 || this.sqrtWeightSum <= 0) return 0
-    const sw = this.sqrtWeights
-    let mx = 0
-    let my = 0
-    let mz = 0
-    for (let i = 0; i < this.t; i++) {
-      const j = assignment[i]
-      if (j < 0) continue
-      const w = sw[i]
-      const lab = this.entries[j].lab
-      mx += lab[0] * w
-      my += lab[1] * w
-      mz += lab[2] * w
-    }
-    mx /= this.sqrtWeightSum
-    my /= this.sqrtWeightSum
-    mz /= this.sqrtWeightSum
+  contrastLossOf(assignment: Int32Array = this.nearestI): number {
+    if (this.contrastWeight <= 0 || this.t === 0) return 0
 
-    let variance = 0
+    if (this.t <= PAIRWISE_LIMIT) {
+      let loss = 0
+      for (let i = 0; i < this.t; i++) {
+        const bi = assignment[i]
+        if (bi < 0) continue
+        const labI = this.entries[bi].lab
+        const row = i * this.t
+        for (let j = i + 1; j < this.t; j++) {
+          const bj = assignment[j]
+          if (bj < 0) continue
+          const orig = this.pairOrig[row + j]
+          if (orig <= this.contrastSlack) continue
+          const out = deltaE(labI, this.entries[bj].lab)
+          const drop = orig - out - this.contrastSlack
+          if (drop > 0) loss += this.pairWeight[row + j] * drop
+        }
+      }
+      return this.pairWeightSum > 0 ? loss / this.pairWeightSum : 0
+    }
+
+    // 近似：每颗豆取「代表色」（挂在这颗豆上出现最多的目标色），
+    // 其他颜色离代表色多远就记多少
+    const sw = this.sqrtWeights
+    const repW = new Float64Array(this.c)
+    const repIdx = new Int32Array(this.c).fill(-1)
     for (let i = 0; i < this.t; i++) {
       const j = assignment[i]
       if (j < 0) continue
-      const lab = this.entries[j].lab
-      const dx = lab[0] - mx
-      const dy = lab[1] - my
-      const dz = lab[2] - mz
-      variance += (dx * dx + dy * dy + dz * dz) * sw[i]
+      if (sw[i] > repW[j]) {
+        repW[j] = sw[i]
+        repIdx[j] = i
+      }
     }
-    return Math.sqrt(Math.max(0, variance / this.sqrtWeightSum))
+    let loss = 0
+    let weight = 0
+    for (let i = 0; i < this.t; i++) {
+      const j = assignment[i]
+      if (j < 0) continue
+      const rep = repIdx[j]
+      if (rep < 0 || rep === i) continue
+      const drop = deltaE(
+        [this.labs[i * 3], this.labs[i * 3 + 1], this.labs[i * 3 + 2]],
+        [this.labs[rep * 3], this.labs[rep * 3 + 1], this.labs[rep * 3 + 2]],
+      ) - this.contrastSlack
+      if (drop > 0) loss += sw[i] * drop
+      weight += sw[i]
+    }
+    return weight > 0 ? loss / weight : 0
   }
 
   stop(): void {
@@ -325,13 +387,13 @@ export class PaletteOptimizer {
   }
 
   /**
-   * 目标函数 = 匹配误差（平均或最坏 ΔE）− contrast × 输出颜色离散度。
+   * 目标函数 = 匹配误差（平均或最坏 ΔE）+ contrast × 对比损失。
    * 后面那一项专门罚「对比度变小」：本来有明暗 / 色相差别的地方，
-   * 如果成品里被压成一片，离散度就会掉下来，成本随之变高。
+   * 成品里被压成一颗豆（或者挤到两颗很接近的豆上）就要付代价。
    */
   private objectiveOf(stats: OptimizeStats, assignment: Int32Array = this.nearestI): number {
     const base = this.config.objective === 'max' ? stats.max : this.config.weighted ? stats.weightedAvg : stats.avg
-    return base - this.contrastWeight * this.outputSpreadOf(assignment)
+    return base + this.contrastWeight * this.contrastLossOf(assignment)
   }
 
   private statsFrom(dArr: Float64Array, iArr: Int32Array): OptimizeStats {

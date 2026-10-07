@@ -1013,20 +1013,19 @@ section('优化颜色 · 对比惩罚')
 
   const opt = new PaletteOptimizer([red, blue], { ...DEFAULT_OPTIMIZE_CONFIG, contrast: 1 }, 'grid')
   opt.setTargets(samples)
-  const spreadSame = opt.outputSpreadOf(Int32Array.from([0, 0]))
-  const spreadApart = opt.outputSpreadOf(Int32Array.from([0, 1]))
-  check('两个颜色压到同一颗豆 → 输出离散度是 0（对比全没了）', spreadSame < 1e-9, String(spreadSame))
+  const lossSame = opt.contrastLossOf(Int32Array.from([0, 0]))
+  const lossApart = opt.contrastLossOf(Int32Array.from([0, 1]))
   check(
-    '分开到两颗豆 → 输出离散度等于两颗豆距离的一半',
-    Math.abs(spreadApart - deltaE(red.lab, blue.lab) / 2) < 1e-6,
-    `${spreadApart.toFixed(2)} vs ${(deltaE(red.lab, blue.lab) / 2).toFixed(2)}`,
+    '两个差很远的颜色压到同一颗豆 → 对比损失 = 原始距离 − 死区',
+    Math.abs(lossSame - (deltaE(red.lab, blue.lab) - 5)) < 1e-6,
+    `${lossSame.toFixed(2)} vs ${(deltaE(red.lab, blue.lab) - 5).toFixed(2)}`,
   )
-  check('分开明显比压在一起对比更足', spreadApart > spreadSame)
+  check('分开到够远的两颗豆 → 不丢对比，损失为 0', lossApart < 1e-6, String(lossApart))
 
-  // 关掉对比项：目标函数就回到只看 ΔE（只是不再奖励离散度）
+  // 关掉对比项：怎么选都不记损失
   const off = new PaletteOptimizer([red, blue], { ...DEFAULT_OPTIMIZE_CONFIG, contrast: 0 }, 'grid')
   off.setTargets(samples)
-  check('关掉对比项时离散度只是不参与打分', off.outputSpreadOf(Int32Array.from([0, 1])) > 0)
+  check('关掉对比项后损失恒为 0', off.contrastLossOf(Int32Array.from([0, 0])) === 0)
 
   // 行为：一大片深棕 + 一小撮鲜红 + 一片浅米色，只给两颗豆的预算。
   // 只看 ΔE 会把鲜红压成深棕（平均误差几乎不变，但成品上红点没了）；

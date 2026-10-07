@@ -299,6 +299,17 @@ export function OptimizeStep() {
               onChange={(e) => setConfig({ patience: Math.max(200, Number(e.target.value) || 200) })}
             />
           </Field>
+          {/* 调高它就尽量不让原本不同的颜色（比如一片黄的明暗）在成品里被压成一颗豆 */}
+          <Field label="对比强度" value={config.contrast === 0 ? '关' : config.contrast.toFixed(2)}>
+            <input
+              type="range"
+              min={0}
+              max={3}
+              step={0.25}
+              value={config.contrast}
+              onChange={(e) => setConfig({ contrast: Number(e.target.value) })}
+            />
+          </Field>
           <Field label="优化目标">
             <Segmented
               value={config.objective}
