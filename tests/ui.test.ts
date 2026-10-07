@@ -1338,6 +1338,11 @@ section('重启应用后恢复上次会话')
     `恢复 ${restored.tabs.length} 个 / 会话里 ${session?.tabs.length ?? 0} 个`,
   )
   check('当前标签是存档里的那个', restored.tabs.some((t) => t.id === restored.activeTabId))
+  check(
+    '恢复后标签自带缩略图（不用点开存档列表）',
+    restored.tabs.every((t) => Boolean(t.thumb)),
+    JSON.stringify(restored.tabs.map((t) => Boolean(t.thumb))),
+  )
   check('网格被恢复', Boolean(restored.grid))
   check('原图不再存档', restored.source === null, String(restored.source))
   // 没有原图时，规范化页不再显示那一堆输入设置，只给出规格化结果 + 重新上传

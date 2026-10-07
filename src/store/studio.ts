@@ -1261,8 +1261,10 @@ export const useStudio = create<StudioState>((set, get) => ({
       const project = await deserializeProject(record.project)
       if (s.source || s.grid) get().saveCurrentProject()
       tabSnapshots.set(s.activeTabId, snapshotProject(get()))
+      // 缩略图跟着索引走，打开就能看到，不用等下一次自动保存
+      const thumb = listProjects().find((e) => e.id === id)?.thumbnail
       set({
-        tabs: [...s.tabs, { id, name: record.name }],
+        tabs: [...s.tabs, { id, name: record.name, thumb }],
         activeTabId: id,
         activeStage: project.grid ? 'pattern' : 'regularize',
         error: null,
@@ -1346,8 +1348,11 @@ export const useStudio = create<StudioState>((set, get) => ({
         ? session.activeId
         : available[available.length - 1].id
 
+      // 标签栏的缩略图在索引里存着：启动时直接给每个标签带上，
+      // 不然要等到它自己被保存过一次（或点开存档列表）才出现。
+      const thumbs = new Map(listProjects().map((e) => [e.id, e.thumbnail]))
       set({
-        tabs: available.map((t) => ({ id: t.id, name: t.name })),
+        tabs: available.map((t) => ({ id: t.id, name: t.name, thumb: thumbs.get(t.id) })),
         activeTabId: activeId,
         loading: true,
       })
