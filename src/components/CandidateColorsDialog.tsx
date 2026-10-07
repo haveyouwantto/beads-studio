@@ -26,7 +26,6 @@ export function CandidateColorsDialog({ onClose }: { onClose: () => void }) {
   const swatchByHex = useMemo(() => new Map(libraryPalette.map((e) => [e.hex, swatchHex(e)])), [libraryPalette])
   const entryByHex = useMemo(() => new Map(libraryPalette.map((e) => [e.hex, e])), [libraryPalette])
   const importRef = useRef<HTMLInputElement>(null)
-  const [importNote, setImportNote] = useState('')
 
   /** 导出一个方案：色号列表，一行一个 */
   const exportSet = (name: string, hexes: string[]) => {
@@ -42,15 +41,11 @@ export function CandidateColorsDialog({ onClose }: { onClose: () => void }) {
   const importFile = async (file: File) => {
     try {
       const hexes = parsePaletteFile(await file.text(), libraryPalette, codeSystem)
-      if (!hexes.length) {
-        setImportNote('没认出里面的色号或 HEX')
-        return
-      }
+      if (!hexes.length) return
       const name = file.name.replace(/\.[^.]+$/, '').trim() || `导入的方案`
       saveCandidateSet(name, hexes)
-      setImportNote(`导入 ${hexes.length} 色`)
     } catch {
-      setImportNote('文件读取失败')
+      /* 读不出来就不动，方案列表没变化本身就是反馈 */
     }
   }
 
@@ -140,7 +135,6 @@ export function CandidateColorsDialog({ onClose }: { onClose: () => void }) {
           <section className="set-block">
             <header className="series-head">
               <b className="series-name">方案</b>
-              {importNote && <span className="tiny muted">{importNote}</span>}
               <span style={{ flex: 1 }} />
               <button
                 className="btn-flat btn-small waves-effect"
@@ -206,7 +200,7 @@ export function CandidateColorsDialog({ onClose }: { onClose: () => void }) {
                         className="btn-flat btn-small waves-effect"
                         onClick={() => setSelected(new Set(s.hexes.filter((h) => libraryPalette.some((e) => e.hex === h))))}
                       >
-                        载入
+                        套用
                       </button>
                       <button className="btn-flat btn-small waves-effect" onClick={() => exportSet(s.name, s.hexes)}>
                         导出

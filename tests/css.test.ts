@@ -64,6 +64,10 @@ const markup = [
   '<div class="tiny muted">小字</div>',
   '<table class="bom"><thead><tr><th>色号</th></tr></thead></table>',
   '<div class="canvas-wrap edit-host"><canvas></canvas></div>',
+  '<div class="swatch-grid">',
+  '<div class="swatch on"><span class="pick"><i class="material-icons">check</i></span></div>',
+  '<div class="swatch chip on"><span class="pick"><i class="material-icons">check</i></span></div>',
+  '</div>',
   '<button class="btn-flat btn-small" id="flat-on">重来</button>',
   '<button class="btn-flat btn-small" id="flat-off" disabled>重来</button>',
   '<button class="btn" id="filled-on">导出文件</button>',
@@ -246,6 +250,15 @@ section('编辑画板')
     style('.canvas-wrap.edit-host', 'place-items').includes('center'),
     style('.canvas-wrap.edit-host', 'place-items'),
   )
+}
+
+// 色块选中态：勾要大、居中，边框要加粗
+section('色块选中态')
+{
+  check('选中的色块边框加粗', parseFloat(style('.swatch.on', 'border-width')) >= 3, style('.swatch.on', 'border-width'))
+  check('勾是铺满整格居中的', style('.swatch .pick', 'display') === 'grid' && style('.swatch .pick', 'place-items') === 'center')
+  check('勾的尺寸够大', parseFloat(style('.swatch .pick .material-icons', 'font-size')) >= 20, style('.swatch .pick .material-icons', 'font-size'))
+  check('小方块里的勾会自动缩小', parseFloat(style('.swatch.chip .pick .material-icons', 'font-size')) <= 16)
 }
 
 // 禁用态：以前实心按钮的禁用容器和正常容器几乎一个色，看不出点不动
