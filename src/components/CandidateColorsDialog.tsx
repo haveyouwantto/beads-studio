@@ -1,6 +1,7 @@
-import { useEffect, useMemo, useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 import { useStudio } from '../store/studio.ts'
 import { codeOf, mardSeries, swatchHex, type PaletteEntry } from '../core/palette.ts'
+import { buildPaletteExport, downloadText, parsePaletteFile, safeFileName } from '../core/export.ts'
 import { formatTime } from '../core/storage.ts'
 import { Swatch } from './ui.tsx'
 
@@ -23,6 +24,35 @@ export function CandidateColorsDialog({ onClose }: { onClose: () => void }) {
   const codeSystem = useStudio((s) => s.codeSystem)
   // 方案预览的圆点：h01 这类半透明豆按观感色画，和别的色板走同一套
   const swatchByHex = useMemo(() => new Map(libraryPalette.map((e) => [e.hex, swatchHex(e)])), [libraryPalette])
+  const entryByHex = useMemo(() => new Map(libraryPalette.map((e) => [e.hex, e])), [libraryPalette])
+  const importRef = useRef<HTMLInputElement>(null)
+  const [importNote, setImportNote] = useState('')
+
+  /** 导出一个方案：色号列表，一行一个 */
+  const exportSet = (name: string, hexes: string[]) => {
+    const entries = hexes.map((h) => entryByHex.get(h)).filter((e): e is PaletteEntry => Boolean(e))
+    if (!entries.length) return
+    downloadText(
+      buildPaletteExport(entries, codeSystem, 'code'),
+      `${safeFileName(name)}-色号-${codeSystem}.txt`,
+    )
+  }
+
+  /** 导入：自动认 JSON / HEX 列表 / 色号列表（就是优化结果那三种导出格式） */
+  const importFile = async (file: File) => {
+    try {
+      const hexes = parsePaletteFile(await file.text(), libraryPalette, codeSystem)
+      if (!hexes.length) {
+        setImportNote('没认出里面的色号或 HEX')
+        return
+      }
+      const name = file.name.replace(/\.[^.]+$/, '').trim() || `导入的方案`
+      saveCandidateSet(name, hexes)
+      setImportNote(`导入 ${hexes.length} 色`)
+    } catch {
+      setImportNote('文件读取失败')
+    }
+  }
 
   // 本地草稿：点「应用」才写回 store，取消则不变
   const [selected, setSelected] = useState<Set<string>>(
@@ -110,7 +140,26 @@ export function CandidateColorsDialog({ onClose }: { onClose: () => void }) {
           <section className="set-block">
             <header className="series-head">
               <b className="series-name">方案</b>
+              {importNote && <span className="tiny muted">{importNote}</span>}
               <span style={{ flex: 1 }} />
+              <button
+                className="btn-flat btn-small waves-effect"
+                onClick={() => importRef.current?.click()}
+                title="导入色号列表 / HEX 列表 / JSON"
+              >
+                导入
+              </button>
+              <input
+                ref={importRef}
+                type="file"
+                accept=".json,.txt,application/json,text/plain"
+                hidden
+                onChange={(e) => {
+                  const file = e.target.files?.[0]
+                  if (file) void importFile(file)
+                  e.target.value = ''
+                }}
+              />
               <input
                 className="set-name"
                 type="text"
@@ -158,6 +207,9 @@ export function CandidateColorsDialog({ onClose }: { onClose: () => void }) {
                         onClick={() => setSelected(new Set(s.hexes.filter((h) => libraryPalette.some((e) => e.hex === h))))}
                       >
                         载入
+                      </button>
+                      <button className="btn-flat btn-small waves-effect" onClick={() => exportSet(s.name, s.hexes)}>
+                        导出
                       </button>
                       <button
                         className="btn-flat btn-small waves-effect danger"

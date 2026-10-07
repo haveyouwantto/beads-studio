@@ -1,5 +1,6 @@
+import { isHexColor } from './color.ts'
 import type { PaletteEntry } from './palette.ts'
-import { codeOf, type CodeSystem } from './palette.ts'
+import { codeOf, parsePaletteText, type CodeSystem } from './palette.ts'
 
 export function downloadBlob(blob: Blob, filename: string): void {
   const url = URL.createObjectURL(blob)
@@ -97,6 +98,46 @@ export function buildPaletteExport(
   }
   if (format === 'hex') return sorted.map((e) => e.hex).join('\n')
   return sorted.map((e) => codeOf(e, system)).join('\n')
+}
+
+/**
+ * 读回色板文件：自动认「优化结果」那三种导出格式。
+ *   1. JSON —— 色板导出的 `{ selectedHexValues / codes }`、项目存档的 `paletteHex`、
+ *      或者干脆就是一个 HEX 字符串数组；
+ *   2. HEX 列表 —— 一行一个 #RRGGBB；
+ *   3. 色号列表 —— 一行一个色号（H07 / A13 …）。
+ * 返回 HEX 列表（顺序按文件里的顺序，重复的去掉）。
+ */
+export function parsePaletteFile(text: string, palette: PaletteEntry[], system: CodeSystem): string[] {
+  const trimmed = text.trim()
+  if (!trimmed) return []
+
+  if (trimmed.startsWith('{') || trimmed.startsWith('[')) {
+    try {
+      const data = JSON.parse(trimmed) as unknown
+      const raw: unknown[] = []
+      if (Array.isArray(data)) raw.push(...data)
+      else if (data && typeof data === 'object') {
+        const obj = data as Record<string, unknown>
+        if (Array.isArray(obj.selectedHexValues)) raw.push(...obj.selectedHexValues)
+        else if (Array.isArray(obj.paletteHex)) raw.push(...obj.paletteHex)
+        else if (Array.isArray(obj.codes)) {
+          for (const item of obj.codes) {
+            if (item && typeof item === 'object' && typeof (item as { hex?: unknown }).hex === 'string') {
+              raw.push((item as { hex: string }).hex)
+            }
+          }
+        }
+      }
+      const hexes = raw.filter((h): h is string => typeof h === 'string' && isHexColor(h)).map((h) => h.toUpperCase())
+      if (hexes.length) return [...new Set(hexes)]
+    } catch {
+      // 不是合法 JSON，按纯文本继续认
+    }
+  }
+
+  // 色号 / HEX 混着写都能认（和「自定义色板」用的是同一套解析）
+  return [...new Set(parsePaletteText(text, palette, system))]
 }
 
 /** 项目存档 */

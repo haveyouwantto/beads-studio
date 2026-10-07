@@ -40,7 +40,7 @@ import {
 } from '../src/core/palette.ts'
 import { PaletteOptimizer, targetsFromPixmap, DEFAULT_OPTIMIZE_CONFIG } from '../src/core/optimize.ts'
 import { deltaE, hexToRgb, rgbToHex, rgbToLab } from '../src/core/color.ts'
-import { buildPaletteExport, packPixels, safeFileName, unpackPixels } from '../src/core/export.ts'
+import { buildPaletteExport, packPixels, parsePaletteFile, safeFileName, unpackPixels } from '../src/core/export.ts'
 import { buildPatternPdf } from '../src/core/pdf.ts'
 import {
   boardLayout,
@@ -972,6 +972,34 @@ section('③ 转拼豆图纸 · 矢量 PDF')
     '不拆分就是一张一页',
     (single.match(/\/Type \/Page\b/g) ?? []).length === 1 && single.includes('/Count 1') && !single.includes('(1 / 1)'),
   )
+}
+
+section('候选色方案 · 导入导出')
+{
+  const three = palette.slice(0, 3)
+  const wantHexes = three.map((e) => e.hex).join()
+
+  const codeText = buildPaletteExport(three, 'MARD', 'code')
+  check(
+    '方案按色号列表导出',
+    codeText.split('\n').length === 3 && codeText.split('\n').every((c) => /^[A-Z]+\d+$/.test(c)),
+    codeText.replace(/\n/g, ','),
+  )
+
+  // 三种导出格式都能读回来
+  check('色号列表能导入', parsePaletteFile(codeText, palette, 'MARD').join() === wantHexes)
+  check('HEX 列表能导入', parsePaletteFile(buildPaletteExport(three, 'MARD', 'hex'), palette, 'MARD').join() === wantHexes)
+  check('JSON 能导入', parsePaletteFile(buildPaletteExport(three, 'MARD', 'json'), palette, 'MARD').join() === wantHexes)
+
+  check(
+    '项目存档里的 paletteHex 也认',
+    parsePaletteFile(JSON.stringify({ app: 'beads-studio', paletteHex: three.map((e) => e.hex) }), palette, 'MARD')
+      .length === 3,
+  )
+  check('纯 HEX 数组也认', parsePaletteFile(JSON.stringify(three.map((e) => e.hex)), palette, 'MARD').length === 3)
+  check('色号和 HEX 混着写也认', parsePaletteFile(`H07, ${three[0].hex}\nA13`, palette, 'MARD').length === 3)
+  check('重复色号会去重', parsePaletteFile('H07\nH07\n#000000', palette, 'MARD').length === 1)
+  check('认不出的内容返回空', parsePaletteFile('这不是色板', palette, 'MARD').length === 0)
 }
 
 // ---------------------------------------------------------------- 汇总
