@@ -111,6 +111,14 @@ export interface OptimizeConfig {
   objective: 'avg' | 'max'
   /** 是否按颜色出现次数加权 */
   weighted: boolean
+  /**
+   * 对比惩罚权重（0 = 关闭，和旧版只看 ΔE 一样）。
+   * 同一颗豆被用来表示原本差得很远的颜色时要罚分 ——
+   * 否则候选色很少时，把颜色「压平」到一颗豆反而是平均 ΔE 最低的解。
+   */
+  contrast: number
+  /** 对比惩罚的死区（ΔE）：组内差别在这个范围内，合并了也不算丢对比 */
+  contrastTolerance: number
   /** 固定包含 MARD 黑白（H02 / H07），与旧工具一致 */
   mandatory: boolean
   /** 用贪心最远点做初始解（比随机初始解明显更好） */
@@ -128,6 +136,8 @@ export const DEFAULT_OPTIMIZE_CONFIG: OptimizeConfig = {
   alpha: 0.9995,
   objective: 'avg',
   weighted: true,
+  contrast: 1,
+  contrastTolerance: 5,
   mandatory: true,
   greedyInit: true,
   polish: true,
@@ -196,6 +206,16 @@ export class PaletteOptimizer {
   private dist = new Float64Array(0)
   private weights = new Float64Array(0)
   private weightSum = 0
+  /** √出现次数：对比惩罚用的权重（不做面积折扣，见 contrastPenaltyOf） */
+  private sqrtWeights = new Float64Array(0)
+  private sqrtWeightSum = 0
+  /** 目标色的 Lab（对比惩罚要按组心算偏差） */
+  private labs = new Float64Array(0)
+  private groupW = new Float64Array(0)
+  private groupMean = new Float64Array(0)
+  private groupDev = new Float64Array(0)
+  private contrastWeight = 0
+  private contrastTolerance = 0
 
   private selected: number[] = []
   private inState = new Uint8Array(0)
@@ -226,11 +246,20 @@ export class PaletteOptimizer {
   setTargets(samples: TargetSample[]): void {
     this.t = samples.length
     this.weights = new Float64Array(this.t)
+    this.labs = new Float64Array(this.t * 3)
+    this.sqrtWeights = new Float64Array(this.t)
     this.weightSum = 0
+    this.sqrtWeightSum = 0
     for (let i = 0; i < this.t; i++) {
       const w = Math.max(1, samples[i].count)
       this.weights[i] = w
       this.weightSum += w
+      const sw = Math.sqrt(w)
+      this.sqrtWeights[i] = sw
+      this.sqrtWeightSum += sw
+      this.labs[i * 3] = samples[i].lab[0]
+      this.labs[i * 3 + 1] = samples[i].lab[1]
+      this.labs[i * 3 + 2] = samples[i].lab[2]
     }
 
     this.dist = new Float64Array(this.t * this.c)
@@ -247,6 +276,68 @@ export class PaletteOptimizer {
     this.scratchD = new Float64Array(this.t)
     this.scratchI = new Int32Array(this.t)
     this.inState = new Uint8Array(this.c)
+    this.groupW = new Float64Array(this.c)
+    this.groupMean = new Float64Array(this.c * 3)
+    this.groupDev = new Float64Array(this.c)
+    // 老存档里的配置没有这两个字段，缺省按默认走
+    this.contrastWeight = Number.isFinite(this.config.contrast) ? Math.max(0, this.config.contrast) : DEFAULT_OPTIMIZE_CONFIG.contrast
+    this.contrastTolerance = Number.isFinite(this.config.contrastTolerance)
+      ? Math.max(0, this.config.contrastTolerance)
+      : DEFAULT_OPTIMIZE_CONFIG.contrastTolerance
+  }
+
+  /**
+   * 对比惩罚：每颗豆下面挂着的原始颜色如果彼此差得远，就要罚。
+   *
+   * 算法：按「豆」把目标色分组，算每组的加权标准差（Lab 空间的 RMS 偏差），
+   * 减掉死区（同色系细微差别不算丢对比）后按组权重加权平均。
+   * 只看分组、不看具体选了哪颗豆 —— 匹配得好不好由 ΔE 那一项负责。
+   *
+   * 这里用 √出现次数 当权重，而不是出现次数本身：
+   * 对比是「看得见 / 看不见」的问题，几颗豆的红点被压成棕色，
+   * 平均 ΔE 几乎不动，但成品上就是少了一处颜色，所以小面积不能按面积打折。
+   */
+  contrastPenaltyOf(assignment: Int32Array = this.nearestI): number {
+    if (this.contrastWeight <= 0 || this.t === 0) return 0
+    const gw = this.groupW
+    const gm = this.groupMean
+    const gd = this.groupDev
+    const sw = this.sqrtWeights
+    gw.fill(0)
+    gm.fill(0)
+    gd.fill(0)
+
+    for (let i = 0; i < this.t; i++) {
+      const j = assignment[i]
+      if (j < 0) continue
+      const w = sw[i]
+      const b = i * 3
+      const g = j * 3
+      const x = this.labs[b]
+      const y = this.labs[b + 1]
+      const z = this.labs[b + 2]
+      gw[j] += w
+      gm[g] += x * w
+      gm[g + 1] += y * w
+      gm[g + 2] += z * w
+      gd[j] += (x * x + y * y + z * z) * w
+    }
+
+    let penalty = 0
+    for (let j = 0; j < this.c; j++) {
+      const w = gw[j]
+      if (w <= 0) continue
+      const g = j * 3
+      const mx = gm[g] / w
+      const my = gm[g + 1] / w
+      const mz = gm[g + 2] / w
+      const variance = Math.max(0, gd[j] / w - (mx * mx + my * my + mz * mz))
+      // 死区：组内差别小于 contrastTolerance 的合并不算「丢失对比」
+      const excess = Math.max(0, Math.sqrt(variance) - this.contrastTolerance)
+      if (excess > 0) penalty += w * excess
+    }
+
+    return this.sqrtWeightSum > 0 ? penalty / this.sqrtWeightSum : 0
   }
 
   stop(): void {
@@ -257,9 +348,13 @@ export class PaletteOptimizer {
     return this.running
   }
 
-  private objectiveOf(stats: OptimizeStats): number {
-    if (this.config.objective === 'max') return stats.max
-    return this.config.weighted ? stats.weightedAvg : stats.avg
+  /**
+   * 目标函数 = 匹配误差（平均或最坏 ΔE）+ 对比惩罚 × 权重。
+   * 对比那一项让「把深浅不同的颜色压成同一颗豆」变贵，候选色少时也能保住层次。
+   */
+  private objectiveOf(stats: OptimizeStats, assignment: Int32Array = this.nearestI): number {
+    const base = this.config.objective === 'max' ? stats.max : this.config.weighted ? stats.weightedAvg : stats.avg
+    return base + this.contrastWeight * this.contrastPenaltyOf(assignment)
   }
 
   private statsFrom(dArr: Float64Array, iArr: Int32Array): OptimizeStats {
@@ -426,7 +521,8 @@ export class PaletteOptimizer {
         for (let inn = 0; inn < this.c; inn++) {
           if (this.inState[inn]) continue
           const stats = this.evaluateSwap(out, inn)
-          const obj = this.objectiveOf(stats)
+          // 对比惩罚要按「换过去之后」的分组算，所以用 scratch 里的分配
+          const obj = this.objectiveOf(stats, this.scratchI)
           if (obj < bestObjective - 1e-9) {
             bestObjective = obj
             bestCandidate = inn
@@ -549,7 +645,7 @@ export class PaletteOptimizer {
       if (inn < 0) continue
 
       const stats = this.evaluateSwap(out, inn)
-      const nextObjective = this.objectiveOf(stats)
+      const nextObjective = this.objectiveOf(stats, this.scratchI)
 
       const accept =
         nextObjective < currentObjective ||

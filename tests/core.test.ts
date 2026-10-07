@@ -38,7 +38,7 @@ import {
   swatchHex,
   VISIBLE_PALETTE_SOURCES,
 } from '../src/core/palette.ts'
-import { PaletteOptimizer, targetsFromPixmap, DEFAULT_OPTIMIZE_CONFIG } from '../src/core/optimize.ts'
+import { PaletteOptimizer, targetsFromPixmap, DEFAULT_OPTIMIZE_CONFIG, type TargetSample } from '../src/core/optimize.ts'
 import { clampRect, cropPixmap } from '../src/core/crop.ts'
 import { deltaE, hexToRgb, rgbToHex, rgbToLab } from '../src/core/color.ts'
 import { buildPaletteExport, packPixels, parsePaletteFile, safeFileName, unpackPixels } from '../src/core/export.ts'
@@ -992,6 +992,67 @@ section('上传预处理 · 矩形裁剪')
   check('超界的框会夹回图片内', clamped.width === 6 && clamped.height === 4, `${clamped.width}×${clamped.height}`)
   check('小框也照样裁（不强行放大）', cropPixmap(src, { x: 0, y: 0, width: 1, height: 1 }).width === 1)
   check('框不会跑出右边界', clampRect({ x: 95, y: 0, width: 20, height: 20 }, 100, 100).x === 80)
+}
+
+section('优化颜色 · 对比惩罚')
+{
+  const entryOf = (hex: string): PaletteEntry => ({
+    hex,
+    rgb: hexToRgb(hex),
+    lab: rgbToLab(hexToRgb(hex)),
+    codes: { MARD: hex },
+  })
+  const sampleOf = (hex: string, count = 10): TargetSample => {
+    const rgb = hexToRgb(hex)
+    return { rgb, lab: rgbToLab(rgb), count }
+  }
+
+  const red = entryOf('#E53935')
+  const blue = entryOf('#1E88E5')
+  const red2 = entryOf('#E23834') // 和 red 差一点点
+  const samples = [sampleOf('#E53935'), sampleOf('#1E88E5')]
+
+  const on = new PaletteOptimizer([red, blue], { ...DEFAULT_OPTIMIZE_CONFIG, contrast: 1 }, 'grid')
+  on.setTargets(samples)
+  const off = new PaletteOptimizer([red, blue], { ...DEFAULT_OPTIMIZE_CONFIG, contrast: 0 }, 'grid')
+  off.setTargets(samples)
+
+  // 同一颗豆被用来表示两个差很远的颜色 → 罚
+  check('把差很远的两个颜色塞进同一颗豆要罚分', on.contrastPenaltyOf(Int32Array.from([0, 0])) > 20, String(on.contrastPenaltyOf(Int32Array.from([0, 0]))))
+  // 分开表示 → 不罚
+  check('分开表示不罚', on.contrastPenaltyOf(Int32Array.from([0, 1])) === 0)
+  // 关掉惩罚 → 一律 0
+  check('关掉对比惩罚就什么都不罚', off.contrastPenaltyOf(Int32Array.from([0, 0])) === 0)
+
+  // 同色系（差别小于死区）合并到一颗豆不算丢对比
+  const near = new PaletteOptimizer([red, red2], { ...DEFAULT_OPTIMIZE_CONFIG, contrast: 1 }, 'grid')
+  near.setTargets([sampleOf('#E53935'), sampleOf('#E43834')])
+  check('同一个色系里合并到一颗豆不罚', near.contrastPenaltyOf(Int32Array.from([0, 0])) === 0)
+
+  // 行为：一大片深棕 + 一小撮鲜红 + 一片浅米色，只给两颗豆的预算。
+  // 只看 ΔE 会把鲜红压成深棕（平均误差几乎不变，但成品上红点没了）；
+  // 加了对比惩罚，鲜红至少会被放到更接近它的那颗豆上。
+  const beads = [entryOf('#753832'), entryOf('#9D5B3E'), entryOf('#E6B483')]
+  const targets = [sampleOf('#6D3117', 200), sampleOf('#FF3D00', 5), sampleOf('#FCDF9B', 50)]
+  const runTiny = async (contrast: number) => {
+    const opt = new PaletteOptimizer(beads, { ...DEFAULT_OPTIMIZE_CONFIG, mandatory: false, k: 2, steps: 4000, patience: 1000, seed: 5, contrast }, 'grid')
+    opt.setTargets(targets)
+    let selected: number[] = []
+    for await (const ev of opt.run()) if (ev.type === 'completed') selected = ev.selected
+    // 鲜红那颗目标最终落到哪颗豆、误差多少
+    const redLab = targets[1].lab
+    let bestD = Infinity
+    for (const j of selected) bestD = Math.min(bestD, deltaE(redLab, beads[j].lab))
+    return { selected: selected.length, redDelta: bestD }
+  }
+  const plain = await runTiny(0)
+  const contrast = await runTiny(1)
+  check(
+    '加了对比惩罚后，小面积的鲜明色不会被压到更远的豆上',
+    contrast.redDelta <= plain.redDelta + 1e-9,
+    `鲜红 ΔE ${plain.redDelta.toFixed(1)} → ${contrast.redDelta.toFixed(1)}`,
+  )
+  check('对比惩罚不会把预算用超', contrast.selected === 2, String(contrast.selected))
 }
 
 section('候选色方案 · 导入导出')
