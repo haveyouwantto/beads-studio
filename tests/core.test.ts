@@ -1009,25 +1009,24 @@ section('优化颜色 · 对比惩罚')
 
   const red = entryOf('#E53935')
   const blue = entryOf('#1E88E5')
-  const red2 = entryOf('#E23834') // 和 red 差一点点
   const samples = [sampleOf('#E53935'), sampleOf('#1E88E5')]
 
-  const on = new PaletteOptimizer([red, blue], { ...DEFAULT_OPTIMIZE_CONFIG, contrast: 1 }, 'grid')
-  on.setTargets(samples)
+  const opt = new PaletteOptimizer([red, blue], { ...DEFAULT_OPTIMIZE_CONFIG, contrast: 1 }, 'grid')
+  opt.setTargets(samples)
+  const spreadSame = opt.outputSpreadOf(Int32Array.from([0, 0]))
+  const spreadApart = opt.outputSpreadOf(Int32Array.from([0, 1]))
+  check('两个颜色压到同一颗豆 → 输出离散度是 0（对比全没了）', spreadSame < 1e-9, String(spreadSame))
+  check(
+    '分开到两颗豆 → 输出离散度等于两颗豆距离的一半',
+    Math.abs(spreadApart - deltaE(red.lab, blue.lab) / 2) < 1e-6,
+    `${spreadApart.toFixed(2)} vs ${(deltaE(red.lab, blue.lab) / 2).toFixed(2)}`,
+  )
+  check('分开明显比压在一起对比更足', spreadApart > spreadSame)
+
+  // 关掉对比项：目标函数就回到只看 ΔE（只是不再奖励离散度）
   const off = new PaletteOptimizer([red, blue], { ...DEFAULT_OPTIMIZE_CONFIG, contrast: 0 }, 'grid')
   off.setTargets(samples)
-
-  // 同一颗豆被用来表示两个差很远的颜色 → 罚
-  check('把差很远的两个颜色塞进同一颗豆要罚分', on.contrastPenaltyOf(Int32Array.from([0, 0])) > 20, String(on.contrastPenaltyOf(Int32Array.from([0, 0]))))
-  // 分开表示 → 不罚
-  check('分开表示不罚', on.contrastPenaltyOf(Int32Array.from([0, 1])) === 0)
-  // 关掉惩罚 → 一律 0
-  check('关掉对比惩罚就什么都不罚', off.contrastPenaltyOf(Int32Array.from([0, 0])) === 0)
-
-  // 同色系（差别小于死区）合并到一颗豆不算丢对比
-  const near = new PaletteOptimizer([red, red2], { ...DEFAULT_OPTIMIZE_CONFIG, contrast: 1 }, 'grid')
-  near.setTargets([sampleOf('#E53935'), sampleOf('#E43834')])
-  check('同一个色系里合并到一颗豆不罚', near.contrastPenaltyOf(Int32Array.from([0, 0])) === 0)
+  check('关掉对比项时离散度只是不参与打分', off.outputSpreadOf(Int32Array.from([0, 1])) > 0)
 
   // 行为：一大片深棕 + 一小撮鲜红 + 一片浅米色，只给两颗豆的预算。
   // 只看 ΔE 会把鲜红压成深棕（平均误差几乎不变，但成品上红点没了）；
