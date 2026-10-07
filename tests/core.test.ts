@@ -994,63 +994,88 @@ section('上传预处理 · 矩形裁剪')
   check('框不会跑出右边界', clampRect({ x: 95, y: 0, width: 20, height: 20 }, 100, 100).x === 80)
 }
 
-section('优化颜色 · 对比惩罚')
+section('优化颜色 · 补色（预算没用满就补回来）')
 {
-  const entryOf = (hex: string): PaletteEntry => ({
+  const entryOf = (hex: string, code: string): PaletteEntry => ({
     hex,
     rgb: hexToRgb(hex),
     lab: rgbToLab(hexToRgb(hex)),
-    codes: { MARD: hex },
+    codes: { MARD: code },
   })
   const sampleOf = (hex: string, count = 10): TargetSample => {
     const rgb = hexToRgb(hex)
     return { rgb, lab: rgbToLab(rgb), count }
   }
 
-  const red = entryOf('#E53935')
-  const blue = entryOf('#1E88E5')
-  const samples = [sampleOf('#E53935'), sampleOf('#1E88E5')]
+  // 原图 4 种颜色：一颗豆陪浅米色，另一颗正好配深棕，剩下两种各有各的近似豆。
+  // 只看 ΔE 会把「浅米色 + 黄褐」挤到同一颗豆上（只用 3 颗豆）。
+  const beads = [
+    entryOf('#753832', 'G08'),
+    entryOf('#E7002F', 'F05'),
+    entryOf('#E6B483', 'G09'),
+    entryOf('#F2D9BA', 'G16'),
+    entryOf('#A58767', 'M09'),
+    entryOf('#9D5B3E', 'G07'),
+    entryOf('#FEAC4C', 'A06'),
+  ]
+  const targets = [
+    sampleOf('#6d3117', 56),
+    sampleOf('#d9a46f', 42),
+    sampleOf('#fcdf9b', 58),
+    sampleOf('#9a4f16', 9),
+    sampleOf('#e09438', 2),
+  ]
 
-  const opt = new PaletteOptimizer([red, blue], { ...DEFAULT_OPTIMIZE_CONFIG, contrast: 1 }, 'grid')
-  opt.setTargets(samples)
-  const lossSame = opt.contrastLossOf(Int32Array.from([0, 0]))
-  const lossApart = opt.contrastLossOf(Int32Array.from([0, 1]))
-  check(
-    '两个差很远的颜色压到同一颗豆 → 对比损失 = 原始距离 − 死区',
-    Math.abs(lossSame - (deltaE(red.lab, blue.lab) - 5)) < 1e-6,
-    `${lossSame.toFixed(2)} vs ${(deltaE(red.lab, blue.lab) - 5).toFixed(2)}`,
-  )
-  check('分开到够远的两颗豆 → 不丢对比，损失为 0', lossApart < 1e-6, String(lossApart))
-
-  // 关掉对比项：怎么选都不记损失
-  const off = new PaletteOptimizer([red, blue], { ...DEFAULT_OPTIMIZE_CONFIG, contrast: 0 }, 'grid')
-  off.setTargets(samples)
-  check('关掉对比项后损失恒为 0', off.contrastLossOf(Int32Array.from([0, 0])) === 0)
-
-  // 行为：一大片深棕 + 一小撮鲜红 + 一片浅米色，只给两颗豆的预算。
-  // 只看 ΔE 会把鲜红压成深棕（平均误差几乎不变，但成品上红点没了）；
-  // 加了对比惩罚，鲜红至少会被放到更接近它的那颗豆上。
-  const beads = [entryOf('#753832'), entryOf('#9D5B3E'), entryOf('#E6B483')]
-  const targets = [sampleOf('#6D3117', 200), sampleOf('#FF3D00', 5), sampleOf('#FCDF9B', 50)]
-  const runTiny = async (contrast: number) => {
-    const opt = new PaletteOptimizer(beads, { ...DEFAULT_OPTIMIZE_CONFIG, mandatory: false, k: 2, steps: 4000, patience: 1000, seed: 5, contrast }, 'grid')
+  const runWith = async (k: number) => {
+    const opt = new PaletteOptimizer(
+      beads,
+      { ...DEFAULT_OPTIMIZE_CONFIG, mandatory: false, k, steps: 4000, patience: 1000, seed: 11 },
+      'grid',
+    )
     opt.setTargets(targets)
     let selected: number[] = []
-    for await (const ev of opt.run()) if (ev.type === 'completed') selected = ev.selected
-    // 鲜红那颗目标最终落到哪颗豆、误差多少
-    const redLab = targets[1].lab
-    let bestD = Infinity
-    for (const j of selected) bestD = Math.min(bestD, deltaE(redLab, beads[j].lab))
-    return { selected: selected.length, redDelta: bestD }
+    let mapping: { key: number; hex: string }[] = []
+    let stats = { min: 0, max: 0, avg: 0, weightedAvg: 0 }
+    for await (const ev of opt.run()) {
+      if (ev.type === 'completed') {
+        selected = ev.selected
+        mapping = ev.mapping
+        stats = ev.stats
+      }
+    }
+    return { selected, mapping, stats }
   }
-  const plain = await runTiny(0)
-  const contrast = await runTiny(1)
+
+  const roomy = await runWith(30)
+  check('预算比原图颜色数大时，结果色号数 = 原图颜色数', roomy.selected.length === 5, `${roomy.selected.length}`)
+  check('每个目标色都有落到某颗豆上', roomy.mapping.length === targets.length, `${roomy.mapping.length}`)
   check(
-    '加了对比惩罚后，小面积的鲜明色不会被压到更远的豆上',
-    contrast.redDelta <= plain.redDelta + 1e-9,
-    `鲜红 ΔE ${plain.redDelta.toFixed(1)} → ${contrast.redDelta.toFixed(1)}`,
+    '交出来的每颗豆都真的用到了',
+    new Set(roomy.mapping.map((m) => m.hex)).size === roomy.selected.length,
+    `${new Set(roomy.mapping.map((m) => m.hex)).size} vs ${roomy.selected.length}`,
   )
-  check('对比惩罚不会把预算用超', contrast.selected === 2, String(contrast.selected))
+  check(
+    '补出来的色号都在候选色里',
+    roomy.selected.every((i) => beads[i] !== undefined),
+    roomy.selected.map((i) => beads[i]?.codes.MARD).join(' '),
+  )
+  // 补色优先挑「换颗豆只涨一点点 ΔE」的颜色：浅米色（+1）比黄褐（+13）先拆出来
+  const keyOf = (hex: string) => {
+    const [r, g, b] = hexToRgb(hex)
+    return (r << 16) | (g << 8) | b
+  }
+  const byKey = new Map(roomy.mapping.map((m) => [m.key, m.hex]))
+  check(
+    '补色先拆 ΔE 增加最少的颜色（浅米色自己占一颗豆）',
+    byKey.get(keyOf('#fcdf9b')) !== byKey.get(keyOf('#d9a46f')),
+    `${byKey.get(keyOf('#fcdf9b'))} vs ${byKey.get(keyOf('#d9a46f'))}`,
+  )
+
+  const tight = await runWith(2)
+  check('预算比颜色数小时，结果色号数 = 预算', tight.selected.length === 2, `${tight.selected.length}`)
+
+  // 结果里的 ΔE 统计要按补完之后的分配算，不是按「最省 ΔE 但压掉颜色」的那套
+  check('ΔE 统计跟着最终分配走', tight.stats.weightedAvg >= roomy.stats.weightedAvg - 1e-9, `${tight.stats.weightedAvg.toFixed(2)} vs ${roomy.stats.weightedAvg.toFixed(2)}`)
 }
 
 section('候选色方案 · 导入导出')

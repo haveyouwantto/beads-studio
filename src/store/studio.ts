@@ -148,6 +148,7 @@ const PROJECT_KEYS = [
   'optimizeTargetMode',
   'optimizeConfig',
   'optimizedPalette',
+  'optimizedMap',
 ] as const
 
 type ProjectKey = (typeof PROJECT_KEYS)[number]
@@ -229,6 +230,11 @@ interface StudioState {
   optimizeConfig: OptimizeConfig
   optimizeRun: OptimizeRunState
   optimizedPalette: PaletteEntry[]
+  /**
+   * 优化结果里「哪个原图颜色用哪颗豆」的分配（key = 源色 RGB 数值）。
+   * 补色阶段会把一部分颜色放到不是最近色的豆上，出图纸要照这份分配走。
+   */
+  optimizedMap: { key: number; hex: string }[]
   codeSystem: CodeSystem
 
   // --- actions ---
@@ -355,6 +361,7 @@ function freshProject(): ProjectState {
     optimizeTargetMode: 'grid',
     optimizeConfig: { ...DEFAULT_OPTIMIZE_CONFIG },
     optimizedPalette: [],
+    optimizedMap: [],
   }
 }
 
@@ -511,6 +518,7 @@ function serializeProject(s: StudioState): PersistedProject {
     optimizeTargetMode: s.optimizeTargetMode,
     optimizeConfig: s.optimizeConfig,
     optimizedHex: s.optimizedPalette.map((e) => e.hex),
+    optimizedMap: s.optimizedMap,
     activeStage: s.activeStage,
     edited: s.edited,
     // 不存原图：原图动辄几 MB，localStorage 放不下；下次打开只需要规格化结果，
@@ -607,6 +615,9 @@ async function deserializeProject(p: PersistedProject): Promise<ProjectState> {
     optimizeTargetMode: p.optimizeTargetMode as TargetMode,
     optimizeConfig: { ...DEFAULT_OPTIMIZE_CONFIG, ...(p.optimizeConfig as object) },
     optimizedPalette: resolve(p.optimizedHex),
+    optimizedMap: Array.isArray(p.optimizedMap)
+      ? p.optimizedMap.filter((e) => e && Number.isFinite(e.key) && typeof e.hex === 'string')
+      : [],
   }
 }
 
@@ -978,13 +989,21 @@ export const useStudio = create<StudioState>((set, get) => ({
   setCodeSystem: (s) => set({ codeSystem: s }),
 
   recomputeResult: () => {
-    const { grid, palette, quantizeOptions, renderOptions } = get()
+    const { grid, palette, quantizeOptions, renderOptions, paletteSource, optimizedMap } = get()
     if (!grid) {
       set({ result: null })
       return
     }
     // 半透明豆按叠在图纸背景上的观感参与匹配（结果里仍存它自己的 hex）
-    set({ result: quantizeToPalette(grid, matchPalette(palette, renderOptions.background), quantizeOptions) })
+    // 「优化结果」这一套要连着补色阶段的分配一起用，别的来源按最近色匹配
+    set({
+      result: quantizeToPalette(
+        grid,
+        matchPalette(palette, renderOptions.background),
+        quantizeOptions,
+        paletteSource === 'optimized' ? optimizedMap : null,
+      ),
+    })
   },
 
   setOptimizeConfig: (patch) => set({ optimizeConfig: { ...get().optimizeConfig, ...patch } }),
@@ -1045,6 +1064,7 @@ export const useStudio = create<StudioState>((set, get) => ({
     set({
       error: null,
       optimizedPalette: [],
+      optimizedMap: [],
       optimizeRun: {
         ...EMPTY_RUN,
         status: 'running',
@@ -1096,6 +1116,7 @@ export const useStudio = create<StudioState>((set, get) => ({
               reason: reasonText,
             },
             optimizedPalette: indicesToEntries(event.selected),
+            optimizedMap: event.mapping,
           }))
         }
       }
@@ -1117,7 +1138,7 @@ export const useStudio = create<StudioState>((set, get) => ({
     get().recomputeResult()
   },
 
-  clearOptimizedPalette: () => set({ optimizedPalette: [], optimizeRun: { ...EMPTY_RUN } }),
+  clearOptimizedPalette: () => set({ optimizedPalette: [], optimizedMap: [], optimizeRun: { ...EMPTY_RUN } }),
 
   // ---------------------------------------------------------------- 标签页
 

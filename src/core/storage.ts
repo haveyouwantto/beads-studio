@@ -143,6 +143,8 @@ export interface PersistedProject {
   optimizeTargetMode: string
   optimizeConfig: unknown
   optimizedHex: string[]
+  /** 优化结果里的「源色 → 色号」分配（补色阶段会用到）；老存档没有这个字段 */
+  optimizedMap?: { key: number; hex: string }[] | null
   /**
    * 规范化的原始结果（没被「像素编辑」动过的那份）。
    * 规范化页显示的是它，编辑改的是 grid，所以编辑不会改到规范化结果。

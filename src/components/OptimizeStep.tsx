@@ -66,7 +66,6 @@ export function OptimizeStep() {
   }
 
   const targetCount = targetInfo?.samples.length ?? 0
-  const needed = config.k + (config.mandatory ? 2 : 0)
 
   if (!grid) {
     return (
@@ -269,7 +268,7 @@ export function OptimizeStep() {
 
           <div className="divider" />
 
-          <Field label="颜料预算 K" value={`${config.k} 色`} hint={`共约 ${needed} 色`}>
+          <Field label="颜料预算 K" value={`${config.k} 色`}>
             <input
               type="range"
               min={2}
@@ -297,17 +296,6 @@ export function OptimizeStep() {
               step={100}
               value={config.patience}
               onChange={(e) => setConfig({ patience: Math.max(200, Number(e.target.value) || 200) })}
-            />
-          </Field>
-          {/* 调高它就尽量不让原本不同的颜色（比如一片黄的明暗）在成品里被压成一颗豆 */}
-          <Field label="对比强度" value={config.contrast === 0 ? '关' : config.contrast.toFixed(2)}>
-            <input
-              type="range"
-              min={0}
-              max={3}
-              step={0.25}
-              value={config.contrast}
-              onChange={(e) => setConfig({ contrast: Number(e.target.value) })}
             />
           </Field>
           <Field label="优化目标">

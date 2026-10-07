@@ -38,11 +38,16 @@ function distributeErr(
 /**
  * 把规范化后的像素图映射到拼豆色板。
  * 抖动使用 Floyd–Steinberg 误差扩散（与旧「拼豆工具箱」一致）。
+ *
+ * overrides：优化结果里「这个颜色指定用哪颗豆」的分配（key = 源色 RGB 数值）。
+ * 优化为了让结果色号数达标，会把一部分颜色放到「不是最近色」的豆上；
+ * 出图纸时必须照这份分配走，否则按最近色重新映射会把补出来的色又压回去。
  */
 export function quantizeToPalette(
   img: Pixmap,
   palette: PaletteEntry[],
   options: QuantizeOptions = DEFAULT_QUANTIZE_OPTIONS,
+  overrides?: { key: number; hex: string }[] | null,
 ): Pixmap {
   const w = img.width
   const h = img.height
@@ -57,6 +62,19 @@ export function quantizeToPalette(
   // 否则后面按 hex 查色号会全部落空。
   const outRgb = palette.map((entry) => hexToRgb(entry.hex))
 
+  // 指定分配：源色 RGB → 色板下标（指定的色号不在色板里就忽略，退回最近色）
+  let forced: Map<number, number> | null = null
+  if (overrides?.length) {
+    const byHex = new Map<string, number>()
+    for (let i = 0; i < palette.length; i++) byHex.set(palette[i].hex.toUpperCase(), i)
+    forced = new Map<number, number>()
+    for (const o of overrides) {
+      const idx = byHex.get(o.hex.toUpperCase())
+      if (idx !== undefined) forced.set(o.key, idx)
+    }
+    if (!forced.size) forced = null
+  }
+
   if (options.dither === 'floyd-steinberg') {
     for (let y = 0; y < h; y++) {
       for (let x = 0; x < w; x++) {
@@ -65,7 +83,8 @@ export function quantizeToPalette(
         const oldG = data[i + 1]
         const oldB = data[i + 2]
 
-        const idx = nearestIndex(oldR, oldG, oldB, palette, options.metric)
+        const idx =
+          forced?.get((oldR << 16) | (oldG << 8) | oldB) ?? nearestIndex(oldR, oldG, oldB, palette, options.metric)
         const target = outRgb[idx]
 
         data[i] = target[0]
@@ -86,7 +105,9 @@ export function quantizeToPalette(
   }
 
   for (let i = 0; i < data.length; i += 4) {
-    const idx = nearestIndex(data[i], data[i + 1], data[i + 2], palette, options.metric)
+    const idx =
+      forced?.get((data[i] << 16) | (data[i + 1] << 8) | data[i + 2]) ??
+      nearestIndex(data[i], data[i + 1], data[i + 2], palette, options.metric)
     const target = outRgb[idx]
     data[i] = target[0]
     data[i + 1] = target[1]

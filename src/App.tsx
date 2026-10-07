@@ -168,7 +168,8 @@ export default function App() {
           codeSystem: (settings.codeSystem as typeof s.codeSystem) ?? s.codeSystem,
           quantizeOptions: (settings.quantizeOptions as typeof s.quantizeOptions) ?? s.quantizeOptions,
           renderOptions: (settings.renderOptions as typeof s.renderOptions) ?? s.renderOptions,
-          optimizeConfig: (settings.optimizeConfig as typeof s.optimizeConfig) ?? s.optimizeConfig,
+          // 老项目文件里可能缺后来才加的字段，要和默认值合并后再用
+          optimizeConfig: { ...s.optimizeConfig, ...((settings.optimizeConfig as object) ?? {}) },
           optimizeTargetMode:
             (settings.optimizeTargetMode as typeof s.optimizeTargetMode) ?? s.optimizeTargetMode,
         })

@@ -111,14 +111,6 @@ export interface OptimizeConfig {
   objective: 'avg' | 'max'
   /** 是否按颜色出现次数加权 */
   weighted: boolean
-  /**
-   * 对比损失权重（0 = 关闭，和旧版只看 ΔE 一样）。
-   * 成本 = 匹配误差 + contrast × 对比损失，对比损失是
-   * 「原本差得远的颜色，在成品里被压得没那么分开了」的总量（ΔE 为单位）。
-   */
-  contrast: number
-  /** 对比损失的死区（ΔE）：差别本来就这么小的两个颜色，合并 / 靠得近都不算丢对比 */
-  contrastSlack: number
   /** 固定包含 MARD 黑白（H02 / H07），与旧工具一致 */
   mandatory: boolean
   /** 用贪心最远点做初始解（比随机初始解明显更好） */
@@ -136,17 +128,12 @@ export const DEFAULT_OPTIMIZE_CONFIG: OptimizeConfig = {
   alpha: 0.9995,
   objective: 'avg',
   weighted: true,
-  contrast: 1,
-  contrastSlack: 5,
   mandatory: true,
   greedyInit: true,
   polish: true,
 }
 
 export const MANDATORY_MARD = ['H02', 'H07']
-
-/** 目标色不超过这个数时，对比损失逐对精确算（拼豆图纸基本都在这个量级） */
-const PAIRWISE_LIMIT = 32
 
 export interface OptimizeStats {
   min: number
@@ -170,6 +157,12 @@ export type OptimizeEvent =
       type: 'completed'
       stats: OptimizeStats
       selected: number[]
+      /**
+       * 每个目标色最终落到哪颗豆（key = 目标色的 RGB 数值）。
+       * 补色阶段会把一部分目标色放到「不是最近、但能保住颜色数」的豆上，
+       * 出图纸要照这份分配走，否则会按最近色重新映射、把补出来的色又压回去。
+       */
+      mapping: { key: number; hex: string }[]
       steps: number
       reason: 'finished' | 'early-exit' | 'stopped'
     }
@@ -209,18 +202,8 @@ export class PaletteOptimizer {
   private dist = new Float64Array(0)
   private weights = new Float64Array(0)
   private weightSum = 0
-  /** √出现次数：对比项用的权重（不做面积折扣，见 outputSpreadOf） */
-  private sqrtWeights = new Float64Array(0)
-  private sqrtWeightSum = 0
-  /** 目标色的 Lab（算输出离散度要用） */
-  private labs = new Float64Array(0)
-  private contrastWeight = 0
-  /** 对比损失的死区（ΔE） */
-  private contrastSlack = 0
-  /** 目标色两两之间的原始距离与权重（颜色少时用来精确算对比损失） */
-  private pairOrig = new Float64Array(0)
-  private pairWeight = new Float64Array(0)
-  private pairWeightSum = 0
+  /** 目标色的 RGB 数值（r<<16|g<<8|b），出图纸时要按它查最终分配 */
+  private targetKeys = new Int32Array(0)
 
   private selected: number[] = []
   private inState = new Uint8Array(0)
@@ -251,20 +234,17 @@ export class PaletteOptimizer {
   setTargets(samples: TargetSample[]): void {
     this.t = samples.length
     this.weights = new Float64Array(this.t)
-    this.labs = new Float64Array(this.t * 3)
-    this.sqrtWeights = new Float64Array(this.t)
+    this.targetKeys = new Int32Array(this.t)
     this.weightSum = 0
-    this.sqrtWeightSum = 0
     for (let i = 0; i < this.t; i++) {
       const w = Math.max(1, samples[i].count)
       this.weights[i] = w
       this.weightSum += w
-      const sw = Math.sqrt(w)
-      this.sqrtWeights[i] = sw
-      this.sqrtWeightSum += sw
-      this.labs[i * 3] = samples[i].lab[0]
-      this.labs[i * 3 + 1] = samples[i].lab[1]
-      this.labs[i * 3 + 2] = samples[i].lab[2]
+      const [r, g, b] = samples[i].rgb
+      this.targetKeys[i] =
+        (Math.min(255, Math.max(0, Math.round(r))) << 16) |
+        (Math.min(255, Math.max(0, Math.round(g))) << 8) |
+        Math.min(255, Math.max(0, Math.round(b)))
     }
 
     this.dist = new Float64Array(this.t * this.c)
@@ -281,101 +261,6 @@ export class PaletteOptimizer {
     this.scratchD = new Float64Array(this.t)
     this.scratchI = new Int32Array(this.t)
     this.inState = new Uint8Array(this.c)
-    // 老存档里的配置没有这个字段，缺省按默认走
-    this.contrastWeight = Number.isFinite(this.config.contrast) ? Math.max(0, this.config.contrast) : DEFAULT_OPTIMIZE_CONFIG.contrast
-    this.contrastSlack = Number.isFinite(this.config.contrastSlack)
-      ? Math.max(0, this.config.contrastSlack)
-      : DEFAULT_OPTIMIZE_CONFIG.contrastSlack
-
-    // 颜色少（拼豆图纸通常就几种色）时把两两原始距离先算好：
-    // 对比损失要的是「这一对本来差多少、成品里还剩多少」，
-    // 逐对比较才不会被「挑极端颜色」这种歪招骗过去。
-    this.pairWeightSum = 0
-    if (this.t <= PAIRWISE_LIMIT) {
-      this.pairOrig = new Float64Array(this.t * this.t)
-      this.pairWeight = new Float64Array(this.t * this.t)
-      for (let i = 0; i < this.t; i++) {
-        for (let j = i + 1; j < this.t; j++) {
-          const orig = deltaE(samples[i].lab, samples[j].lab)
-          const w = Math.sqrt(this.weights[i] * this.weights[j])
-          this.pairOrig[i * this.t + j] = orig
-          this.pairWeight[i * this.t + j] = w
-          this.pairWeightSum += w
-        }
-      }
-    } else {
-      this.pairOrig = new Float64Array(0)
-      this.pairWeight = new Float64Array(0)
-    }
-  }
-
-  /**
-   * 对比损失：原本差得远的两个颜色，成品里被压得没那么分开了，差多少就记多少。
-   *
-   * 逐对算：loss = Σ_{i<j} w_ij · max(0, 原距离 − 输出距离 − 死区) / Σ w_ij
-   * 单位就是 ΔE，含义是「平均每对颜色丢了多少对比」。
-   *
-   * 为什么不能只看「输出的离散度」：那个量只要把颜色往黑白两头摊就能变大，
-   * 于是匹配会变得很差还很「高分」。逐对比较不会 —— 输出分得比原图还开时
-   * 损失就是 0，再极端也不加分，只有「本来有层次、被压没了」才罚。
-   *
-   * 权重 √(w_i·w_j)：几颗豆的小色块被压成棕色时平均 ΔE 几乎不动，
-   * 但成品上就是少了一处颜色，所以不做面积折扣。
-   *
-   * 颜色特别多（照片）时逐对是 O(T²) 会拖垮优化，退化成
-   * 「同一颗豆下面挂的颜色离这颗豆的主色多远」这个同向的近似。
-   */
-  contrastLossOf(assignment: Int32Array = this.nearestI): number {
-    if (this.contrastWeight <= 0 || this.t === 0) return 0
-
-    if (this.t <= PAIRWISE_LIMIT) {
-      let loss = 0
-      for (let i = 0; i < this.t; i++) {
-        const bi = assignment[i]
-        if (bi < 0) continue
-        const labI = this.entries[bi].lab
-        const row = i * this.t
-        for (let j = i + 1; j < this.t; j++) {
-          const bj = assignment[j]
-          if (bj < 0) continue
-          const orig = this.pairOrig[row + j]
-          if (orig <= this.contrastSlack) continue
-          const out = deltaE(labI, this.entries[bj].lab)
-          const drop = orig - out - this.contrastSlack
-          if (drop > 0) loss += this.pairWeight[row + j] * drop
-        }
-      }
-      return this.pairWeightSum > 0 ? loss / this.pairWeightSum : 0
-    }
-
-    // 近似：每颗豆取「代表色」（挂在这颗豆上出现最多的目标色），
-    // 其他颜色离代表色多远就记多少
-    const sw = this.sqrtWeights
-    const repW = new Float64Array(this.c)
-    const repIdx = new Int32Array(this.c).fill(-1)
-    for (let i = 0; i < this.t; i++) {
-      const j = assignment[i]
-      if (j < 0) continue
-      if (sw[i] > repW[j]) {
-        repW[j] = sw[i]
-        repIdx[j] = i
-      }
-    }
-    let loss = 0
-    let weight = 0
-    for (let i = 0; i < this.t; i++) {
-      const j = assignment[i]
-      if (j < 0) continue
-      const rep = repIdx[j]
-      if (rep < 0 || rep === i) continue
-      const drop = deltaE(
-        [this.labs[i * 3], this.labs[i * 3 + 1], this.labs[i * 3 + 2]],
-        [this.labs[rep * 3], this.labs[rep * 3 + 1], this.labs[rep * 3 + 2]],
-      ) - this.contrastSlack
-      if (drop > 0) loss += sw[i] * drop
-      weight += sw[i]
-    }
-    return weight > 0 ? loss / weight : 0
   }
 
   stop(): void {
@@ -386,14 +271,9 @@ export class PaletteOptimizer {
     return this.running
   }
 
-  /**
-   * 目标函数 = 匹配误差（平均或最坏 ΔE）+ contrast × 对比损失。
-   * 后面那一项专门罚「对比度变小」：本来有明暗 / 色相差别的地方，
-   * 成品里被压成一颗豆（或者挤到两颗很接近的豆上）就要付代价。
-   */
-  private objectiveOf(stats: OptimizeStats, assignment: Int32Array = this.nearestI): number {
-    const base = this.config.objective === 'max' ? stats.max : this.config.weighted ? stats.weightedAvg : stats.avg
-    return base + this.contrastWeight * this.contrastLossOf(assignment)
+  private objectiveOf(stats: OptimizeStats): number {
+    if (this.config.objective === 'max') return stats.max
+    return this.config.weighted ? stats.weightedAvg : stats.avg
   }
 
   private statsFrom(dArr: Float64Array, iArr: Int32Array): OptimizeStats {
@@ -480,6 +360,83 @@ export class PaletteOptimizer {
     this.nearestI.set(this.scratchI)
   }
 
+  /**
+   * 补色：只盯 ΔE 的时候，优化会为了压低误差把颜色数一起压掉 ——
+   * 原图 8 种颜色，预算 8 颗豆，它只肯用 6 颗（另外几种各自挤在同一颗豆上）。
+   *
+   * 结果色号数应该是「预算」和「原图颜色数」里小的那个，不够就补：
+   * 每一轮挑一个「正跟别的颜色挤在同一颗豆上」的目标色，把它挪到它自己最好的
+   * 空位豆上，挑 ΔE 增加最少的那个先挪（比的是这个颜色自己的 ΔE 涨了多少）。
+   * 代价也记在图纸上（ΔE 统计按补完之后的分配重算）。
+   */
+  private fillToBudget(budget: number): void {
+    for (let guard = 0; guard <= this.t; guard++) {
+      const used = new Set<number>()
+      for (let i = 0; i < this.t; i++) if (this.nearestI[i] >= 0) used.add(this.nearestI[i])
+      if (used.size >= budget) return
+
+      // 每颗豆上挂了哪些目标色
+      const buckets = new Map<number, number[]>()
+      for (let i = 0; i < this.t; i++) {
+        const b = this.nearestI[i]
+        if (b < 0) continue
+        const arr = buckets.get(b)
+        if (arr) arr.push(i)
+        else buckets.set(b, [i])
+      }
+
+      let pickI = -1
+      let pickBead = -1
+      let pickCost = Infinity
+      for (const [b, members] of buckets) {
+        if (members.length < 2) continue
+        for (const i of members) {
+          const base = i * this.c
+          const cur = this.dist[base + b]
+          // 这颗目标色自己的「空位」：最近的、还没被别的豆占用的候选色
+          let bead = -1
+          let best = Infinity
+          for (let j = 0; j < this.c; j++) {
+            if (used.has(j)) continue
+            const d = this.dist[base + j]
+            if (d < best) {
+              best = d
+              bead = j
+            }
+          }
+          if (bead < 0) continue
+          // 代价 = 这个颜色换到新豆上多出来的 ΔE
+          const cost = best - cur
+          if (cost < pickCost) {
+            pickCost = cost
+            pickI = i
+            pickBead = bead
+          }
+        }
+      }
+
+      if (pickI < 0) return
+      this.nearestI[pickI] = pickBead
+      this.nearestD[pickI] = this.dist[pickI * this.c + pickBead]
+    }
+  }
+
+  /**
+   * 最终交出去的结果：真正落在这张图纸上的豆（最近色或补色落到它上面的目标色
+   * 至少有一个），加上固定色号。预算里的空位不交出去 —— 结果面板只该列成品上
+   * 会出现的色号。
+   */
+  private resultSelection(): number[] {
+    const used = new Set<number>()
+    for (let i = 0; i < this.t; i++) if (this.nearestI[i] >= 0) used.add(this.nearestI[i])
+    for (const j of this.selected) if (this.fixed.has(j)) used.add(j)
+    return [...used].sort((a, b) => {
+      const ca = this.entries[a].codes.MARD ?? ''
+      const cb = this.entries[b].codes.MARD ?? ''
+      return ca.localeCompare(cb, undefined, { numeric: true })
+    })
+  }
+
   /** 贪心最远点（k-center）初始解 */
   private greedyInit(k: number): number[] {
     const chosen: number[] = [...this.fixed]
@@ -560,8 +517,7 @@ export class PaletteOptimizer {
         for (let inn = 0; inn < this.c; inn++) {
           if (this.inState[inn]) continue
           const stats = this.evaluateSwap(out, inn)
-          // 对比惩罚要按「换过去之后」的分组算，所以用 scratch 里的分配
-          const obj = this.objectiveOf(stats, this.scratchI)
+          const obj = this.objectiveOf(stats)
           if (obj < bestObjective - 1e-9) {
             bestObjective = obj
             bestCandidate = inn
@@ -595,6 +551,7 @@ export class PaletteOptimizer {
         type: 'completed',
         stats: { min: 0, max: 0, avg: 0, weightedAvg: 0 },
         selected: [],
+        mapping: [],
         steps: 0,
         reason: 'finished',
       }
@@ -684,7 +641,7 @@ export class PaletteOptimizer {
       if (inn < 0) continue
 
       const stats = this.evaluateSwap(out, inn)
-      const nextObjective = this.objectiveOf(stats, this.scratchI)
+      const nextObjective = this.objectiveOf(stats)
 
       const accept =
         nextObjective < currentObjective ||
@@ -742,14 +699,22 @@ export class PaletteOptimizer {
     this.rebuildNearest()
     this.running = false
 
+    // 结果色号数 = min(预算, 原图颜色数)。优化出来的解没用到这么多就把颜色补回来。
+    const resultBudget = Math.max(this.fixed.size, Math.min(cfg.k, this.t))
+    this.fillToBudget(resultBudget)
+
+    const mapping: { key: number; hex: string }[] = []
+    for (let i = 0; i < this.t; i++) {
+      const j = this.nearestI[i]
+      if (j < 0) continue
+      mapping.push({ key: this.targetKeys[i], hex: this.entries[j].hex })
+    }
+
     yield {
       type: 'completed',
       stats: this.statsFrom(this.nearestD, this.nearestI),
-      selected: [...this.selected].sort((a, b) => {
-        const ca = this.entries[a].codes.MARD ?? ''
-        const cb = this.entries[b].codes.MARD ?? ''
-        return ca.localeCompare(cb, undefined, { numeric: true })
-      }),
+      selected: this.resultSelection(),
+      mapping,
       steps: step,
       reason,
     }
