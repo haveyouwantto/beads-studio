@@ -18,6 +18,7 @@ export function OptimizeStep() {
   const setIncludeExtended = useStudio((s) => s.setIncludeExtended)
   const config = useStudio((s) => s.optimizeConfig)
   const setConfig = useStudio((s) => s.setOptimizeConfig)
+  const setQuantizeOptions = useStudio((s) => s.setQuantizeOptions)
   const targetMode = useStudio((s) => s.optimizeTargetMode)
   const setTargetMode = useStudio((s) => s.setOptimizeTargetMode)
   const run = useStudio((s) => s.optimizeRun)
@@ -46,6 +47,9 @@ export function OptimizeStep() {
     const s = Math.max(1, Math.min(6, Math.floor(260 / Math.max(grid.width, grid.height)) || 1))
     drawPixmap(gridRef.current, grid, s, false)
   }, [grid])
+
+  // 色相权重 >0 时统计量已经不是纯 CIE76 ΔE，标签跟着改，免得把两个数混着比
+  const deltaLabel = config.hueWeight > 0 ? '色相 ΔE ' : 'ΔE '
 
   const sortedResult = useMemo(
     () => [...optimizedPalette].sort((a, b) => compareByCode(a, b, codeSystem)),
@@ -161,10 +165,10 @@ export function OptimizeStep() {
         >
           {run.stats && (
             <div className="stat-grid" style={{ marginBottom: 12 }}>
-              <Stat k="平均 ΔE" v={run.stats.avg.toFixed(2)} />
-              <Stat k="加权平均 ΔE" v={run.stats.weightedAvg.toFixed(2)} />
-              <Stat k="最大 ΔE" v={run.stats.max.toFixed(2)} />
-              <Stat k="最小 ΔE" v={run.stats.min.toFixed(2)} />
+              <Stat k={deltaLabel + '平均'} v={run.stats.avg.toFixed(2)} />
+              <Stat k={deltaLabel + '加权平均'} v={run.stats.weightedAvg.toFixed(2)} />
+              <Stat k={deltaLabel + '最大'} v={run.stats.max.toFixed(2)} />
+              <Stat k={deltaLabel + '最小'} v={run.stats.min.toFixed(2)} />
             </div>
           )}
 
@@ -308,6 +312,21 @@ export function OptimizeStep() {
               ]}
             />
           </Field>
+          <Field label="色相权重" hint="0 = 旧 CIE76；2 = 默认，低彩度区不再被换色相">
+            <input
+              type="number"
+              min={0}
+              max={4}
+              step={0.5}
+              value={config.hueWeight}
+              onChange={(e) => {
+                const v = Math.min(4, Math.max(0, Number(e.target.value) || 0))
+                setConfig({ hueWeight: v })
+                // 出图用的是 quantizeOptions，两个必须同步，否则选色与落子用的不是同一个度量
+                setQuantizeOptions({ hueWeight: v })
+              }}
+            />
+          </Field>
           <Field label="随机种子">
             <input
               type="number"
@@ -341,6 +360,9 @@ export function OptimizeStep() {
             </Check>
             <Check checked={config.polish} onChange={(v) => setConfig({ polish: v })}>
               退火后做<b>贪心精修</b>
+            </Check>
+            <Check checked={config.hueFamilies} onChange={(v) => setConfig({ hueFamilies: v })}>
+              面积小的<b>色相族</b>各留一颗豆
             </Check>
             <Check checked={includeExtended} onChange={setIncludeExtended}>
               色号库包含<b>扩展色号</b>（P/Q/R/T/Y/ZG）

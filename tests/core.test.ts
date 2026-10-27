@@ -40,7 +40,7 @@ import {
 } from '../src/core/palette.ts'
 import { PaletteOptimizer, targetsFromPixmap, DEFAULT_OPTIMIZE_CONFIG, type TargetSample } from '../src/core/optimize.ts'
 import { clampRect, cropPixmap } from '../src/core/crop.ts'
-import { deltaE, hexToRgb, rgbToHex, rgbToLab } from '../src/core/color.ts'
+import { deltaE, deltaEHue, hexToRgb, rgbToHex, rgbToLab } from '../src/core/color.ts'
 import { buildPaletteExport, packPixels, parsePaletteFile, safeFileName, unpackPixels } from '../src/core/export.ts'
 import { buildPatternPdf } from '../src/core/pdf.ts'
 import {
@@ -67,6 +67,10 @@ function check(name: string, condition: boolean, detail = ''): void {
     failed++
     console.log(`  ✗ ${name}${detail ? ` — ${detail}` : ''}`)
   }
+}
+
+function deltaEhueStr(a: RGB, b: RGB, w: number): string {
+  return deltaEHue(a, b, w).toFixed(2)
 }
 
 function section(title: string): void {
@@ -1076,6 +1080,95 @@ section('优化颜色 · 补色（预算没用满就补回来）')
 
   // 结果里的 ΔE 统计要按补完之后的分配算，不是按「最省 ΔE 但压掉颜色」的那套
   check('ΔE 统计跟着最终分配走', tight.stats.weightedAvg >= roomy.stats.weightedAvg - 1e-9, `${tight.stats.weightedAvg.toFixed(2)} vs ${roomy.stats.weightedAvg.toFixed(2)}`)
+}
+
+section('颜色度量 · 色相敏感 ΔE')
+{
+  const labOf = (hex: string) => rgbToLab(hexToRgb(hex))
+
+  // hueWeight = 0 必须就是原来的 CIE76，否则「和旧版本对比」这件事没法谈
+  const a = labOf('#586880')
+  const b = labOf('#697D80')
+  check('色相权重 0 = 旧 CIE76', Math.abs(deltaEHue(a, b, 0) - deltaE(a, b)) < 1e-12,
+    `${deltaEHue(a, b, 0)} vs ${deltaE(a, b)}`)
+
+  // 灰蓝 → 青灰：ΔE76 只差一点点，但色相偏了 58°，加权后必须明显变远
+  check('跨色相的近色被拉远', deltaEHue(a, b, 2) > deltaE(a, b) * 1.5,
+    `${deltaEhueStr(a, b, 2)} vs ${deltaE(a, b).toFixed(2)}`)
+
+  // 同色相、只差明暗的对比不该被牵连
+  const dark = labOf('#3F4A5C')
+  check('同色相只差明暗时基本不受影响',
+    Math.abs(deltaEHue(a, dark, 2) - deltaE(a, dark)) < deltaE(a, dark) * 0.25,
+    `${deltaEHue(a, dark, 2).toFixed(2)} vs ${deltaE(a, dark).toFixed(2)}`)
+
+  // 两个无彩色之间没有色相可言，不该被色相项惩罚
+  const g1 = labOf('#808080')
+  const g2 = labOf('#7A7A7A')
+  check('无彩色之间不加色相惩罚',
+    Math.abs(deltaEHue(g1, g2, 2) - deltaE(g1, g2)) < 0.35,
+    `${deltaEHue(g1, g2, 2).toFixed(2)} vs ${deltaE(g1, g2).toFixed(2)}`)
+}
+
+section('优化颜色 · 色相族保底')
+{
+  const fullPalette = buildLibraryPalette({ includeExtended: true })
+  const hueOfHex = (hex: string): number => {
+    const lab = rgbToLab(hexToRgb(hex))
+    return ((Math.atan2(lab[2], lab[1]) * 180) / Math.PI + 360) % 360
+  }
+  const gapDeg = (x: number, y: number): number => {
+    const d = Math.abs(x - y) % 360
+    return d > 180 ? 360 - d : d
+  }
+  const sampleOf = (hex: string, count: number): TargetSample => ({
+    rgb: hexToRgb(hex),
+    lab: rgbToLab(hexToRgb(hex)),
+    count,
+  })
+  // 大面积暖色 + 大面积蓝色，再加一点几乎没人注意的青绿（占比 3%）
+  const tiny = '#4E846D'
+  const targets = [
+    sampleOf('#C9675E', 400),
+    sampleOf('#8A4526', 300),
+    sampleOf('#FEA49F', 200),
+    sampleOf('#3CAED8', 400),
+    sampleOf('#19779D', 300),
+    sampleOf(tiny, 90),
+  ]
+
+  const runWith = async (hueFamilies: boolean) => {
+    const opt = new PaletteOptimizer(
+      fullPalette,
+      { ...DEFAULT_OPTIMIZE_CONFIG, mandatory: false, k: 4, steps: 6000, patience: 1500, seed: 7, hueFamilies },
+      'grid',
+    )
+    opt.setTargets(targets)
+    let selected: number[] = []
+    let stats = { min: 0, max: 0, avg: 0, weightedAvg: 0 }
+    for await (const ev of opt.run()) {
+      if (ev.type === 'completed') {
+        selected = ev.selected
+        stats = ev.stats
+      }
+    }
+    return { selected, stats }
+  }
+
+  const on = await runWith(true)
+  const off = await runWith(false)
+  const tinyHue = hueOfHex(tiny)
+  const held = (sel: number[]) =>
+    sel.some((i) => {
+      const lab = fullPalette[i].lab
+      if (Math.hypot(lab[1], lab[2]) < 5) return false
+      return gapDeg(hueOfHex(fullPalette[i].hex), tinyHue) <= 30
+    })
+  check('开保底时青绿族有一颗同色相的豆', held(on.selected),
+    on.selected.map((i) => fullPalette[i].hex).join(' '))
+  // 保底是「加约束」，不该把结果整体拖差太多
+  check('保底带来的 ΔE 涨幅受控', on.stats.weightedAvg <= off.stats.weightedAvg + 1.5 + 1e-9,
+    `${on.stats.weightedAvg.toFixed(2)} vs ${off.stats.weightedAvg.toFixed(2)}`)
 }
 
 section('候选色方案 · 导入导出')

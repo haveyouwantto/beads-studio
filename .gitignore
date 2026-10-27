@@ -4,3 +4,5 @@ dist
 *.local
 *.tsbuildinfo
 *.log
+hue_*.png
+hue_*.png

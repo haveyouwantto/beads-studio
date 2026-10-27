@@ -1,6 +1,6 @@
 import type { DistanceMetric, PaletteEntry } from './palette.ts'
-import { nearestIndex } from './palette.ts'
-import { hexToRgb } from './color.ts'
+import { prepareNearest } from './palette.ts'
+import { DEFAULT_HUE_WEIGHT, hexToRgb } from './color.ts'
 import type { Pixmap } from './types.ts'
 
 export interface QuantizeOptions {
@@ -9,12 +9,18 @@ export interface QuantizeOptions {
   quantize: boolean
   /** 抖动方式 */
   dither: 'none' | 'floyd-steinberg'
+  /**
+   * 色相权重，必须与「优化颜色」阶段用的一致（缺省 = 默认 2）。
+   * 否则会出现选色时按同色相、出图时按旧 CIE76 跨色相的错位。
+   */
+  hueWeight?: number
 }
 
 export const DEFAULT_QUANTIZE_OPTIONS: QuantizeOptions = {
   metric: 'lab',
   quantize: true,
   dither: 'none',
+  hueWeight: DEFAULT_HUE_WEIGHT,
 }
 
 function distributeErr(
@@ -57,6 +63,9 @@ export function quantizeToPalette(
     return { width: w, height: h, data }
   }
 
+  // 逐个像素都要扫一遍色板，先把匹配函数编译好（色板一侧的彩度/色相只算一次）
+  const match = prepareNearest(palette, options.metric, options.hueWeight ?? DEFAULT_HUE_WEIGHT)
+
   // 结果里写「豆子本身的颜色」——调色板可能是「半透明豆已换成叠在背景上的观感色」的版本
   // （H01 匹配时是浅灰），但图纸上要记的是那颗豆，所以输出一律按 hex 取色，
   // 否则后面按 hex 查色号会全部落空。
@@ -83,8 +92,7 @@ export function quantizeToPalette(
         const oldG = data[i + 1]
         const oldB = data[i + 2]
 
-        const idx =
-          forced?.get((oldR << 16) | (oldG << 8) | oldB) ?? nearestIndex(oldR, oldG, oldB, palette, options.metric)
+        const idx = forced?.get((oldR << 16) | (oldG << 8) | oldB) ?? match(oldR, oldG, oldB)
         const target = outRgb[idx]
 
         data[i] = target[0]
@@ -107,7 +115,7 @@ export function quantizeToPalette(
   for (let i = 0; i < data.length; i += 4) {
     const idx =
       forced?.get((data[i] << 16) | (data[i + 1] << 8) | data[i + 2]) ??
-      nearestIndex(data[i], data[i + 1], data[i + 2], palette, options.metric)
+      match(data[i], data[i + 1], data[i + 2])
     const target = outRgb[idx]
     data[i] = target[0]
     data[i + 1] = target[1]

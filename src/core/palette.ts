@@ -1,5 +1,14 @@
 import { BEAD_COLOR_DATA } from '../data/beadColors.ts'
-import { deltaE, hexToRgb, rgbToLab, rgbToHex, weightedRgbDistance } from './color.ts'
+import {
+  DEFAULT_HUE_WEIGHT,
+  deltaE,
+  deltaEHuePolar,
+  hexToRgb,
+  labPolar,
+  rgbToLab,
+  rgbToHex,
+  weightedRgbDistance,
+} from './color.ts'
 import type { Pixmap, RGB } from './types.ts'
 
 export interface PaletteEntry {
@@ -276,13 +285,14 @@ export function compareByCode(a: PaletteEntry, b: PaletteEntry, system: CodeSyst
 export type DistanceMetric = 'lab' | 'weighted-rgb'
 
 export const METRIC_LABELS: Record<DistanceMetric, string> = {
-  lab: 'Lab ΔE（感知色差，推荐）',
+  lab: 'Lab ΔE · 色相加权（推荐）',
   'weighted-rgb': '加权 RGB（旧工具算法）',
 }
 
 /**
  * 在调色板中找最接近的颜色，返回索引。
- * lab 模式走 CIE76 ΔE；weighted-rgb 模式复刻旧「拼豆工具箱」的 0.3/0.59/0.11 距离。
+ * lab 模式走色相敏感色差 `deltaEHue`（hueWeight=0 时等价于旧 CIE76 ΔE）；
+ * weighted-rgb 模式复刻旧「拼豆工具箱」的 0.3/0.59/0.11 距离。
  */
 export function nearestIndex(
   r: number,
@@ -290,13 +300,76 @@ export function nearestIndex(
   b: number,
   palette: PaletteEntry[],
   metric: DistanceMetric = 'lab',
+  hueWeight = DEFAULT_HUE_WEIGHT,
 ): number {
   if (!palette.length) return -1
+  return prepareNearest(palette, metric, hueWeight)(r, g, b)
+}
+
+/**
+ * 把 (调色板, 度量) 编译成一个逐像素调用的匹配函数。
+ *
+ * 整张图会给每个像素遍历一遍调色板，所以色板一侧的彩度/色相在这里算一次就固定下来，
+ * 逐像素只剩加减乘除。语义与 `nearestIndex` 完全一致（它内部也是调这里）。
+ */
+export function prepareNearest(
+  palette: PaletteEntry[],
+  metric: DistanceMetric = 'lab',
+  hueWeight = DEFAULT_HUE_WEIGHT,
+): (r: number, g: number, b: number) => number {
+  const n = palette.length
+  if (!n) return () => -1
+
   if (metric === 'weighted-rgb') {
+    return (r, g, b) => {
+      let best = Infinity
+      let bestIdx = 0
+      for (let i = 0; i < n; i++) {
+        const d = weightedRgbDistance(r, g, b, palette[i].rgb)
+        if (d < best) {
+          best = d
+          bestIdx = i
+        }
+      }
+      return bestIdx
+    }
+  }
+
+  const labs = palette.map((e) => e.lab)
+
+  // hueWeight = 0 就是原本的 CIE76，别绕极坐标那一圈（色相项需要 dH，这里给不出来）
+  if (hueWeight <= 0) {
+    return (r, g, b) => {
+      const lab = rgbToLab([r, g, b])
+      let best = Infinity
+      let bestIdx = 0
+      for (let i = 0; i < n; i++) {
+        const d = deltaE(lab, labs[i])
+        if (d < best) {
+          best = d
+          bestIdx = i
+        }
+      }
+      return bestIdx
+    }
+  }
+
+  const cs = new Float64Array(n)
+  const hs = new Float64Array(n)
+  for (let i = 0; i < n; i++) {
+    const [c, h] = labPolar(labs[i])
+    cs[i] = c
+    hs[i] = h
+  }
+
+  return (r, g, b) => {
+    const lab = rgbToLab([r, g, b])
+    const cIn = Math.hypot(lab[1], lab[2])
+    const hIn = Math.atan2(lab[2], lab[1])
     let best = Infinity
     let bestIdx = 0
-    for (let i = 0; i < palette.length; i++) {
-      const d = weightedRgbDistance(r, g, b, palette[i].rgb)
+    for (let i = 0; i < n; i++) {
+      const d = deltaEHuePolar(lab[0] - labs[i][0], cIn, hIn, cs[i], hs[i], hueWeight)
       if (d < best) {
         best = d
         bestIdx = i
@@ -304,18 +377,6 @@ export function nearestIndex(
     }
     return bestIdx
   }
-
-  const lab = rgbToLab([r, g, b])
-  let best = Infinity
-  let bestIdx = 0
-  for (let i = 0; i < palette.length; i++) {
-    const d = deltaE(lab, palette[i].lab)
-    if (d < best) {
-      best = d
-      bestIdx = i
-    }
-  }
-  return bestIdx
 }
 
 /** 去重并保留顺序 */

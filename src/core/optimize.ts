@@ -1,4 +1,5 @@
-import { deltaE, rgbToLab } from './color.ts'
+import { deltaEHue, rgbToLab } from './color.ts'
+import { labPolar } from './color.ts'
 import type { PaletteEntry } from './palette.ts'
 import type { RGB, Pixmap } from './types.ts'
 
@@ -117,6 +118,13 @@ export interface OptimizeConfig {
   greedyInit: boolean
   /** 退火后做一轮贪心替换精修 */
   polish: boolean
+  /**
+   * 色相权重：距离用 `deltaEHue(lab, lab, hueWeight)` 算。
+   * 0 = 旧 CIE76（会对低彩度区的色相视而不见）；默认 2。
+   */
+  hueWeight: number
+  /** 是否给面积够得着的色相族各保底留一颗豆 */
+  hueFamilies: boolean
 }
 
 export const DEFAULT_OPTIMIZE_CONFIG: OptimizeConfig = {
@@ -131,9 +139,45 @@ export const DEFAULT_OPTIMIZE_CONFIG: OptimizeConfig = {
   mandatory: true,
   greedyInit: true,
   polish: true,
+  hueWeight: 2,
+  hueFamilies: true,
 }
 
 export const MANDATORY_MARD = ['H02', 'H07']
+
+/**
+ * 色相族保底。
+ *
+ * 只压平均 ΔE 的时候，面积小的色相族（一点青、一点紫）会被整体压进邻近族 ——
+ * 代价只有「面积 × 很小的 ΔE」，但图纸上那一块的颜色就彻底变味了。所以按色相对
+ * 目标色分族，每个「面积够得着」的族至少留一颗豆在自己的色相里。
+ *
+ * 族不按硬分箱判定（358° 和 2° 明明只差 4°），而是按与族中心的角度距离。
+ */
+const FAMILY_BIN_DEG = 30
+/** 目标色彩度低于它算无彩色，不参与分族 */
+const FAMILY_MIN_CHROMA = 8
+/** 族在整张图里的面积占比低于它就不强求（否则零碎小色会被强塞一颗豆） */
+const FAMILY_MIN_SHARE = 0.02
+/** 与族中心的角度距离在这个范围内算「同族」 */
+const FAMILY_TOLERANCE_DEG = 30
+/** 为了保住一个族，最多允许平均 ΔE 上涨多少 */
+const FAMILY_MAX_COST = 1.5
+
+export interface HueFamily {
+  /** 族中心的色相角（度） */
+  center: number
+  /** 属于这个族的目标色下标 */
+  members: number[]
+  /** 面积占比（按出现次数加权） */
+  share: number
+}
+
+/** 两个色相角之间的最小夹角（度） */
+function hueGap(a: number, b: number): number {
+  const d = Math.abs(a - b) % 360
+  return d > 180 ? 360 - d : d
+}
 
 export interface OptimizeStats {
   min: number
@@ -212,7 +256,15 @@ export class PaletteOptimizer {
   private scratchD = new Float64Array(0)
   private scratchI = new Int32Array(0)
 
+  /** 每个目标色 / 候选色的彩度与色相角，分族与覆盖检查都靠它 */
+  private targetC = new Float64Array(0)
+  private targetH = new Float64Array(0)
+  private candC = new Float64Array(0)
+  private candH = new Float64Array(0)
+
   private fixed = new Set<number>()
+  /** 本次要保底的色相族（ensureFamilies 里算一次，isSoleHolder 复用） */
+  private families: HueFamily[] = []
   private running = false
   private bestSelected: number[] = []
 
@@ -222,6 +274,14 @@ export class PaletteOptimizer {
     this.targetMode = targetMode
     this.random = new RandomGenerator(config.seed)
     this.c = entries.length
+
+    this.candC = new Float64Array(this.c)
+    this.candH = new Float64Array(this.c)
+    for (let i = 0; i < this.c; i++) {
+      const [c, h] = labPolar(entries[i].lab)
+      this.candC[i] = c
+      this.candH[i] = (h * 180) / Math.PI
+    }
 
     if (config.mandatory) {
       for (let i = 0; i < entries.length; i++) {
@@ -247,12 +307,20 @@ export class PaletteOptimizer {
         Math.min(255, Math.max(0, Math.round(b)))
     }
 
+    this.targetC = new Float64Array(this.t)
+    this.targetH = new Float64Array(this.t)
+    for (let i = 0; i < this.t; i++) {
+      const [c, h] = labPolar(samples[i].lab)
+      this.targetC[i] = c
+      this.targetH[i] = (h * 180) / Math.PI
+    }
+
     this.dist = new Float64Array(this.t * this.c)
     for (let i = 0; i < this.t; i++) {
       const lab = samples[i].lab
       const base = i * this.c
       for (let j = 0; j < this.c; j++) {
-        this.dist[base + j] = deltaE(lab, this.entries[j].lab)
+        this.dist[base + j] = deltaEHue(lab, this.entries[j].lab, this.config.hueWeight ?? 2)
       }
     }
 
@@ -361,6 +429,112 @@ export class PaletteOptimizer {
   }
 
   /**
+   * 按色相把目标色分族。只有面积占比够得着的族才会进名单，
+   * 族数超过预算时按面积取前面几个 —— 预算本来就不够，保底也保不过来。
+   */
+  private hueFamiliesOf(budget: number): HueFamily[] {
+    const bins = new Map<number, { w: number; cos: number; sin: number; members: number[] }>()
+    const binCount = Math.max(1, Math.round(360 / FAMILY_BIN_DEG))
+    for (let i = 0; i < this.t; i++) {
+      if (this.targetC[i] < FAMILY_MIN_CHROMA) continue
+      const bin = Math.floor(this.targetH[i] / FAMILY_BIN_DEG) % binCount
+      const rad = (this.targetH[i] * Math.PI) / 180
+      const w = this.weights[i]
+      let acc = bins.get(bin)
+      if (!acc) {
+        acc = { w: 0, cos: 0, sin: 0, members: [] }
+        bins.set(bin, acc)
+      }
+      acc.w += w
+      acc.cos += Math.cos(rad) * w
+      acc.sin += Math.sin(rad) * w
+      acc.members.push(i)
+    }
+
+    const total = this.weightSum || 1
+    const out: HueFamily[] = []
+    for (const acc of bins.values()) {
+      const share = acc.w / total
+      if (share < FAMILY_MIN_SHARE) continue
+      // 族中心用加权圆周平均：直接按分箱中点会被边界上的颜色带偏
+      const center = ((Math.atan2(acc.sin, acc.cos) * 180) / Math.PI + 360) % 360
+      out.push({ center, members: acc.members, share })
+    }
+    out.sort((a, b) => b.share - a.share)
+    return out.slice(0, Math.max(1, budget))
+  }
+
+  /** 当前选色里，这个族有没有一颗「自己色相」的豆 */
+  private familyHeld(f: HueFamily, skip?: number): boolean {
+    for (const j of this.selected) {
+      if (j === skip) continue
+      if (this.candC[j] < FAMILY_MIN_CHROMA) continue
+      if (hueGap(this.candH[j], f.center) <= FAMILY_TOLERANCE_DEG) return true
+    }
+    return false
+  }
+
+  /**
+   * 色相族保底：退火只认平均 ΔE，面积小的族整族消失也不会被惩罚，
+   * 这里对缺族的补一颗，换掉「走了损失最小」的那颗豆，且涨幅超过 FAMILY_MAX_COST 就不动。
+   */
+  private ensureFamilies(budget: number): void {
+    if (!this.config.hueFamilies) return
+    this.families = this.hueFamiliesOf(budget)
+    if (this.families.length < 2) return
+
+    for (const f of this.families) {
+      if (this.familyHeld(f)) continue
+
+      // 这个族最该有的那颗豆：族内目标色的加权距离之和最小
+      let bestBead = -1
+      let bestScore = Infinity
+      for (let j = 0; j < this.c; j++) {
+        if (this.inState[j]) continue
+        if (this.candC[j] < FAMILY_MIN_CHROMA) continue
+        if (hueGap(this.candH[j], f.center) > FAMILY_TOLERANCE_DEG) continue
+        let score = 0
+        for (const i of f.members) score += this.dist[i * this.c + j] * this.weights[i]
+        if (score < bestScore) {
+          bestScore = score
+          bestBead = j
+        }
+      }
+      if (bestBead < 0) continue
+
+      const before = this.objectiveOf(this.statsFrom(this.nearestD, this.nearestI))
+      let bestOut = -1
+      let bestObj = Infinity
+      for (const out of this.selected) {
+        if (this.fixed.has(out)) continue
+        // 别为了补一个族，把别的族的唯一一颗豆换掉
+        let sole = false
+        for (const g of this.families) {
+          if (hueGap(this.candH[out], g.center) > FAMILY_TOLERANCE_DEG) continue
+          if (!this.familyHeld(g, out)) {
+            sole = true
+            break
+          }
+        }
+        if (sole) continue
+        const obj = this.objectiveOf(this.evaluateSwap(out, bestBead))
+        if (obj < bestObj) {
+          bestObj = obj
+          bestOut = out
+        }
+      }
+      if (bestOut < 0) continue
+      if (bestObj - before > FAMILY_MAX_COST) continue
+
+      this.evaluateSwap(bestOut, bestBead)
+      this.commitScratch()
+      this.inState[bestOut] = 0
+      this.inState[bestBead] = 1
+      this.selected[this.selected.indexOf(bestOut)] = bestBead
+    }
+  }
+
+  /**
    * 补色：只盯 ΔE 的时候，优化会为了压低误差把颜色数一起压掉 ——
    * 原图 8 种颜色，预算 8 颗豆，它只肯用 6 颗（另外几种各自挤在同一颗豆上）。
    *
@@ -393,16 +567,30 @@ export class PaletteOptimizer {
         for (const i of members) {
           const base = i * this.c
           const cur = this.dist[base + b]
-          // 这颗目标色自己的「空位」：最近的、还没被别的豆占用的候选色
+          // 这颗目标色自己的「空位」：最近的、还没被别的豆占用的候选色。
+          // 先只找同色相的空位，实在没有才放开 —— 补色时把颜色挪到隔壁色相，
+          // 正是图纸上「这一格颜色不对」最常见的来源。
           let bead = -1
           let best = Infinity
-          for (let j = 0; j < this.c; j++) {
-            if (used.has(j)) continue
-            const d = this.dist[base + j]
-            if (d < best) {
-              best = d
-              bead = j
+          const wantHue = this.targetC[i] >= FAMILY_MIN_CHROMA
+          for (let pass = 0; pass < 2; pass++) {
+            if (pass === 1 && !wantHue) break
+            for (let j = 0; j < this.c; j++) {
+              if (used.has(j)) continue
+              if (
+                pass === 0 &&
+                (this.candC[j] < FAMILY_MIN_CHROMA ||
+                  hueGap(this.candH[j], this.targetH[i]) > FAMILY_TOLERANCE_DEG)
+              ) {
+                continue
+              }
+              const d = this.dist[base + j]
+              if (d < best) {
+                best = d
+                bead = j
+              }
             }
+            if (bead >= 0) break
           }
           if (bead < 0) continue
           // 代价 = 这个颜色换到新豆上多出来的 ΔE
@@ -580,7 +768,11 @@ export class PaletteOptimizer {
       candidateDist = new Float64Array(this.c * this.c)
       for (let i = 0; i < this.c; i++) {
         for (let j = 0; j < this.c; j++) {
-          candidateDist[i * this.c + j] = deltaE(this.entries[i].lab, this.entries[j].lab)
+          candidateDist[i * this.c + j] = deltaEHue(
+            this.entries[i].lab,
+            this.entries[j].lab,
+            this.config.hueWeight ?? 2,
+          )
         }
       }
     }
@@ -701,6 +893,7 @@ export class PaletteOptimizer {
 
     // 结果色号数 = min(预算, 原图颜色数)。优化出来的解没用到这么多就把颜色补回来。
     const resultBudget = Math.max(this.fixed.size, Math.min(cfg.k, this.t))
+    this.ensureFamilies(resultBudget)
     this.fillToBudget(resultBudget)
 
     const mapping: { key: number; hex: string }[] = []
