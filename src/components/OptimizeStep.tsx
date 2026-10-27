@@ -535,9 +535,14 @@ function SweepCard({
   const ref = useRef<HTMLCanvasElement>(null)
   useEffect(() => {
     const canvas = ref.current
-    if (!canvas || !result.preview) return
-    const s = Math.max(1, Math.min(4, Math.floor(160 / Math.max(result.preview.width, result.preview.height)) || 1))
-    drawPixmap(canvas, result.preview, s, false)
+    const img = result.preview
+    if (!canvas || !img) return
+    // 按卡片实际宽度出图：手机上一行两张时卡片比桌面宽，
+    // 固定 160 会先被画小再被 CSS 拉伸，边缘会发虚
+    const cssWidth = canvas.parentElement?.clientWidth ?? 160
+    const dpr = typeof window === 'undefined' ? 1 : window.devicePixelRatio || 1
+    const scale = Math.max(1, Math.ceil((cssWidth * dpr) / Math.max(img.width, img.height)))
+    drawPixmap(canvas, img, Math.min(scale, 8), false)
   }, [result.preview])
 
   return (
@@ -555,9 +560,11 @@ function SweepCard({
         <b>{result.label}</b>
         {picked && <i className="material-icons sm">check</i>}
       </div>
-      <div className="tiny muted">
-        {result.budget} 色 · ΔE {result.stats.weightedAvg.toFixed(2)}
-        {result.loss > 0.005 ? ` · 层次损失 ${result.loss.toFixed(2)}` : ''}
+      {/* 拆成几个不换行的词：窄卡片上整句会被拆得很难看 */}
+      <div className="sweep-meta tiny muted">
+        <span>{result.budget} 色</span>
+        <span>ΔE {result.stats.weightedAvg.toFixed(2)}</span>
+        {result.loss > 0.005 && <span>层次损失 {result.loss.toFixed(2)}</span>}
       </div>
       <div className="sweep-hint tiny muted">{result.hint}</div>
     </button>

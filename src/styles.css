@@ -1124,13 +1124,17 @@ input[type='checkbox'] {
 
 .sweep-grid {
   display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(150px, 1fr));
+  /* 方案固定四套：宽屏一行四张，窄屏 2×2。
+     不用 auto-fill —— 卡片里是 canvas，宽度一抖列数就跟着抖，
+     手机上会变成一行四张挤成小方块。*/
+  grid-template-columns: repeat(4, minmax(0, 1fr));
   gap: 10px;
 }
 
 .sweep-card {
   display: grid;
   gap: 4px;
+  min-width: 0;
   align-content: start;
   padding: 8px;
   text-align: left;
@@ -1156,10 +1160,23 @@ input[type='checkbox'] {
 .sweep-card canvas {
   display: block;
   width: 100%;
+  max-width: 100%;
   height: auto;
   border-radius: 2px;
   image-rendering: pixelated;
   background-color: var(--md-background);
+}
+
+/* 指标拆成几个不换行的词：窄卡片上 `层次损失` 不会被拆成「层次损 / 失」 */
+.sweep-meta {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 1px 8px;
+  font-variant-numeric: tabular-nums;
+}
+
+.sweep-meta span {
+  white-space: nowrap;
 }
 
 /* 全量色谱模式没有网格可看，用一排色块代替 */
@@ -2713,6 +2730,20 @@ button.btn-floating.disabled {
     max-width: 100%;
     padding-left: var(--sp-2);
     border-top: 1px solid var(--md-outline);
+  }
+
+  /* 多方案对比：移动端固定 2×2 —— 一行四张会把预览图挤成小方块，
+     横向还容易溢出屏幕 */
+  .sweep-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  /* 两列时卡片很宽，预览图别长成一整屏高：封顶后居中 */
+  .sweep-card canvas {
+    width: auto;
+    max-width: 100%;
+    max-height: 240px;
+    margin-inline: auto;
   }
 
   /* ---------- 主区留白收一点，给内容让出宽度 ---------- */
