@@ -109,9 +109,12 @@ export function hueWeightAt(chroma: number, wHue: number): number {
  * 色相项沿用 CIE76 的形式 `2√(C1·C2)·sin(Δh/2)`，再乘一个随彩度渐入的权重：
  *
  * - `wHue = 0` 退回纯 CIE76（`deltaE`）。
- * - 彩度 ≤6：权重 1，和 CIE76 一样，淡色不会被推向纯白。
- * - 彩度 ≥20：权重 `wHue`（默认 2），低彩度区「整块变味」的问题才真正被治住。
+ * - 权重按**源色**（要被还原的那个颜色）的彩度取值：≤6 时是 1，淡色不会被推向纯白；
+ *   ≥20 时用满 `wHue`（默认 2），「整块变味」的问题才真正被治住。
  * - 另外，彩度下降按 `SAT_LOSS_GAIN` 倍计，无彩色不再能靠「没有色相」躲开惩罚。
+ *
+ * 为什么权重挂在源色而不是两端的较小值：灰豆的彩度只有 4，取 min 就把权重压回 1，
+ * 于是深棕会被配成一颗冷灰 —— 报表上「色相误差」不难看，图上那块颜色却废了。
  *
  * 为什么不用「彩度下限 + 色相角弧长」：那样在淡色区会给出和 dL/dC 同量级甚至更大的
  * 惩罚，把浅色头发直接换成白豆 —— 色相是保住了，饱和度没了。
@@ -142,7 +145,9 @@ export function deltaEHuePolar(
   let d = h1 > h2 ? h1 - h2 : h2 - h1
   if (d > Math.PI) d = 2 * Math.PI - d
   const chord = 2 * Math.sqrt(c1 * c2) * Math.sin(d / 2)
-  const w = hueWeightAt(c1 < c2 ? c1 : c2, wHue)
+  // 权重只看「被还原的那个颜色有多彩」：用两端的较小值会被无彩色候选钻空子 ——
+  // 一颗灰豆的彩度是 4，min 就变 4，色相权重直接掉回 1，于是深棕被配成冷灰。
+  const w = hueWeightAt(c1, wHue)
   const dH = w * chord
 
   return Math.sqrt(dL * dL + dC * dC + dH * dH)

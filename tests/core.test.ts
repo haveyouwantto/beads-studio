@@ -1243,8 +1243,14 @@ section('颜色度量 · 色相敏感 ΔE')
   // 色相权重随彩度渐入：高彩度区罚得重，淡色区几乎不动（否则浅色会被推向白豆）
   const ratio = (x: RGB, y: RGB) => deltaEHue(x, y, 2) / deltaE(x, y)
   const vivid = ratio(labOf('#3DF0F0'), labOf('#F03DF0'))
-  const faint = ratio(labOf('#586880'), labOf('#697D80'))
-  check('彩度越高，色相偏差被罚得越重', vivid > faint * 1.4, `${vivid.toFixed(2)} vs ${faint.toFixed(2)}`)
+  const mid = ratio(labOf('#586880'), labOf('#697D80'))
+  const faintRatio = ratio(labOf('#E9DFDF'), labOf('#DFDFE9'))
+  check(
+    '彩度越高，色相偏差被罚得越重',
+    vivid > mid && mid > faintRatio,
+    `${vivid.toFixed(2)} / ${mid.toFixed(2)} / ${faintRatio.toFixed(2)}`,
+  )
+  check('淡色之间几乎不按色相罚', faintRatio < 1.1, `${faintRatio.toFixed(2)}`)
 
   // 淡暖色：同色相、彩度略高的豆必须比「接近纯白」的豆更近 ——
   // 这条是「头发变白」的回归测试，色相项一旦在低彩度区发力过猛就会反过来
