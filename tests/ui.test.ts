@@ -339,6 +339,52 @@ section('② 优化颜色')
   }
 }
 
+section('② 优化颜色 · 多方案对比')
+{
+  const grid = useStudio.getState().grid
+  if (grid) {
+    await act(async () => {
+      useStudio.setState({ activeStage: 'optimize' })
+      useStudio.getState().setOptimizeConfig({ k: 8, steps: 2000, patience: 400, seed: 5 })
+      await useStudio.getState().runSweep('mixed')
+    })
+    const s = useStudio.getState().sweep
+    check('一次跑完四套方案', s.status === 'done' && s.results.length === 4, `${s.status}/${s.results.length}`)
+    check(
+      '每套都出了和网格同尺寸的成品预览',
+      s.results.every((r) => r.preview?.width === grid.width && r.preview?.height === grid.height),
+    )
+    check('每套都选出了色号', s.results.every((r) => r.entries.length > 0 && r.budget > 0))
+    check('还没选之前不覆盖优化结果', s.pickedId === null)
+    const cards = container.querySelectorAll('.sweep-card')
+    check('对比卡片渲染出来了', cards.length === 4, `${cards.length}`)
+
+    await act(async () => {
+      ;(cards[0] as HTMLButtonElement).click()
+    })
+    const picked = useStudio.getState()
+    const first = s.results[0]
+    check('点一张就选中它', picked.sweep.pickedId === first.id, `${picked.sweep.pickedId}`)
+    check(
+      '选中的那套成为优化结果',
+      picked.optimizedPalette.map((e) => e.hex).join() === first.entries.map((e) => e.hex).join(),
+    )
+    check('分配表也一起换过来', picked.optimizedMap.length === first.mapping.length)
+    check('选中的卡片有标记', container.querySelectorAll('.sweep-card.on').length === 1)
+
+    const applyBtn = [...container.querySelectorAll('button')].find((b) =>
+      b.textContent?.includes('用这张出图纸'),
+    )
+    check('有「用这张出图纸」按钮', Boolean(applyBtn))
+    await act(async () => {
+      ;(applyBtn as HTMLButtonElement | undefined)?.click()
+    })
+    const applied = useStudio.getState()
+    check('应用后进图纸阶段', applied.activeStage === 'pattern', applied.activeStage)
+    check('色板换成选中的那套', applied.palette.map((e) => e.hex).join() === first.entries.map((e) => e.hex).join())
+  }
+}
+
 section('③ 转拼豆图纸')
 {
   const st = useStudio.getState()

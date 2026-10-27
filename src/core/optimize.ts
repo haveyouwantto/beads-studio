@@ -551,7 +551,9 @@ export class PaletteOptimizer {
     this.pairOrig = new Float64Array(0)
     this.pairW = new Float64Array(0)
     this.pairWSum = 0
-    if (!this.contrastActive || this.t < 2) return
+    // 对比强度为 0 也照样建表：层次损失要作为「这套方案的代价」报出去，
+    // 不然「只求像」那张在对比栏里会显示成毫无损失，显得它全面占优
+    if (this.t < 2) return
     this.ensureCandDist()
 
     const wHue = this.config.hueWeight ?? 2
@@ -699,7 +701,7 @@ export class PaletteOptimizer {
       this.nearestI[i] = bestIdx
     }
     // 层次损失只在分配变了的时候才变，全量重算一次即可（O(对数)，很便宜）
-    if (this.contrastActive) this.currentContrast = this.contrastOf(this.nearestI)
+    if (this.pairWSum) this.currentContrast = this.contrastOf(this.nearestI)
   }
 
   /**
@@ -1610,7 +1612,7 @@ export class PaletteOptimizer {
     // 最后拆层：这一步会故意把某些颜色钉到「不是最近」的豆上，所以必须排在所有
     // 「按最近色重算」的收尾之后；拆完的分配就是最终图，别再 rebuildNearest
     this.splitLayers(resultBudget)
-    if (this.contrastActive) this.currentContrast = this.contrastOf(this.nearestI)
+    if (this.pairWSum) this.currentContrast = this.contrastOf(this.nearestI)
 
     const mapping: { key: number; hex: string }[] = []
     for (let i = 0; i < this.t; i++) {

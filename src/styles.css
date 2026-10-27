@@ -1119,6 +1119,79 @@ input[type='checkbox'] {
   white-space: pre-wrap;
 }
 
+/* ---------- 多方案对比 ----------
+   卡片里的指标是灰的：这一栏是用来「看」的，不是用来比数字的。 */
+
+.sweep-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(150px, 1fr));
+  gap: 10px;
+}
+
+.sweep-card {
+  display: grid;
+  gap: 4px;
+  align-content: start;
+  padding: 8px;
+  text-align: left;
+  background-color: var(--md-surface-2);
+  border: 1px solid var(--md-outline);
+  border-radius: var(--radius);
+  color: var(--text);
+  font-family: var(--font-sans);
+  cursor: pointer;
+  transition: border-color 0.12s, background-color 0.12s;
+}
+
+.sweep-card:hover {
+  border-color: var(--md-outline-strong);
+  background-color: var(--md-surface-3);
+}
+
+.sweep-card.on {
+  border-color: var(--md-primary);
+  box-shadow: inset 0 0 0 1px var(--md-primary);
+}
+
+.sweep-card canvas {
+  display: block;
+  width: 100%;
+  height: auto;
+  border-radius: 2px;
+  image-rendering: pixelated;
+  background-color: var(--md-background);
+}
+
+/* 全量色谱模式没有网格可看，用一排色块代替 */
+.sweep-strip {
+  display: flex;
+  height: 54px;
+  border-radius: 2px;
+  overflow: hidden;
+}
+
+.sweep-strip i {
+  flex: 1 1 auto;
+}
+
+.sweep-name {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 6px;
+  font-size: 13px;
+  font-weight: 500;
+  margin-top: 2px;
+}
+
+.sweep-name .material-icons.sm {
+  color: var(--md-primary);
+}
+
+.sweep-hint {
+  line-height: 1.4;
+}
+
 /* ---------- 色卡 ---------- */
 
 .swatch-grid {

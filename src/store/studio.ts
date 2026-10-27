@@ -35,6 +35,7 @@ import {
   type PersistedProject,
 } from '../core/storage.ts'
 import type { Pixmap, Quad, Rect, SampleMode } from '../core/types.ts'
+import { sweepVariants, type SweepAxis } from '../core/sweep.ts'
 import {
   DEFAULT_OPTIMIZE_CONFIG,
   PaletteOptimizer,
@@ -108,6 +109,58 @@ const EMPTY_RUN: OptimizeRunState = {
   elapsedMs: 0,
   reason: '',
   budget: 0,
+}
+
+/**
+ * 多方案对比里的一套结果。
+ *
+ * 存的是「成品图」而不是只存色号：挑方案靠的是看，不是看 ΔE ——
+ * 平均 ΔE 最低的那张经常不是最好看的那张。
+ */
+export interface SweepResult {
+  id: string
+  label: string
+  hint: string
+  patch: Partial<OptimizeConfig>
+  entries: PaletteEntry[]
+  mapping: { key: number; hex: string }[]
+  stats: OptimizeStats
+  /** 实际用上的色数 */
+  budget: number
+  /** 层次损失（0 起，越小越好） */
+  loss: number
+  elapsedMs: number
+  /** 按这套色号落子的成品预览；全量色谱模式下没有网格，为 null */
+  preview: Pixmap | null
+}
+
+export interface SweepState {
+  status: 'idle' | 'running' | 'done' | 'stopped'
+  axis: SweepAxis
+  /** 正在跑第几套（0 起） */
+  index: number
+  total: number
+  /** 总进度 0～100，跨方案累计 */
+  progress: number
+  results: SweepResult[]
+  /** 用户挑中的那套 */
+  pickedId: string | null
+  candidates: number
+  targets: number
+  elapsedMs: number
+}
+
+const EMPTY_SWEEP: SweepState = {
+  status: 'idle',
+  axis: 'mixed',
+  index: 0,
+  total: 0,
+  progress: 0,
+  results: [],
+  pickedId: null,
+  candidates: 0,
+  targets: 0,
+  elapsedMs: 0,
 }
 
 export interface ProjectTab {
@@ -240,6 +293,9 @@ interface StudioState {
   optimizedMap: { key: number; hex: string }[]
   codeSystem: CodeSystem
 
+  // --- 阶段 2 附加：多方案对比 ---
+  sweep: SweepState
+
   // --- actions ---
   setStage: (s: StageId) => void
   goNext: () => void
@@ -297,6 +353,13 @@ interface StudioState {
   stopOptimizer: () => void
   applyOptimizedPalette: () => void
   clearOptimizedPalette: () => void
+  /** 多方案对比：一次跑几套参数，每套出一张成品 */
+  runSweep: (axis?: SweepAxis) => Promise<void>
+  stopSweep: () => void
+  /** 挑一套作为优化结果（apply = true 时直接进「转拼豆图纸」） */
+  pickSweepResult: (id: string, apply?: boolean) => void
+  setSweepAxis: (axis: SweepAxis) => void
+  clearSweep: () => void
 
   // --- 标签页 ---
   newTab: () => void
@@ -315,7 +378,46 @@ interface StudioState {
   clearNotice: () => void
 }
 
+type OptimizeInputs =
+  | { error: string }
+  | {
+      candidates: PaletteEntry[]
+      targetInfo: { samples: TargetSample[]; uniqueColors: number; pixels: number; bucket: number }
+    }
+
+/** 单次优化和「多方案对比」共用同一份输入 —— 两边算出来的数才可比 */
+function optimizeInputs(state: StudioState): OptimizeInputs {
+  if (state.optimizeTargetMode === 'grid' && !state.grid) {
+    return { error: '请先在「规范化」中生成像素网格，再运行配色优化' }
+  }
+
+  // 候选色 = 用户在「选择候选色」里勾选过的子集；没筛过就用整本色号库
+  const allowed = state.candidateHex.length ? new Set(state.candidateHex) : null
+  const picked = allowed ? state.libraryPalette.filter((e) => allowed.has(e.hex)) : state.libraryPalette
+  // 和出图保持一致：半透明豆按叠在图纸背景上的观感参与选色
+  const candidates = matchPalette(picked, state.renderOptions.background)
+  if (!candidates.length) {
+    return {
+      error: allowed ? '当前勾选的候选色是空的，请先在「选择候选色」里至少勾一个颜色' : '色号库为空',
+    }
+  }
+
+  const targetInfo =
+    state.optimizeTargetMode === 'grid' && state.grid
+      ? targetsFromPixmap(state.grid, { maxTargets: 1200 })
+      : {
+          samples: candidates.map((e) => ({ rgb: e.rgb, lab: e.lab, count: 1 })),
+          uniqueColors: candidates.length,
+          pixels: candidates.length,
+          bucket: 0,
+        }
+  if (!targetInfo.samples.length) return { error: '当前网格没有可用的目标颜色' }
+  return { candidates, targetInfo }
+}
+
 let activeOptimizer: PaletteOptimizer | null = null
+/** 多方案对比被中止（停止按钮 / 换项目） */
+let sweepCancelled = false
 
 function newTabId(): string {
   return `p${Date.now().toString(36)}${Math.random().toString(36).slice(2, 7)}`
@@ -383,6 +485,8 @@ function projectPatch(project: ProjectState): Partial<StudioState> {
     ...project,
     libraryPalette: buildLibraryPalette({ includeExtended: project.includeExtended }),
     optimizeRun: { ...EMPTY_RUN },
+    // 对比方案里存着上一张图的成品预览，换项目必须清掉，否则会张冠李戴
+    sweep: { ...EMPTY_SWEEP },
   }
 }
 
@@ -673,6 +777,7 @@ export const useStudio = create<StudioState>((set, get) => ({
   editSwatches: [],
   libraryPalette: buildLibraryPalette({ includeExtended: false }),
   optimizeRun: { ...EMPTY_RUN },
+  sweep: { ...EMPTY_SWEEP },
   // 方案存在本地，跨项目共享，所以随 store 一起初始化
   candidateSets: readCandidateSets(),
 
@@ -811,7 +916,7 @@ export const useStudio = create<StudioState>((set, get) => ({
 
   applyGridEdit: (next) => {
     // 只改「工作用的网格」，规范化那份原始结果原封不动
-    set({ grid: next, result: null, edited: true })
+    set({ grid: next, result: null, edited: true, sweep: { ...EMPTY_SWEEP } })
     get().recomputeResult()
   },
 
@@ -889,7 +994,8 @@ export const useStudio = create<StudioState>((set, get) => ({
     }
 
     // 重新生成 = 丢掉编辑过的东西：grid 和「规范化原始结果」都换成新算出来的这份
-    set({ grid, regularizedGrid: grid, edited: false })
+    // 对比方案里存着上一张网格的成品预览，跟着一起清掉
+    set({ grid, regularizedGrid: grid, edited: false, sweep: { ...EMPTY_SWEEP } })
     get().recomputeResult()
   },
 
@@ -1014,51 +1120,14 @@ export const useStudio = create<StudioState>((set, get) => ({
 
   runOptimizer: async () => {
     const state = get()
-    const grid = state.grid
     const started = performance.now()
 
-    if (state.optimizeTargetMode === 'grid' && !grid) {
-      set({ error: '请先在「规范化」中生成像素网格，再运行配色优化' })
+    const prep = optimizeInputs(state)
+    if ('error' in prep) {
+      set({ error: prep.error })
       return
     }
-
-    // 候选色 = 用户在「选择候选色」里勾选过的子集；没筛过就用整本色号库
-    const allowed = state.candidateHex.length ? new Set(state.candidateHex) : null
-    const picked = allowed
-      ? state.libraryPalette.filter((e) => allowed.has(e.hex))
-      : state.libraryPalette
-    // 和出图保持一致：半透明豆按叠在图纸背景上的观感参与选色
-    const candidates = matchPalette(picked, state.renderOptions.background)
-    if (!candidates.length) {
-      set({
-        error: allowed
-          ? '当前勾选的候选色是空的，请先在「选择候选色」里至少勾一个颜色'
-          : '色号库为空',
-      })
-      return
-    }
-
-    let targetInfo: { samples: TargetSample[]; uniqueColors: number; pixels: number; bucket: number } = {
-      samples: [],
-      uniqueColors: 0,
-      pixels: 0,
-      bucket: 0,
-    }
-    if (state.optimizeTargetMode === 'grid' && grid) {
-      targetInfo = targetsFromPixmap(grid, { maxTargets: 1200 })
-    } else {
-      targetInfo = {
-        samples: candidates.map((e) => ({ rgb: e.rgb, lab: e.lab, count: 1 })),
-        uniqueColors: candidates.length,
-        pixels: candidates.length,
-        bucket: 0,
-      }
-    }
-
-    if (!targetInfo.samples.length) {
-      set({ error: '当前网格没有可用的目标颜色' })
-      return
-    }
+    const { candidates, targetInfo } = prep
 
     const optimizer = new PaletteOptimizer(candidates, state.optimizeConfig, state.optimizeTargetMode)
     activeOptimizer = optimizer
@@ -1134,6 +1203,159 @@ export const useStudio = create<StudioState>((set, get) => ({
   stopOptimizer: () => {
     activeOptimizer?.stop()
   },
+
+  setSweepAxis: (axis) => set((s) => ({ sweep: { ...s.sweep, axis } })),
+
+  runSweep: async (axisArg) => {
+    const state = get()
+    // 一次只跑一件事：优化器是全局单例，两套并跑会互相踩
+    if (state.sweep.status === 'running' || state.optimizeRun.status === 'running') return
+    const axis = axisArg ?? state.sweep.axis
+    const prep = optimizeInputs(state)
+    if ('error' in prep) {
+      set({ error: prep.error })
+      return
+    }
+    const { candidates, targetInfo } = prep
+    const variants = sweepVariants(axis, state.optimizeConfig)
+    const started = performance.now()
+    sweepCancelled = false
+
+    set({
+      error: null,
+      sweep: {
+        ...EMPTY_SWEEP,
+        status: 'running',
+        axis,
+        total: variants.length,
+        candidates: candidates.length,
+        targets: targetInfo.samples.length,
+      },
+    })
+
+    const results: SweepResult[] = []
+    const toEntries = (idx: number[]) => idx.map((i) => candidates[i]).filter(Boolean)
+
+    for (let vi = 0; vi < variants.length; vi++) {
+      if (sweepCancelled) break
+      const v = variants[vi]
+      // 每套都在当前设置上打补丁：用户调过的开关（加权、色相族、补色…）照旧生效
+      const cfg: OptimizeConfig = { ...state.optimizeConfig, ...v.patch }
+      const opt = new PaletteOptimizer(candidates, cfg, state.optimizeTargetMode)
+      activeOptimizer = opt
+      opt.setTargets(targetInfo.samples)
+
+      const t0 = performance.now()
+      let selected: number[] = []
+      let mapping: { key: number; hex: string }[] = []
+      let stats: OptimizeStats = { min: 0, max: 0, avg: 0, weightedAvg: 0 }
+      let budget = 0
+      let loss = 0
+      try {
+        for await (const ev of opt.run()) {
+          if (ev.type === 'progress') {
+            const overall = (vi + ev.progress / 100) / variants.length
+            set((s) => ({
+              sweep: {
+                ...s.sweep,
+                index: vi,
+                progress: overall * 100,
+                elapsedMs: performance.now() - started,
+              },
+            }))
+          } else if (ev.type === 'completed') {
+            selected = ev.selected
+            mapping = ev.mapping
+            stats = ev.stats
+            budget = ev.budget
+            loss = ev.contrast
+          }
+        }
+      } catch (err) {
+        set({ error: err instanceof Error ? err.message : '多方案对比出错' })
+        break
+      } finally {
+        activeOptimizer = null
+      }
+
+      const entries = toEntries(selected)
+      // 预览走和出图纸完全相同的路径：同一套色号 + 同一份「哪个源色用哪颗豆」的分配。
+      // quantize 强制打开 —— 预览就是要看落子效果，跟着全局开关走会看不出区别
+      const preview =
+        state.optimizeTargetMode === 'grid' && state.grid
+          ? quantizeToPalette(
+              state.grid,
+              matchPalette(entries, state.renderOptions.background),
+              { ...state.quantizeOptions, quantize: true, hueWeight: cfg.hueWeight },
+              mapping,
+            )
+          : null
+
+      results.push({
+        id: v.id,
+        label: v.label,
+        hint: v.hint,
+        patch: v.patch,
+        entries,
+        mapping,
+        stats,
+        budget,
+        loss,
+        elapsedMs: performance.now() - t0,
+        preview,
+      })
+      const done = vi + 1
+      set((s) => ({
+        sweep: {
+          ...s.sweep,
+          results: [...results],
+          index: done,
+          progress: (done / variants.length) * 100,
+          elapsedMs: performance.now() - started,
+        },
+      }))
+      // 让浏览器把这一张先画出来，再去跑下一套
+      await new Promise((resolve) => setTimeout(resolve, 0))
+    }
+
+    set((s) => ({
+      sweep: {
+        ...s.sweep,
+        status: sweepCancelled ? 'stopped' : 'done',
+        progress: sweepCancelled ? s.sweep.progress : 100,
+        elapsedMs: performance.now() - started,
+      },
+    }))
+    sweepCancelled = false
+  },
+
+  stopSweep: () => {
+    sweepCancelled = true
+    activeOptimizer?.stop()
+  },
+
+  pickSweepResult: (id, apply = false) => {
+    const s = get()
+    const r = s.sweep.results.find((x) => x.id === id)
+    if (!r) return
+    set({
+      sweep: { ...s.sweep, pickedId: id },
+      optimizedPalette: r.entries,
+      optimizedMap: r.mapping,
+      optimizeRun: {
+        ...s.optimizeRun,
+        status: 'done',
+        stats: r.stats,
+        progress: 100,
+        elapsedMs: r.elapsedMs,
+        reason: `多方案对比 · ${r.label}（${r.budget} 色）`,
+        budget: r.budget,
+      },
+    })
+    if (apply) get().applyOptimizedPalette()
+  },
+
+  clearSweep: () => set({ sweep: { ...EMPTY_SWEEP } }),
 
   applyOptimizedPalette: () => {
     const entries = get().optimizedPalette

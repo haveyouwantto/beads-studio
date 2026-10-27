@@ -1,12 +1,14 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { tabNameOf, useStudio } from '../store/studio.ts'
 import { Check, Empty, Field, Notice, Panel, Segmented, Stat, Swatch } from './ui.tsx'
-import { targetsFromPixmap } from '../core/optimize.ts'
+import { targetsFromPixmap, type OptimizeStats } from '../core/optimize.ts'
+import type { Pixmap } from '../core/types.ts'
 import { CODE_SYSTEMS, codeOf, compareByCode, swatchHex, type CodeSystem, type PaletteEntry } from '../core/palette.ts'
 import { buildPaletteExport, downloadText, safeFileName } from '../core/export.ts'
 import { drawPixmap } from '../core/render.ts'
 import { CandidateColorsDialog } from './CandidateColorsDialog.tsx'
 import { STAGE_META } from './stages.ts'
+import { SWEEP_AXES, sweepVariants } from '../core/sweep.ts'
 
 export function OptimizeStep() {
   const grid = useStudio((s) => s.grid)
@@ -28,6 +30,11 @@ export function OptimizeStep() {
   const applyOptimizedPalette = useStudio((s) => s.applyOptimizedPalette)
   const codeSystem = useStudio((s) => s.codeSystem)
   const setCodeSystem = useStudio((s) => s.setCodeSystem)
+  const sweep = useStudio((s) => s.sweep)
+  const runSweep = useStudio((s) => s.runSweep)
+  const stopSweep = useStudio((s) => s.stopSweep)
+  const pickSweepResult = useStudio((s) => s.pickSweepResult)
+  const setSweepAxis = useStudio((s) => s.setSweepAxis)
 
   const [copied, setCopied] = useState(false)
   const [showCandidates, setShowCandidates] = useState(false)
@@ -215,6 +222,75 @@ export function OptimizeStep() {
                   onClick={() => downloadExport(sortedResult, codeSystem, 'code', projectName)}
                 >
                   导出色号列表
+                </button>
+              </div>
+            </>
+          )}
+        </Panel>
+
+        <Panel
+          title="多方案对比"
+          hint={
+            sweep.status === 'running'
+              ? `第 ${Math.min(sweep.index + 1, sweep.total)} / ${sweep.total} 套 · ${sweep.progress.toFixed(0)}%`
+              : sweep.results.length
+                ? `${sweep.results.length} 张成品 · 用时 ${(sweep.elapsedMs / 1000).toFixed(1)}s`
+                : '同一条图，几种参数各出一张，挑顺眼的'
+          }
+          actions={
+            <Segmented
+              value={sweep.axis}
+              onChange={setSweepAxis}
+              options={SWEEP_AXES.map((a) => ({ value: a.value, label: a.label }))}
+            />
+          }
+          tight
+        >
+          <button
+            className="btn waves-effect waves-light"
+            style={{ width: '100%' }}
+            onClick={() => (sweep.status === 'running' ? stopSweep() : void runSweep())}
+          >
+            {sweep.status === 'running'
+              ? '停止对比'
+              : `同时跑 ${sweepVariants(sweep.axis, config).length} 套方案`}
+          </button>
+          <div className="tiny muted" style={{ marginTop: 6 }}>
+            {SWEEP_AXES.find((a) => a.value === sweep.axis)?.hint}
+          </div>
+
+          {sweep.status === 'running' && (
+            <div className="progress" style={{ marginTop: 8 }}>
+              <i style={{ width: `${sweep.progress}%` }} />
+            </div>
+          )}
+
+          {sweep.results.length > 0 && (
+            <>
+              <div className="divider" />
+              <div className="sweep-grid">
+                {sweep.results.map((r) => (
+                  <SweepCard
+                    key={r.id}
+                    result={r}
+                    picked={sweep.pickedId === r.id}
+                    onPick={() => pickSweepResult(r.id)}
+                  />
+                ))}
+              </div>
+              <div className="row tight" style={{ marginTop: 12, justifyContent: 'space-between' }}>
+                <span className="tiny muted">
+                  {sweep.pickedId
+                    ? `已选「${sweep.results.find((r) => r.id === sweep.pickedId)?.label}」——点别的图可以换`
+                    : '点一张图选中它'}
+                </span>
+                <button
+                  className="btn btn-small waves-effect waves-light"
+                  disabled={!sweep.pickedId}
+                  onClick={() => sweep.pickedId && pickSweepResult(sweep.pickedId, true)}
+                >
+                  用这张出图纸
+                  <i className="material-icons sm">arrow_forward</i>
                 </button>
               </div>
             </>
@@ -444,4 +520,46 @@ function downloadExport(
   const ext = format === 'json' ? 'json' : 'txt'
   const mime = format === 'json' ? 'application/json' : 'text/plain'
   downloadText(text, `${safeFileName(projectName)}-色板-${system}.${ext}`, mime)
+}
+
+/** 一张对比卡：成品预览 + 一行的量化指标（指标只是参考，挑哪张靠看） */
+function SweepCard({
+  result,
+  picked,
+  onPick,
+}: {
+  result: { id: string; label: string; hint: string; budget: number; loss: number; stats: OptimizeStats; preview: Pixmap | null; entries: PaletteEntry[] }
+  picked: boolean
+  onPick: () => void
+}) {
+  const ref = useRef<HTMLCanvasElement>(null)
+  useEffect(() => {
+    const canvas = ref.current
+    if (!canvas || !result.preview) return
+    const s = Math.max(1, Math.min(4, Math.floor(160 / Math.max(result.preview.width, result.preview.height)) || 1))
+    drawPixmap(canvas, result.preview, s, false)
+  }, [result.preview])
+
+  return (
+    <button type="button" className={`sweep-card${picked ? ' on' : ''}`} onClick={onPick} title={result.hint}>
+      {result.preview ? (
+        <canvas ref={ref} />
+      ) : (
+        <div className="sweep-strip">
+          {result.entries.slice(0, 10).map((e) => (
+            <i key={e.hex} style={{ background: e.hex }} />
+          ))}
+        </div>
+      )}
+      <div className="sweep-name">
+        <b>{result.label}</b>
+        {picked && <i className="material-icons sm">check</i>}
+      </div>
+      <div className="tiny muted">
+        {result.budget} 色 · ΔE {result.stats.weightedAvg.toFixed(2)}
+        {result.loss > 0.005 ? ` · 层次损失 ${result.loss.toFixed(2)}` : ''}
+      </div>
+      <div className="sweep-hint tiny muted">{result.hint}</div>
+    </button>
+  )
 }

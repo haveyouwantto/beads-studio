@@ -39,6 +39,7 @@ import {
   VISIBLE_PALETTE_SOURCES,
 } from '../src/core/palette.ts'
 import { PaletteOptimizer, targetsFromPixmap, DEFAULT_OPTIMIZE_CONFIG, type TargetSample } from '../src/core/optimize.ts'
+import { sweepVariants } from '../src/core/sweep.ts'
 import { clampRect, cropPixmap } from '../src/core/crop.ts'
 import { deltaE, deltaEHue, hexToRgb, rgbToHex, rgbToLab } from '../src/core/color.ts'
 import { buildPaletteExport, packPixels, parsePaletteFile, safeFileName, unpackPixels } from '../src/core/export.ts'
@@ -1316,6 +1317,56 @@ section('优化颜色 · 明暗层次')
     onlyOther.light === onlyOther.dark,
     `${onlyOther.light} vs ${onlyOther.dark}`,
   )
+}
+
+section('优化颜色 · 多方案对比')
+{
+  const cfg = { ...DEFAULT_OPTIMIZE_CONFIG, k: 16 }
+
+  const mixed = sweepVariants('mixed', cfg)
+  check('综合轴给 4 套方案', mixed.length === 4, `${mixed.length}`)
+  check(
+    '每套方案都有独立的 id 和一句说明',
+    new Set(mixed.map((v) => v.id)).size === mixed.length && mixed.every((v) => v.label && v.hint),
+  )
+  const sparse = mixed.find((v) => v.id === 'm-sparse')
+  check(
+    '综合轴的「省豆」真的比当前预算少',
+    !!sparse && (sparse.patch.k ?? cfg.k) < cfg.k,
+    `${sparse?.patch.k}`,
+  )
+  check(
+    '综合轴覆盖「不罚层次」和「强保层次」两头',
+    mixed.some((v) => v.patch.contrast === 0) && mixed.some((v) => (v.patch.contrast ?? 0) >= 4),
+  )
+
+  const layers = sweepVariants('layers', cfg)
+  const contrasts = layers.map((v) => v.patch.contrast ?? cfg.contrast)
+  check('层次轴从 0 排到 4', Math.min(...contrasts) === 0 && Math.max(...contrasts) === 4, contrasts.join('/'))
+  check('层次轴四档互不相同', new Set(contrasts).size === contrasts.length, contrasts.join('/'))
+
+  // 自动模式下的 K 只是上限，拿它当色数比没有意义
+  const budget = sweepVariants('budget', { ...cfg, kMode: 'auto' })
+  const ks = budget.map((v) => v.patch.k ?? cfg.k)
+  check('色数轴一律按固定数量跑', budget.every((v) => v.patch.kMode === 'fixed'))
+  check('色数轴至少 3 档且不重复', ks.length >= 3 && new Set(ks).size === ks.length, ks.join('/'))
+  check('色数不会低于 2', ks.every((k) => k >= 2), ks.join('/'))
+
+  const tiny = sweepVariants('budget', { ...cfg, k: 3 })
+  check(
+    '预算很小时不会给出重复方案',
+    new Set(tiny.map((v) => v.patch.k)).size === tiny.length,
+    tiny.map((v) => v.patch.k).join('/'),
+  )
+
+  // 方案只是「打补丁」：用户自己调的开关（加权、色相族、种子）必须原样保留
+  const custom = { ...cfg, weighted: false, hueFamilies: false, seed: 7 }
+  const applied = sweepVariants('mixed', custom).map((v) => ({ ...custom, ...v.patch }))
+  check(
+    '方案只改自己那几项，其他开关原样保留',
+    applied.every((c) => c.weighted === false && c.hueFamilies === false && c.seed === 7),
+  )
+  check('综合轴的预算都比原图颜色数小的时候也能跑', applied.every((c) => c.k >= 2))
 }
 
 section('颜色度量 · 色相敏感 ΔE')
