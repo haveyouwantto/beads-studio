@@ -6,3 +6,5 @@ dist
 *.log
 hue_*.png
 hue_*.png
+cmp_*.png
+pattern_preview.png

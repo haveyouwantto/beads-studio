@@ -59,8 +59,12 @@ export function deltaE(a: RGB, b: RGB): number {
 /**
  * 无彩色门槛：两边彩度里较小的那个低于它，色相就没有意义（灰没有色相），
  * 此时不参与色相惩罚，避免把纯灰硬按到某个色相上。
+ *
+ * 门槛必须很低。原以为 5 已经很宽松，实测在真实图纸上会翻车：暖灰的头发
+ * （C≈7）会被配到 C≈4 的冷灰豆上，因为后者「没有色相」而不受惩罚 ——
+ * 可拼豆的冷灰 #CECDD5 看上去就是淡紫，暖色调整个被换成冷色调。
  */
-export const HUE_MIN_CHROMA = 5
+export const HUE_MIN_CHROMA = 2
 
 /**
  * 色相项的彩度参考下限。
@@ -68,9 +72,9 @@ export const HUE_MIN_CHROMA = 5
  * CIE76 的色相项等价于 `2√(C1·C2)·sin(Δh/2)`，当彩度趋近 0 时这一项会自动消失，
  * 于是「灰蓝」和「灰褐」算出来的距离几乎相等 —— 但低彩度恰恰是人对色相最敏感、
  * 也最容易看出「整块颜色变味」的地方。这里给彩度加个下限，让色相项不会因为
- * 颜色淡就失效。
+ * 颜色淡就失效。下限取 4：再低就只剩纯灰，色相本来就是噪声。
  */
-export const HUE_REF_MIN = 10
+export const HUE_REF_MIN = 4
 
 /** 软阈值：色相差超过这个角度之后，惩罚开始额外加速 */
 export const HUE_SOFT_LIMIT_DEG = 24
@@ -103,7 +107,7 @@ export function labPolar(lab: RGB): readonly [number, number] {
  *
  * - `wHue = 0` 时退回纯 CIE76（`deltaE`）。
  * - `wHue = 1` 相当于只修掉「低彩度时色相项消失」这个 bug。
- * - 默认 `wHue = 2`：实测能把 sRGB 网格上色相偏差 >15° 的比例从 8.2% 压到 2.2%。
+ * - 默认 `wHue = 2`：实测能把 sRGB 网格上色相偏差 >15° 的比例从 8.2% 压到 2.6%。
  *
  * 超过 `HUE_SOFT_LIMIT_DEG` 的部分按 `HUE_EXCESS_GAIN` 放大，是连续且单调的
  * （不会出现 Infinity），所以可以用在退火目标函数里，也不需要「找不到同色相时的兜底」。
