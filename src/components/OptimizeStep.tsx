@@ -272,7 +272,25 @@ export function OptimizeStep() {
 
           <div className="divider" />
 
-          <Field label="颜料预算 K" value={`${config.k} 色`}>
+          <Field
+            label="颜料预算 K"
+            value={config.kMode === 'auto' ? `上限 ${config.k} 色` : `${config.k} 色`}
+            hint={
+              config.kMode === 'auto'
+                ? run.budget
+                  ? `自动选定 ${run.budget} 色：再往上加颜色，画面几乎不变`
+                  : '先扫一遍「多一颗豆能降多少 ΔE」，取拐点；K 变成上限'
+                : undefined
+            }
+          >
+            <Segmented
+              value={config.kMode}
+              onChange={(v) => setConfig({ kMode: v })}
+              options={[
+                { value: 'fixed', label: '固定数量' },
+                { value: 'auto', label: '自动挑最少' },
+              ]}
+            />
             <input
               type="range"
               min={2}
@@ -364,6 +382,12 @@ export function OptimizeStep() {
             <Check checked={config.hueFamilies} onChange={(v) => setConfig({ hueFamilies: v })}>
               面积小的<b>色相族</b>各留一颗豆
             </Check>
+            <Check checked={config.fillBudget} onChange={(v) => setConfig({ fillBudget: v })}>
+              预算没用满时<b>补色</b>（代价大的不补）
+            </Check>
+            <Check checked={config.mergeLookalikes} onChange={(v) => setConfig({ mergeLookalikes: v })}>
+              看起来一样的豆<b>只留一颗</b>
+            </Check>
             <Check checked={includeExtended} onChange={setIncludeExtended}>
               色号库包含<b>扩展色号</b>（P/Q/R/T/Y/ZG）
             </Check>
@@ -375,6 +399,7 @@ export function OptimizeStep() {
           <div className="stat-grid">
             <Stat k="候选色" v={run.candidates || candidateCount} small />
             <Stat k="目标色" v={run.targets || targetCount} small />
+            <Stat k="实际色数" v={run.budget ? `${run.budget} 色` : '—'} small />
             <Stat k="当前温度" v={run.temperature ? run.temperature.toExponential(2) : '—'} small />
             <Stat k="用时" v={run.elapsedMs ? `${(run.elapsedMs / 1000).toFixed(1)}s` : '—'} small />
           </div>

@@ -90,6 +90,8 @@ export interface OptimizeRunState {
   bucket: number
   elapsedMs: number
   reason: string
+  /** 本次实际用上的色数（kMode = auto 时是自动选出来的） */
+  budget: number
 }
 
 const EMPTY_RUN: OptimizeRunState = {
@@ -105,6 +107,7 @@ const EMPTY_RUN: OptimizeRunState = {
   bucket: 0,
   elapsedMs: 0,
   reason: '',
+  budget: 0,
 }
 
 export interface ProjectTab {
@@ -1082,7 +1085,7 @@ export const useStudio = create<StudioState>((set, get) => ({
       for await (const event of optimizer.run()) {
         if (event.type === 'initialized') {
           set((s) => ({
-            optimizeRun: { ...s.optimizeRun, stats: event.stats, step: 0, progress: 0 },
+            optimizeRun: { ...s.optimizeRun, stats: event.stats, step: 0, progress: 0, budget: event.budget },
             optimizedPalette: indicesToEntries(event.selected),
           }))
         } else if (event.type === 'progress') {
@@ -1114,6 +1117,7 @@ export const useStudio = create<StudioState>((set, get) => ({
               progress: 100,
               elapsedMs: performance.now() - started,
               reason: reasonText,
+              budget: event.budget,
             },
             optimizedPalette: indicesToEntries(event.selected),
             optimizedMap: event.mapping,

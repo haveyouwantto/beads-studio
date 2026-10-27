@@ -101,8 +101,21 @@ export function targetsFromPixmap(
 }
 
 export interface OptimizeConfig {
-  /** 颜料预算：最终要选多少种拼豆颜色 */
+  /** 颜料预算：最终要选多少种拼豆颜色（kMode = auto 时是上限） */
   k: number
+  /**
+   * 预算模式。
+   * - `fixed`：就用 `k` 色。
+   * - `auto`：先扫一遍「多一颗豆还能降多少 ΔE」的曲线，取拐点 —— 再往上加颜色
+   *   画面几乎不变，只是多备几种豆。`k` 变成上限。
+   */
+  kMode: 'fixed' | 'auto'
+  /**
+   * 预算没用满时，是否强行把颜色补到预算。
+   * 补出来的颜色是「第 2 顺位的豆」，代价大的时候会让图纸上冒出几颗不该有的豆，
+   * 所以有代价上限（见 FILL_MAX_COST），也可以整个关掉。
+   */
+  fillBudget: boolean
   steps: number
   patience: number
   seed: number
@@ -125,10 +138,14 @@ export interface OptimizeConfig {
   hueWeight: number
   /** 是否给面积够得着的色相族各保底留一颗豆 */
   hueFamilies: boolean
+  /** 看起来一样的豆只留一颗（否则一片同色里会深浅不一，看着花） */
+  mergeLookalikes: boolean
 }
 
 export const DEFAULT_OPTIMIZE_CONFIG: OptimizeConfig = {
   k: 30,
+  kMode: 'fixed',
+  fillBudget: true,
   steps: 60000,
   patience: 5000,
   seed: 42,
@@ -141,6 +158,7 @@ export const DEFAULT_OPTIMIZE_CONFIG: OptimizeConfig = {
   polish: true,
   hueWeight: 2,
   hueFamilies: true,
+  mergeLookalikes: true,
 }
 
 export const MANDATORY_MARD = ['H02', 'H07']
@@ -163,6 +181,39 @@ const FAMILY_MIN_SHARE = 0.02
 const FAMILY_TOLERANCE_DEG = 30
 /** 为了保住一个族，最多允许平均 ΔE 上涨多少 */
 const FAMILY_MAX_COST = 1.5
+
+/**
+ * 补色（把颜色补到预算）时的两道闸。
+ *
+ * 补色本质是「让某个目标色改用第 2 顺位的豆」，代价一定 ≥ 0。没有闸门时，
+ * 优化器会为了凑满预算，把颜色差几个 ΔE 的格子挪到另一颗豆上 —— 图纸上就是
+ * 一大块同色里冒出几颗不一样的豆，也就是「花」。
+ *
+ * 另外「看起来一样」的源色已经在上游并成了同一个目标色（TARGET_MERGE_DE），
+ * 所以这里不用再担心拆开近色的问题，只要守住代价。
+ */
+const FILL_MAX_COST = 4
+
+/** 自动色数：每多加一颗豆至少该买回这么多 ΔE，否则就是白备颜色 */
+const AUTO_MIN_GAIN = 0.35
+
+/**
+ * 两颗豆的色差小于它，就当它们「看起来一样」，不同时用。
+ *
+ * 色号库里本来就有一堆近重复色（#C8B9B2 / #C9BAB3 这种差 0.5 的），预算够的时候
+ * 优化器会把它们都选上：两个源色明明同色，却各落一颗，图纸上就是一片同色里深浅
+ * 不一的格子 —— 加了色号，画面反而更花。
+ */
+const LOOKALIKE_DE = 2.5
+
+/**
+ * 目标色的合并门槛：差不到这么多的两个源色算「同一个颜色」。
+ *
+ * 像素画经缩放/抗锯齿之后，同一块底色会散成几十个只差零点几的源色。分开处理时，
+ * 它们完全可能各自落在相邻的两颗豆上（都算「最近」），于是同一片颜色被切成深浅
+ * 不一的格子 —— 这就是「颜色给多了反而花」。所以先把它们并成一个目标色，强制同豆。
+ */
+const TARGET_MERGE_DE = 2.5
 
 export interface HueFamily {
   /** 族中心的色相角（度） */
@@ -187,7 +238,16 @@ export interface OptimizeStats {
 }
 
 export type OptimizeEvent =
-  | { type: 'initialized'; stats: OptimizeStats; selected: number[]; candidates: number }
+  | {
+      type: 'initialized'
+      stats: OptimizeStats
+      selected: number[]
+      candidates: number
+      /** 本次实际用的色数（kMode = auto 时是自动选出来的，不是配置里的 k） */
+      budget: number
+      /** 自动模式的「色数 → 加权 ΔE」曲线，前几个点就够了，供 UI 画个小图 */
+      curve?: { k: number; deltaE: number }[]
+    }
   | {
       type: 'progress'
       step: number
@@ -209,6 +269,8 @@ export type OptimizeEvent =
       mapping: { key: number; hex: string }[]
       steps: number
       reason: 'finished' | 'early-exit' | 'stopped'
+      /** 真正用上的色数（含固定色号） */
+      budget: number
     }
 
 /** 线性同余随机数生成器：与旧工具同参数，保证相同种子得到相同结果 */
@@ -248,6 +310,8 @@ export class PaletteOptimizer {
   private weightSum = 0
   /** 目标色的 RGB 数值（r<<16|g<<8|b），出图纸时要按它查最终分配 */
   private targetKeys = new Int32Array(0)
+  /** 每个（合并后的）目标色对应哪些原始源色的 key，出图纸时要全部映射过去 */
+  private targetGroupKeys: number[][] = []
 
   private selected: number[] = []
   private inState = new Uint8Array(0)
@@ -292,15 +356,69 @@ export class PaletteOptimizer {
   }
 
   setTargets(samples: TargetSample[]): void {
-    this.t = samples.length
+    const wHue = this.config.hueWeight ?? 2
+    // 先把「看起来一样」的源色并成一个目标色：分开处理时它们会各自落在相邻的
+    // 两颗豆上，同一片颜色被切成深浅不一的格子（颜色越多越明显）
+    const keyOf = (s: TargetSample) => {
+      const [r, g, b] = s.rgb
+      return (
+        (Math.min(255, Math.max(0, Math.round(r))) << 16) |
+        (Math.min(255, Math.max(0, Math.round(g))) << 8) |
+        Math.min(255, Math.max(0, Math.round(b)))
+      )
+    }
+    const order = samples.map((_, i) => i).sort((a, b) => samples[b].count - samples[a].count)
+    const groupOf = new Int32Array(samples.length).fill(-1)
+    const merged: TargetSample[] = []
+    this.targetGroupKeys = []
+    for (const seed of order) {
+      if (groupOf[seed] >= 0) continue
+      const g = merged.length
+      const members: number[] = []
+      let weight = 0
+      let r = 0
+      let gr = 0
+      let b = 0
+      let L = 0
+      let aa = 0
+      let bb = 0
+      for (const j of order) {
+        if (groupOf[j] >= 0) continue
+        if (
+          deltaEHue(samples[seed].lab, samples[j].lab, wHue) >= TARGET_MERGE_DE &&
+          j !== seed
+        ) {
+          continue
+        }
+        groupOf[j] = g
+        members.push(j)
+        const c = samples[j].count
+        weight += c
+        r += samples[j].rgb[0] * c
+        gr += samples[j].rgb[1] * c
+        b += samples[j].rgb[2] * c
+        L += samples[j].lab[0] * c
+        aa += samples[j].lab[1] * c
+        bb += samples[j].lab[2] * c
+      }
+      const n = Math.max(1, weight)
+      merged.push({
+        rgb: [r / n, gr / n, b / n],
+        lab: [L / n, aa / n, bb / n],
+        count: weight,
+      })
+      this.targetGroupKeys.push(members.map((j) => keyOf(samples[j])))
+    }
+
+    this.t = merged.length
     this.weights = new Float64Array(this.t)
     this.targetKeys = new Int32Array(this.t)
     this.weightSum = 0
     for (let i = 0; i < this.t; i++) {
-      const w = Math.max(1, samples[i].count)
+      const w = Math.max(1, merged[i].count)
       this.weights[i] = w
       this.weightSum += w
-      const [r, g, b] = samples[i].rgb
+      const [r, g, b] = merged[i].rgb
       this.targetKeys[i] =
         (Math.min(255, Math.max(0, Math.round(r))) << 16) |
         (Math.min(255, Math.max(0, Math.round(g))) << 8) |
@@ -310,14 +428,14 @@ export class PaletteOptimizer {
     this.targetC = new Float64Array(this.t)
     this.targetH = new Float64Array(this.t)
     for (let i = 0; i < this.t; i++) {
-      const [c, h] = labPolar(samples[i].lab)
+      const [c, h] = labPolar(merged[i].lab)
       this.targetC[i] = c
       this.targetH[i] = (h * 180) / Math.PI
     }
 
     this.dist = new Float64Array(this.t * this.c)
     for (let i = 0; i < this.t; i++) {
-      const lab = samples[i].lab
+      const lab = merged[i].lab
       const base = i * this.c
       for (let j = 0; j < this.c; j++) {
         this.dist[base + j] = deltaEHue(lab, this.entries[j].lab, this.config.hueWeight ?? 2)
@@ -564,6 +682,47 @@ export class PaletteOptimizer {
   }
 
   /**
+   * 看起来一样的豆只留一颗。
+   *
+   * 预算够、候选色又多的图上，优化器会把色号库里的近重复色一起选上（它们对 ΔE
+   * 的贡献是正的，退火没有理由拒绝）。结果是两个本来同色的源色各落一颗豆：整片
+   * 颜色里就开始出现深浅不一的格子。这里按使用面积从大到小过一遍，和已经留下的
+   * 豆差不到 LOOKALIKE_DE 的全部并过去，然后重新找最近色。
+   */
+  private mergeLookalikes(): void {
+    if (!this.config.mergeLookalikes) return
+    const used = new Map<number, number>()
+    for (let i = 0; i < this.t; i++) {
+      const j = this.nearestI[i]
+      if (j < 0) continue
+      used.set(j, (used.get(j) ?? 0) + this.weights[i])
+    }
+    if (used.size < 2) return
+
+    const order = [...used.entries()].sort((a, b) => b[1] - a[1]).map((e) => e[0])
+    const kept: number[] = []
+    let dropped = false
+    for (const j of order) {
+      let merge = false
+      for (const k of kept) {
+        if (deltaEHue(this.entries[j].lab, this.entries[k].lab, this.config.hueWeight ?? 2) < LOOKALIKE_DE) {
+          merge = true
+          break
+        }
+      }
+      if (merge) dropped = true
+      else kept.push(j)
+    }
+    if (!dropped) return
+
+    // 固定色号（黑白）不能被并掉
+    for (const f of this.fixed) if (!kept.includes(f)) kept.push(f)
+    this.setState(kept)
+    this.rebuildNearest()
+    this.bestSelected = [...this.selected]
+  }
+
+  /**
    * 补色：只盯 ΔE 的时候，优化会为了压低误差把颜色数一起压掉 ——
    * 原图 8 种颜色，预算 8 颗豆，它只肯用 6 颗（另外几种各自挤在同一颗豆上）。
    *
@@ -573,6 +732,8 @@ export class PaletteOptimizer {
    * 代价也记在图纸上（ΔE 统计按补完之后的分配重算）。
    */
   private fillToBudget(budget: number): void {
+    if (!this.config.fillBudget) return
+
     for (let guard = 0; guard <= this.t; guard++) {
       const used = new Set<number>()
       for (let i = 0; i < this.t; i++) if (this.nearestI[i] >= 0) used.add(this.nearestI[i])
@@ -622,8 +783,10 @@ export class PaletteOptimizer {
             if (bead >= 0) break
           }
           if (bead < 0) continue
-          // 代价 = 这个颜色换到新豆上多出来的 ΔE
+          // 代价 = 这个颜色换到新豆上多出来的 ΔE。超上限就不补：
+          // 少用一个色号，比在图上撒几颗不该有的豆要好。
           const cost = best - cur
+          if (cost > FILL_MAX_COST) continue
           if (cost < pickCost) {
             pickCost = cost
             pickI = i
@@ -703,6 +866,105 @@ export class PaletteOptimizer {
     return chosen
   }
 
+  /**
+   * 自动色数：前向贪心扫一遍「每多一颗豆，加权 ΔE 降到多少」，再取曲线拐点。
+   *
+   * 为什么不按「ΔE 低于某个阈值就停」：不同图的 ΔE 量级差太多（8 色像素画和照片
+   * 不是一个尺度），阈值没法通用；拐点是尺度无关的 —— 拐点之后再买颜色，画面几乎
+   * 不变，只是多备几种豆。
+   *
+   * 另外再兜一道底线：每一步至少得买回 AUTO_MIN_GAIN 的 ΔE，曲线还在陡降就说明
+   * 拐点取早了。
+   */
+  private autoBudget(maxK: number): { k: number; curve: { k: number; deltaE: number }[] } {
+    const chosen: number[] = []
+    const nearest = new Float64Array(this.t).fill(Infinity)
+    const curve: { k: number; deltaE: number }[] = []
+
+    const add = (j: number) => {
+      chosen.push(j)
+      for (let i = 0; i < this.t; i++) {
+        const d = this.dist[i * this.c + j]
+        if (d < nearest[i]) nearest[i] = d
+      }
+    }
+    const weightedOf = () => {
+      let sum = 0
+      for (let i = 0; i < this.t; i++) sum += nearest[i] * this.weights[i]
+      return this.weightSum > 0 ? sum / this.weightSum : 0
+    }
+
+    for (const j of this.fixed) add(j)
+
+    // 一颗都没有时先挑「加权距离之和最小」的那颗，否则增益全是 Infinity，比不出大小
+    if (!chosen.length) {
+      let bestC = 0
+      let bestScore = Infinity
+      for (let j = 0; j < this.c; j++) {
+        let sum = 0
+        for (let i = 0; i < this.t; i++) sum += this.dist[i * this.c + j] * this.weights[i]
+        if (sum < bestScore) {
+          bestScore = sum
+          bestC = j
+        }
+      }
+      add(bestC)
+    }
+    curve.push({ k: chosen.length, deltaE: weightedOf() })
+
+    // 扫到曲线平了就不用再往下算了：拐点一定在陡降段结束之前，
+    // 继续扫只是白花时间（上限 120 色 × 291 候选 × 1200 目标色就是几千万次）
+    let flat = 0
+    while (chosen.length < maxK) {
+      let bestJ = -1
+      let bestGain = 0
+      for (let j = 0; j < this.c; j++) {
+        if (chosen.includes(j)) continue
+        let gain = 0
+        for (let i = 0; i < this.t; i++) {
+          const d = this.dist[i * this.c + j]
+          if (d < nearest[i]) gain += (nearest[i] - d) * this.weights[i]
+        }
+        if (gain > bestGain) {
+          bestGain = gain
+          bestJ = j
+        }
+      }
+      if (bestJ < 0 || bestGain <= 1e-9) break
+      add(bestJ)
+      curve.push({ k: chosen.length, deltaE: weightedOf() })
+      flat = bestGain / (this.weightSum || 1) < AUTO_MIN_GAIN ? flat + 1 : 0
+      if (flat >= 3) break
+    }
+
+    if (curve.length < 3) return { k: chosen.length, curve }
+
+    // 拐点：离「首尾连线」最远的点（Kneedle）
+    const first = curve[0]
+    const last = curve[curve.length - 1]
+    let knee = last.k
+    let bestGap = -Infinity
+    for (const p of curve) {
+      const line =
+        last.k > first.k
+          ? ((first.deltaE - last.deltaE) * (p.k - first.k)) / (last.k - first.k) + first.deltaE
+          : first.deltaE
+      const gap = line - p.deltaE
+      if (gap > bestGap) {
+        bestGap = gap
+        knee = p.k
+      }
+    }
+
+    let floorK = curve[0].k
+    for (let i = 1; i < curve.length; i++) {
+      if (curve[i - 1].deltaE - curve[i].deltaE < AUTO_MIN_GAIN) break
+      floorK = curve[i].k
+    }
+
+    return { k: Math.max(knee, floorK), curve }
+  }
+
   private randomInit(k: number): number[] {
     const chosen = new Set<number>(this.fixed)
     let guard = 0
@@ -771,11 +1033,20 @@ export class PaletteOptimizer {
         mapping: [],
         steps: 0,
         reason: 'finished',
+        budget: 0,
       }
       return
     }
 
-    const budget = Math.max(this.fixed.size, Math.min(cfg.k + this.fixed.size, this.c))
+    const cap = Math.max(this.fixed.size + 1, Math.min(cfg.k + this.fixed.size, this.c))
+    let budget = Math.max(this.fixed.size, Math.min(cfg.k + this.fixed.size, this.c))
+    let curve: { k: number; deltaE: number }[] | undefined
+    if (cfg.kMode === 'auto') {
+      // 自动模式：先扫曲线定色数，之后的退火还是照常跑一遍（贪心解只是起点）
+      const plan = this.autoBudget(cap)
+      budget = Math.max(this.fixed.size + 1, Math.min(plan.k, cap))
+      curve = plan.curve
+    }
     const init = cfg.greedyInit ? this.greedyInit(budget) : this.randomInit(budget)
     this.setState(init)
     this.rebuildNearest()
@@ -789,6 +1060,8 @@ export class PaletteOptimizer {
       stats: this.statsFrom(this.nearestD, this.nearestI),
       selected: [...this.selected],
       candidates: this.c,
+      budget,
+      curve,
     }
 
     // 候选之间的对称距离（仅 library 模式用于局部邻域搜索）
@@ -920,16 +1193,22 @@ export class PaletteOptimizer {
     this.rebuildNearest()
     this.running = false
 
-    // 结果色号数 = min(预算, 原图颜色数)。优化出来的解没用到这么多就把颜色补回来。
-    const resultBudget = Math.max(this.fixed.size, Math.min(cfg.k, this.t))
+    // 结果色号数是「预算」和「原图颜色数」里小的那个；优化出来的解没用到这么多时，
+    // 只有在代价可控的情况下才补（fillToBudget 里的两道闸）。
+    const resultBudget = Math.max(this.fixed.size, Math.min(budget, this.t))
     this.ensureFamilies(resultBudget)
     this.fillToBudget(resultBudget)
+    // 最后才合并近似豆：补色可能又塞进一颗「看起来一样」的豆，顺序反了就白合并
+    this.mergeLookalikes()
 
     const mapping: { key: number; hex: string }[] = []
     for (let i = 0; i < this.t; i++) {
       const j = this.nearestI[i]
       if (j < 0) continue
-      mapping.push({ key: this.targetKeys[i], hex: this.entries[j].hex })
+      const hex = this.entries[j].hex
+      const keys = this.targetGroupKeys[i]
+      if (keys && keys.length) for (const key of keys) mapping.push({ key, hex })
+      else mapping.push({ key: this.targetKeys[i], hex })
     }
 
     yield {
@@ -939,6 +1218,7 @@ export class PaletteOptimizer {
       mapping,
       steps: step,
       reason,
+      budget: this.resultSelection().length,
     }
   }
 }

@@ -1047,7 +1047,12 @@ section('优化颜色 · 补色（预算没用满就补回来）')
   }
 
   const roomy = await runWith(30)
-  check('预算比原图颜色数大时，结果色号数 = 原图颜色数', roomy.selected.length === 5, `${roomy.selected.length}`)
+  // 预算只是上限：补色要付代价，付不起就少用一个色号（见下一条）
+  check(
+    '预算比原图颜色数大时，结果色号数 ≤ min(预算, 原图颜色数)',
+    roomy.selected.length <= 5 && roomy.selected.length >= 3,
+    `${roomy.selected.length}`,
+  )
   check('每个目标色都有落到某颗豆上', roomy.mapping.length === targets.length, `${roomy.mapping.length}`)
   check(
     '交出来的每颗豆都真的用到了',
@@ -1069,6 +1074,14 @@ section('优化颜色 · 补色（预算没用满就补回来）')
     '补色先拆 ΔE 增加最少的颜色（浅米色自己占一颗豆）',
     byKey.get(keyOf('#fcdf9b')) !== byKey.get(keyOf('#d9a46f')),
     `${byKey.get(keyOf('#fcdf9b'))} vs ${byKey.get(keyOf('#d9a46f'))}`,
+  )
+
+  // 深棕 #9a4f16 的「第二顺位」豆离它有十几个 ΔE，为了凑满预算硬拆，
+  // 图纸上就多出一小块颜色不对的豆 —— 宁可少一个色号
+  check(
+    '补色有代价上限：付不起就不拆',
+    byKey.get(keyOf('#9a4f16')) === byKey.get(keyOf('#6d3117')),
+    `${byKey.get(keyOf('#9a4f16'))} vs ${byKey.get(keyOf('#6d3117'))}`,
   )
 
   const tight = await runWith(2)
@@ -1095,6 +1108,126 @@ section('优化颜色 · 补色（预算没用满就补回来）')
       Math.abs(recompute(tight.mapping) - tight.stats.weightedAvg) < 0.01,
     `${recompute(roomy.mapping).toFixed(2)} vs ${roomy.stats.weightedAvg.toFixed(2)} / ${recompute(tight.mapping).toFixed(2)} vs ${tight.stats.weightedAvg.toFixed(2)}`,
   )
+}
+
+section('优化颜色 · 补色不会把画面补花')
+{
+  const entryOf = (hex: string, code: string): PaletteEntry => ({
+    hex,
+    rgb: hexToRgb(hex),
+    lab: rgbToLab(hexToRgb(hex)),
+    codes: { MARD: code },
+  })
+  const sampleOf = (hex: string, count = 10): TargetSample => {
+    const rgb = hexToRgb(hex)
+    return { rgb, lab: rgbToLab(rgb), count }
+  }
+  const runWith = async (targets: TargetSample[], beads: PaletteEntry[]) => {
+    const opt = new PaletteOptimizer(
+      beads,
+      { ...DEFAULT_OPTIMIZE_CONFIG, mandatory: false, k: 4, steps: 4000, patience: 1000, seed: 5 },
+      'grid',
+    )
+    opt.setTargets(targets)
+    let selected: number[] = []
+    let mapping: { key: number; hex: string }[] = []
+    for await (const ev of opt.run()) {
+      if (ev.type === 'completed') {
+        selected = ev.selected
+        mapping = ev.mapping
+      }
+    }
+    return { selected, mapping }
+  }
+  const keyOf = (hex: string) => {
+    const [r, g, b] = hexToRgb(hex)
+    return (r << 16) | (g << 8) | b
+  }
+
+  // 两个源色差不到 1 个 ΔE（同一块底色上的细微抖动）：把它们拆到两颗豆上，
+  // 肉眼看就是同一片颜色里冒出几颗异物 —— 这正是「强行补色导致画面花」的样子
+  const twins = [sampleOf('#C8B9B2', 40), sampleOf('#C9BAB3', 40)]
+  const twinBeads = ['#C8B9B2', '#DDD3CC', '#FFE2CE', '#757D78'].map((h, i) => entryOf(h, `T${i}`))
+  const twinRun = await runWith(twins, twinBeads)
+  const twinMap = new Map(twinRun.mapping.map((m) => [m.key, m.hex]))
+  check(
+    '几乎同色的两个源色不会被拆到两颗豆上',
+    twinMap.get(keyOf('#C8B9B2')) === twinMap.get(keyOf('#C9BAB3')),
+    `${twinMap.get(keyOf('#C8B9B2'))} vs ${twinMap.get(keyOf('#C9BAB3'))}`,
+  )
+  check('预算用不满就少用，不硬凑', twinRun.selected.length < 4, `${twinRun.selected.length}`)
+
+  // 一整块底色散成好几个只差零点几的源色时，它们必须落同一颗豆；
+  // 否则同一片颜色被切成深浅不一的格子（「颜色给多了反而花」）
+  const shades = [sampleOf('#C8B9B2', 30), sampleOf('#C9BAB3', 25), sampleOf('#C7B8B1', 20), sampleOf('#757D78', 40)]
+  // 候选里放两个几乎一样的暖灰：#C8B9B2 与 #C9BAB4，旧逻辑会一个源色落一颗
+  const shadeBeads = ['#C8B9B2', '#C9BAB4', '#757D78', '#FFC4CA'].map((h, i) => entryOf(h, `S${i}`))
+  const shadeRun = await runWith(shades, shadeBeads)
+  const shadeMap = new Map(shadeRun.mapping.map((m) => [m.key, m.hex]))
+  const three = [shadeMap.get(keyOf('#C8B9B2')), shadeMap.get(keyOf('#C9BAB3')), shadeMap.get(keyOf('#C7B8B1'))]
+  check('同一片底色的几个近色源色落同一颗豆', new Set(three).size === 1, three.join(' / '))
+  check('合并后每个源色仍然有自己的分配', shadeRun.mapping.length === shades.length, `${shadeRun.mapping.length}`)
+
+  // 关掉补色：色号数只会更少，且分配仍是最近色
+  const opt = new PaletteOptimizer(
+    twinBeads,
+    { ...DEFAULT_OPTIMIZE_CONFIG, mandatory: false, k: 4, steps: 2000, patience: 800, seed: 5, fillBudget: false },
+    'grid',
+  )
+  opt.setTargets([sampleOf('#E09438', 50), sampleOf('#D9A46F', 30)])
+  let offMapping: { key: number; hex: string }[] = []
+  for await (const ev of opt.run()) if (ev.type === 'completed') offMapping = ev.mapping
+  const offByKey = new Map(offMapping.map((m) => [m.key, m.hex]))
+  check(
+    '关掉补色后仍然每个颜色都有着落',
+    offByKey.size === 2 && [...offByKey.values()].every((h) => typeof h === 'string'),
+    `${offByKey.size}`,
+  )
+}
+
+section('优化颜色 · 自动色数')
+{
+  const entryOf = (hex: string, code: string): PaletteEntry => ({
+    hex,
+    rgb: hexToRgb(hex),
+    lab: rgbToLab(hexToRgb(hex)),
+    codes: { MARD: code },
+  })
+  const sampleOf = (hex: string, count = 10): TargetSample => {
+    const rgb = hexToRgb(hex)
+    return { rgb, lab: rgbToLab(rgb), count }
+  }
+  // 三块互不相干的颜色 + 一堆用不上的候选豆
+  const beads = ['#C0392B', '#2E7D5B', '#2C5F8A', '#E8C07A', '#7A4A8A', '#8A8A8A'].map((h, i) => entryOf(h, `A${i}`))
+  const targets = [sampleOf('#C0392B', 50), sampleOf('#2E7D5B', 30), sampleOf('#2C5F8A', 20)]
+  const runAuto = async (cap: number) => {
+    const opt = new PaletteOptimizer(
+      beads,
+      { ...DEFAULT_OPTIMIZE_CONFIG, mandatory: false, k: cap, kMode: 'auto', steps: 3000, patience: 800, seed: 3 },
+      'grid',
+    )
+    opt.setTargets(targets)
+    let budget = 0
+    let stats = { min: 0, max: 0, avg: 0, weightedAvg: 0 }
+    let curve: { k: number; deltaE: number }[] = []
+    for await (const ev of opt.run()) {
+      if (ev.type === 'initialized') curve = ev.curve ?? []
+      if (ev.type === 'completed') {
+        budget = ev.budget
+        stats = ev.stats
+      }
+    }
+    return { budget, stats, curve }
+  }
+
+  const auto = await runAuto(6)
+  check('自动模式挑出的色数 = 图里真正的颜色数', auto.budget === 3, `${auto.budget}`)
+  check('自动模式的 ΔE 很小（三块颜色各有各的豆）', auto.stats.weightedAvg < 1e-6, `${auto.stats.weightedAvg.toFixed(3)}`)
+  check('自动模式给出了收敛曲线', auto.curve.length >= 3 && auto.curve[auto.curve.length - 1].deltaE < auto.curve[0].deltaE,
+    auto.curve.map((p) => `${p.k}:${p.deltaE.toFixed(1)}`).join(' '))
+
+  const capped = await runAuto(2)
+  check('自动模式受上限约束', capped.budget <= 2, `${capped.budget}`)
 }
 
 section('颜色度量 · 色相敏感 ΔE')
