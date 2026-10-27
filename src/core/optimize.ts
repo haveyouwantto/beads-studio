@@ -140,6 +140,16 @@ export interface OptimizeConfig {
   hueFamilies: boolean
   /** 看起来一样的豆只留一颗（否则一片同色里会深浅不一，看着花） */
   mergeLookalikes: boolean
+  /**
+   * 对比强度（0 = 关闭）。
+   *
+   * 目标函数 = 匹配误差 + contrast × 层次损失。层次损失只算「原图本来是分开的、
+   * 成品里被压平了」的部分：原图头发有三级明暗，成品只剩两级，就是很典型的例子。
+   * 平均 ΔE 对这种事几乎无感 —— 压平两级只多几个 ΔE，却要花掉一颗豆。
+   */
+  contrast: number
+  /** 层次损失的死区（ΔE）：本来只差这么点的两个颜色，合并了不算丢层次 */
+  contrastSlack: number
 }
 
 export const DEFAULT_OPTIMIZE_CONFIG: OptimizeConfig = {
@@ -159,6 +169,8 @@ export const DEFAULT_OPTIMIZE_CONFIG: OptimizeConfig = {
   hueWeight: 2,
   hueFamilies: true,
   mergeLookalikes: true,
+  contrast: 1,
+  contrastSlack: 5,
 }
 
 export const MANDATORY_MARD = ['H02', 'H07']
@@ -196,6 +208,41 @@ const FILL_MAX_COST = 4
 
 /** 自动色数：每多加一颗豆至少该买回这么多 ΔE，否则就是白备颜色 */
 const AUTO_MIN_GAIN = 0.35
+
+/**
+ * 层次损失只关心「本来分得开」的颜色对：差得比这更远的两个颜色，
+ * 成品里几乎不可能被压到同一颗豆上，算进来只是浪费。
+ */
+const PAIR_MAX_ORIG = 32
+/** 目标色很多时，每个颜色只跟最近的这么多个比（照片类图会有几百个合并后目标色） */
+const PAIR_PER_TARGET = 8
+/** 目标色不超过这个数就全量两两比较（拼豆图纸基本都在这个量级） */
+const PAIRWISE_ALL_LIMIT = 64
+/**
+ * 自动选色数时，目标色超过这个数就不把层次损失算进「该买几颗豆」的评分里：
+ * 每个候选色都要重算一遍层次损失，照片类图的目标色上千，扫一遍会很慢。
+ */
+const AUTO_CONTRAST_MAX_T = 600
+
+/**
+ * 拆层修补：退火每次只换一颗豆，而「把一层明暗分出来」往往要同时动两颗
+ * （先撤掉那两颗共用的豆，再把两边的替代豆加进来），单步换色永远走不到。
+ * 这里专门盯被压平的颜色对，做一次有限的两次换两颗搜索。
+ */
+const REPAIR_PAIRS = 8
+/** 每层最多试几颗替代豆 */
+const LAYER_SPLIT_TRIES = 3
+/** 最多拆几层（每轮拆一层，避免为了层次把整张图都拖差） */
+const LAYER_SPLIT_ROUNDS = 6
+/**
+ * 拆层时，替代豆最多比原来那颗豆差多少 ΔE（基准值）。
+ * 层次要保住，但不能靠「换一颗色系不对的豆」来保 —— 那样头发会被染成粉灰，
+ * 所以真正的限制是下面的同色相检查，这里只是不让它跑到很远的地方去。
+ * 对比强度越高，允许的代价也越大（用户明确说了「宁可失真也要有层次」）。
+ */
+const REPAIR_MAX_DEMOTE = 2
+/** 彩度低于它就算无彩色，拆层时不看色相（色相角本身没有意义） */
+const REPAIR_NEUTRAL_CHROMA = 4
 
 /**
  * 两颗豆的色差小于它，就当它们「看起来一样」，不同时用。
@@ -271,6 +318,8 @@ export type OptimizeEvent =
       reason: 'finished' | 'early-exit' | 'stopped'
       /** 真正用上的色数（含固定色号） */
       budget: number
+      /** 最终解的层次损失（0 = 原图的明暗层次一点没丢） */
+      contrast: number
     }
 
 /** 线性同余随机数生成器：与旧工具同参数，保证相同种子得到相同结果 */
@@ -325,6 +374,20 @@ export class PaletteOptimizer {
   private targetH = new Float64Array(0)
   private candC = new Float64Array(0)
   private candH = new Float64Array(0)
+
+  /** 候选色两两之间的距离（算层次损失要用；library 模式的邻域搜索也复用） */
+  private candDist = new Float64Array(0)
+  private candDistReady = false
+  /** 颜色对的 CSR：第 i 个目标色相关的对从 pairStart[i] 到 pairStart[i+1] */
+  private pairStart = new Int32Array(0)
+  private pairOther = new Int32Array(0)
+  private pairOrig = new Float64Array(0)
+  private pairW = new Float64Array(0)
+  private pairWSum = 0
+  /** 当前分配下的层次损失 / 试探分配下的层次损失 */
+  private currentContrast = 0
+  private scratchContrast = 0
+  private changed: number[] = []
 
   private fixed = new Set<number>()
   /** 本次要保底的色相族（ensureFamilies 里算一次，isSoleHolder 复用） */
@@ -447,6 +510,123 @@ export class PaletteOptimizer {
     this.scratchD = new Float64Array(this.t)
     this.scratchI = new Int32Array(this.t)
     this.inState = new Uint8Array(this.c)
+
+    this.candDistReady = false
+    this.currentContrast = 0
+    this.buildPairs(merged)
+  }
+
+  /** 层次损失有没有开（关掉时整条链路都不跑，行为与旧版完全一致） */
+  private get contrastActive(): boolean {
+    return (this.config.contrast ?? 0) > 0
+  }
+
+  /** 候选色两两距离（只在第一次要用时算） */
+  private ensureCandDist(): void {
+    if (this.candDistReady) return
+    const w = this.config.hueWeight ?? 2
+    const n = this.c * this.c
+    if (this.candDist.length !== n) this.candDist = new Float64Array(n)
+    for (let i = 0; i < this.c; i++) {
+      const li = this.entries[i].lab
+      const base = i * this.c
+      for (let j = i + 1; j < this.c; j++) {
+        const d = deltaEHue(li, this.entries[j].lab, w)
+        this.candDist[base + j] = d
+        this.candDist[j * this.c + i] = d
+      }
+    }
+    this.candDistReady = true
+  }
+
+  /**
+   * 建「颜色对」表：只收原图里本来分得开的近邻对（ΔE ≤ PAIR_MAX_ORIG）。
+   *
+   * 层次损失 = Σ w·max(0, 原距离 − 成品距离 − 死区) / Σ w。
+   * 只看这个方向：成品里分得比原图还开不算加分，否则优化器又会拿「乱摊」来刷分。
+   */
+  private buildPairs(merged: TargetSample[]): void {
+    this.pairStart = new Int32Array(this.t + 1)
+    this.pairOther = new Int32Array(0)
+    this.pairOrig = new Float64Array(0)
+    this.pairW = new Float64Array(0)
+    this.pairWSum = 0
+    if (!this.contrastActive || this.t < 2) return
+    this.ensureCandDist()
+
+    const wHue = this.config.hueWeight ?? 2
+    const edges: { i: number; j: number; orig: number; w: number }[] = []
+    for (let i = 0; i < this.t; i++) {
+      for (let j = i + 1; j < this.t; j++) {
+        const orig = deltaEHue(merged[i].lab, merged[j].lab, wHue)
+        if (orig <= 1e-6 || orig > PAIR_MAX_ORIG) continue
+        edges.push({ i, j, orig, w: Math.sqrt(this.weights[i] * this.weights[j]) })
+      }
+    }
+    if (!edges.length) return
+
+    // 目标色太多时每个颜色只跟最近的几个比，否则是平方级
+    let kept = edges
+    if (this.t > PAIRWISE_ALL_LIMIT) {
+      const perTarget: number[][] = Array.from({ length: this.t }, () => [])
+      edges.forEach((e, idx) => {
+        perTarget[e.i].push(idx)
+        perTarget[e.j].push(idx)
+      })
+      const keep = new Uint8Array(edges.length)
+      for (let i = 0; i < this.t; i++) {
+        perTarget[i].sort((a, b) => edges[a].orig - edges[b].orig)
+        for (const idx of perTarget[i].slice(0, PAIR_PER_TARGET)) keep[idx] = 1
+      }
+      kept = edges.filter((_, idx) => keep[idx])
+    }
+
+    // CSR
+    const start = new Int32Array(this.t + 1)
+    for (const e of kept) {
+      start[e.i + 1]++
+      start[e.j + 1]++
+    }
+    for (let i = 0; i < this.t; i++) start[i + 1] += start[i]
+    const other = new Int32Array(start[this.t])
+    const orig = new Float64Array(start[this.t])
+    const pw = new Float64Array(start[this.t])
+    const cursor = start.slice(0, this.t)
+    for (const e of kept) {
+      let p = cursor[e.i]++
+      other[p] = e.j
+      orig[p] = e.orig
+      pw[p] = e.w
+      p = cursor[e.j]++
+      other[p] = e.i
+      orig[p] = e.orig
+      pw[p] = e.w
+    }
+    this.pairStart = start
+    this.pairOther = other
+    this.pairOrig = orig
+    this.pairW = pw
+    this.pairWSum = kept.reduce((a, e) => a + e.w, 0)
+  }
+
+  /** 给定分配下的层次损失（0 = 一点层次都没丢） */
+  private contrastOf(assign: Int32Array): number {
+    if (!this.pairWSum) return 0
+    const slack = this.config.contrastSlack ?? 5
+    let loss = 0
+    for (let i = 0; i < this.t; i++) {
+      const ai = assign[i]
+      for (let p = this.pairStart[i]; p < this.pairStart[i + 1]; p++) {
+        const j = this.pairOther[p]
+        if (j < i) continue // 每对只算一次
+        const aj = assign[j]
+        // 没有豆（或者同一颗豆）时成品距离就是 0
+        const out = ai < 0 || aj < 0 || ai === aj ? 0 : this.candDist[ai * this.c + aj]
+        const drop = this.pairOrig[p] - out - slack
+        if (drop > 0) loss += this.pairW[p] * drop
+      }
+    }
+    return loss / this.pairWSum
   }
 
   stop(): void {
@@ -460,6 +640,23 @@ export class PaletteOptimizer {
   private objectiveOf(stats: OptimizeStats): number {
     if (this.config.objective === 'max') return stats.max
     return this.config.weighted ? stats.weightedAvg : stats.avg
+  }
+
+  /**
+   * 真正被优化的目标 = 匹配误差 + contrast × 层次损失。
+   *
+   * 层次损失单独放在平均 ΔE 里没有用：把三级明暗压成两级，平均 ΔE 只涨几个点，
+   * 却省下一颗豆 —— 优化器当然会省。所以必须显式给它挂权重。
+   */
+  private costOf(stats: OptimizeStats, contrast: number): number {
+    const base = this.objectiveOf(stats)
+    if (!this.contrastActive) return base
+    return base + this.config.contrast * contrast
+  }
+
+  /** 当前解的完整目标值 */
+  private currentCost(): number {
+    return this.costOf(this.statsFrom(this.nearestD, this.nearestI), this.currentContrast)
   }
 
   private statsFrom(dArr: Float64Array, iArr: Int32Array): OptimizeStats {
@@ -501,6 +698,8 @@ export class PaletteOptimizer {
       this.nearestD[i] = bestIdx < 0 ? 0 : best
       this.nearestI[i] = bestIdx
     }
+    // 层次损失只在分配变了的时候才变，全量重算一次即可（O(对数)，很便宜）
+    if (this.contrastActive) this.currentContrast = this.contrastOf(this.nearestI)
   }
 
   /**
@@ -538,12 +737,55 @@ export class PaletteOptimizer {
       }
     }
 
+    this.scratchContrast = this.contrastActive
+      ? this.currentContrast + this.contrastDelta(this.scratchI)
+      : this.currentContrast
     return this.statsFrom(sd, si)
+  }
+
+  /**
+   * 相对 currentContrast 的增量（只算分配真的变了的颜色附近的颜色对）。
+   *
+   * 一对颜色在 CSR 里存了两次（两个端点各一条），所以只在下标较大的那一端算，
+   * 避免同一对算两遍。若较大那端没变，就退回到变小那端来算。
+   */
+  private contrastDelta(next: Int32Array): number {
+    if (!this.pairWSum) return 0
+    this.changed.length = 0
+    for (let i = 0; i < this.t; i++) {
+      if (next[i] !== this.nearestI[i]) this.changed.push(i)
+    }
+    if (!this.changed.length) return 0
+
+    const slack = this.config.contrastSlack ?? 5
+    const c = this.c
+    const cur = this.nearestI
+    let delta = 0
+    for (const i of this.changed) {
+      const ai0 = cur[i]
+      const ai1 = next[i]
+      for (let p = this.pairStart[i]; p < this.pairStart[i + 1]; p++) {
+        const j = this.pairOther[p]
+        // j 比 i 大时这一对归 j 算；除非 j 自己也变了（否则会漏）
+        if (j > i && next[j] !== cur[j]) continue
+        const aj0 = cur[j]
+        const aj1 = next[j]
+        const orig = this.pairOrig[p]
+        const out0 = ai0 < 0 || aj0 < 0 || ai0 === aj0 ? 0 : this.candDist[ai0 * c + aj0]
+        const out1 = ai1 < 0 || aj1 < 0 || ai1 === aj1 ? 0 : this.candDist[ai1 * c + aj1]
+        const drop1 = orig - out1 - slack
+        const drop0 = orig - out0 - slack
+        if (drop1 > 0) delta += this.pairW[p] * drop1
+        if (drop0 > 0) delta -= this.pairW[p] * drop0
+      }
+    }
+    return delta / this.pairWSum
   }
 
   private commitScratch(): void {
     this.nearestD.set(this.scratchD)
     this.nearestI.set(this.scratchI)
+    this.currentContrast = this.scratchContrast
   }
 
   /**
@@ -611,6 +853,12 @@ export class PaletteOptimizer {
     return out.slice(0, Math.max(1, budget))
   }
 
+  /** 两颗豆是不是同一个色系（几乎无彩色时色相角没有意义，直接算同族） */
+  private sameHueFamily(a: number, b: number): boolean {
+    if (this.candC[a] < REPAIR_NEUTRAL_CHROMA || this.candC[b] < REPAIR_NEUTRAL_CHROMA) return true
+    return hueGap(this.candH[a], this.candH[b]) <= FAMILY_TOLERANCE_DEG
+  }
+
   /** 当前选色里，这个族有没有一颗「自己色相」的豆 */
   private familyHeld(f: HueFamily, skip?: number): boolean {
     for (const j of this.selected) {
@@ -649,6 +897,8 @@ export class PaletteOptimizer {
       }
       if (bestBead < 0) continue
 
+      // 这里只比 ΔE：保底是「色相覆盖」的硬约束，代价闸门也该只按 ΔE 算，
+      // 掺进层次损失等于用另一把尺子量这个闸门，族会被无缘无故挡掉。
       const before = this.objectiveOf(this.statsFrom(this.nearestD, this.nearestI))
       let bestOut = -1
       let bestObj = Infinity
@@ -720,6 +970,137 @@ export class PaletteOptimizer {
     this.setState(kept)
     this.rebuildNearest()
     this.bestSelected = [...this.selected]
+  }
+
+  /**
+   * 给定豆集合和「强制分配」，算出这个方案有多好（不碰内部状态）。
+   *
+   * 强制分配是拆层的关键：为了保住一层明暗，这一块就该**故意**用深一档的豆，
+   * 哪怕它不是最近的 —— 只要那不是「换了个色系」。
+   */
+  private scoreOf(
+    beads: number[],
+    forced: { t: number; bead: number }[],
+  ): { deltaE: number; loss: number; cost: number } {
+    const si = this.scratchI
+    const sd = this.scratchD
+    for (let i = 0; i < this.t; i++) {
+      const base = i * this.c
+      let best = Infinity
+      let bestIdx = -1
+      for (const j of beads) {
+        const d = this.dist[base + j]
+        if (d < best) {
+          best = d
+          bestIdx = j
+        }
+      }
+      si[i] = bestIdx
+      sd[i] = bestIdx < 0 ? 0 : best
+    }
+    for (const f of forced) {
+      si[f.t] = f.bead
+      sd[f.t] = this.dist[f.t * this.c + f.bead]
+    }
+    const deltaE = this.statsFrom(sd, si).weightedAvg
+    const loss = this.contrastOf(si)
+    return { deltaE, loss, cost: deltaE + (this.config.contrast ?? 0) * loss }
+  }
+
+  /**
+   * 拆层：把「明明分得开、却压在同一颗豆上」的两个颜色拆到各自的豆上。
+   *
+   * 为什么不能交给退火：这一步要让某个颜色用一颗「不是最近」的豆。最近色是硬约束，
+   * 加豆也没用（新豆离它更远，永远不会被选中）；只有直接钉住分配才能做到。
+   * 所以放在收尾：先让 ΔE 把颜色放到最近处，再挑层次损失最大的几对，
+   * 一次挪一层、撤掉一颗最不顶用的豆腾位置，按「ΔE + contrast × 层次损失」决定收不收。
+   *
+   * 两道闸：替代豆必须同色系（否则头发会被染成粉灰）、ΔE 涨幅有上限。
+   */
+  private splitLayers(budget: number): void {
+    if (!this.contrastActive || !this.pairWSum || this.t > AUTO_CONTRAST_MAX_T) return
+    const slack = this.config.contrastSlack ?? 5
+    // 对比强度越高，越舍得为这一层付颜色代价
+    const maxDemote = REPAIR_MAX_DEMOTE + 2 * (this.config.contrast ?? 0)
+
+    const usedBeads = (): Set<number> => {
+      const s = new Set<number>()
+      for (let i = 0; i < this.t; i++) if (this.nearestI[i] >= 0) s.add(this.nearestI[i])
+      return s
+    }
+    /** 这颗豆是不是某个色相族唯一的一颗（不能撤，撤了整族就没了） */
+    const soleHolder = (bead: number): boolean => {
+      for (const g of this.families) {
+        if (hueGap(this.candH[bead], g.center) > FAMILY_TOLERANCE_DEG) continue
+        if (!this.familyHeld(g, bead)) return true
+      }
+      return false
+    }
+
+    for (let round = 0; round < LAYER_SPLIT_ROUNDS; round++) {
+      const used = usedBeads()
+      // 被压平的对：两端落在同一颗豆上，成品距离恒为 0
+      const flat: { i: number; j: number; score: number }[] = []
+      for (let i = 0; i < this.t; i++) {
+        const a = this.nearestI[i]
+        if (a < 0) continue
+        for (let p = this.pairStart[i]; p < this.pairStart[i + 1]; p++) {
+          const j = this.pairOther[p]
+          if (j < i || this.nearestI[j] !== a) continue
+          const drop = this.pairOrig[p] - slack
+          if (drop > 0) flat.push({ i, j, score: this.pairW[p] * drop })
+        }
+      }
+      if (!flat.length) return
+      flat.sort((x, y) => y.score - x.score)
+
+      const beadSet = [...this.selected]
+      let bestPlan: { set: number[]; t: number; bead: number } | null = null
+      let bestCost = this.currentCost()
+
+      for (const f of flat.slice(0, REPAIR_PAIRS)) {
+        for (const t of [f.i, f.j]) {
+          const b = this.nearestI[t]
+          if (b < 0) continue
+          const base = t * this.c
+          const cands: number[] = []
+          for (let cc = 0; cc < this.c; cc++) {
+            if (cc === b || this.fixed.has(cc) || beadSet.includes(cc)) continue
+            if (!this.sameHueFamily(cc, b)) continue
+            if (this.dist[base + cc] - this.dist[base + b] > maxDemote) continue
+            cands.push(cc)
+          }
+          cands.sort((x, y) => this.dist[base + x] - this.dist[base + y])
+          for (const cc of cands.slice(0, LAYER_SPLIT_TRIES)) {
+            // 腾一颗豆的位置：预算没用满就直接加，否则撤掉一颗（撤谁最后比分数决定）
+            const sets: number[][] = []
+            if (used.size < budget) sets.push([...beadSet, cc])
+            else
+              for (const donor of beadSet) {
+                if (this.fixed.has(donor) || donor === b) continue
+                if (soleHolder(donor)) continue
+                sets.push(beadSet.filter((x) => x !== donor).concat([cc]))
+              }
+            for (const set of sets) {
+              const sc = this.scoreOf(set, [{ t, bead: cc }])
+              if (sc.cost < bestCost - 1e-9) {
+                bestCost = sc.cost
+                bestPlan = { set, t, bead: cc }
+              }
+            }
+          }
+        }
+      }
+
+      if (!bestPlan) return
+      this.setState(bestPlan.set)
+      this.rebuildNearest()
+      // 钉住这一块：它不是最近的豆，这正是「为了保住这一层」付的代价
+      this.nearestI[bestPlan.t] = bestPlan.bead
+      this.nearestD[bestPlan.t] = this.dist[bestPlan.t * this.c + bestPlan.bead]
+      this.currentContrast = this.contrastOf(this.nearestI)
+      this.bestSelected = [...this.selected]
+    }
   }
 
   /**
@@ -867,31 +1248,51 @@ export class PaletteOptimizer {
   }
 
   /**
-   * 自动色数：前向贪心扫一遍「每多一颗豆，加权 ΔE 降到多少」，再取曲线拐点。
+   * 自动色数：前向贪心扫一遍「每多一颗豆，分数降到多少」，再取曲线拐点。
+   *
+   * 分数 = 加权 ΔE + contrast × 层次损失 —— 和退火用的目标函数是同一条。
+   * 只按 ΔE 扫的话，图省事会得出「头发三层压成两层也差不多」的结论，于是少买一颗豆。
    *
    * 为什么不按「ΔE 低于某个阈值就停」：不同图的 ΔE 量级差太多（8 色像素画和照片
    * 不是一个尺度），阈值没法通用；拐点是尺度无关的 —— 拐点之后再买颜色，画面几乎
    * 不变，只是多备几种豆。
    *
-   * 另外再兜一道底线：每一步至少得买回 AUTO_MIN_GAIN 的 ΔE，曲线还在陡降就说明
+   * 另外再兜一道底线：每一步至少得买回 AUTO_MIN_GAIN 的分数，曲线还在陡降就说明
    * 拐点取早了。
    */
   private autoBudget(maxK: number): { k: number; curve: { k: number; deltaE: number }[] } {
     const chosen: number[] = []
     const nearest = new Float64Array(this.t).fill(Infinity)
-    const curve: { k: number; deltaE: number }[] = []
+    /** 每个目标色当前落在第几颗豆上（-1 = 还没有豆） */
+    const assign = new Int32Array(this.t).fill(-1)
+    const curve: { k: number; deltaE: number; score: number }[] = []
+    const wContrast = this.config.contrast ?? 0
+    // 目标色特别多时（照片类）两两比较太贵，退回只看 ΔE
+    const useContrast = wContrast > 0 && this.pairWSum > 0 && this.t <= AUTO_CONTRAST_MAX_T
+    const trial = useContrast ? new Int32Array(this.t) : assign
 
     const add = (j: number) => {
       chosen.push(j)
       for (let i = 0; i < this.t; i++) {
         const d = this.dist[i * this.c + j]
-        if (d < nearest[i]) nearest[i] = d
+        if (d < nearest[i]) {
+          nearest[i] = d
+          assign[i] = j
+        }
       }
     }
-    const weightedOf = () => {
+    let weighted = 0
+    const refreshWeighted = () => {
       let sum = 0
       for (let i = 0; i < this.t; i++) sum += nearest[i] * this.weights[i]
-      return this.weightSum > 0 ? sum / this.weightSum : 0
+      weighted = this.weightSum > 0 ? sum / this.weightSum : 0
+      return weighted
+    }
+    const scoreOf = (deltaE: number, asg: Int32Array) =>
+      deltaE + (useContrast ? wContrast * this.contrastOf(asg) : 0)
+    const push = () => {
+      const de = refreshWeighted()
+      curve.push({ k: chosen.length, deltaE: de, score: scoreOf(de, assign) })
     }
 
     for (const j of this.fixed) add(j)
@@ -910,36 +1311,49 @@ export class PaletteOptimizer {
       }
       add(bestC)
     }
-    curve.push({ k: chosen.length, deltaE: weightedOf() })
+    push()
 
     // 扫到曲线平了就不用再往下算了：拐点一定在陡降段结束之前，
     // 继续扫只是白花时间（上限 120 色 × 291 候选 × 1200 目标色就是几千万次）
     let flat = 0
     while (chosen.length < maxK) {
       let bestJ = -1
-      let bestGain = 0
+      let bestScore = Infinity
+      const deNow = refreshWeighted()
       for (let j = 0; j < this.c; j++) {
         if (chosen.includes(j)) continue
-        let gain = 0
+        // 这颗豆会把哪些目标色从原来的豆上抢过来，加权 ΔE 因此降多少
+        let gainW = 0
+        let moved = false
+        if (useContrast) trial.set(assign)
         for (let i = 0; i < this.t; i++) {
           const d = this.dist[i * this.c + j]
-          if (d < nearest[i]) gain += (nearest[i] - d) * this.weights[i]
+          if (d < nearest[i]) {
+            gainW += (nearest[i] - d) * this.weights[i]
+            moved = true
+            if (useContrast) trial[i] = j
+          }
         }
-        if (gain > bestGain) {
-          bestGain = gain
+        if (!moved) continue
+        const deAfter = deNow - gainW / (this.weightSum || 1)
+        const score = scoreOf(deAfter, useContrast ? trial : assign)
+        if (score < bestScore) {
+          bestScore = score
           bestJ = j
         }
       }
-      if (bestJ < 0 || bestGain <= 1e-9) break
+      if (bestJ < 0) break
+      const prevScore = curve[curve.length - 1].score
       add(bestJ)
-      curve.push({ k: chosen.length, deltaE: weightedOf() })
-      flat = bestGain / (this.weightSum || 1) < AUTO_MIN_GAIN ? flat + 1 : 0
+      push()
+      // 分数涨幅太小就是「白备一颗豆」
+      flat = prevScore - curve[curve.length - 1].score < AUTO_MIN_GAIN ? flat + 1 : 0
       if (flat >= 3) break
     }
 
     if (curve.length < 3) return { k: chosen.length, curve }
 
-    // 拐点：离「首尾连线」最远的点（Kneedle）
+    // 拐点：离「首尾连线」最远的点（Kneedle）。比的是分数（ΔE + 层次损失）
     const first = curve[0]
     const last = curve[curve.length - 1]
     let knee = last.k
@@ -947,9 +1361,9 @@ export class PaletteOptimizer {
     for (const p of curve) {
       const line =
         last.k > first.k
-          ? ((first.deltaE - last.deltaE) * (p.k - first.k)) / (last.k - first.k) + first.deltaE
-          : first.deltaE
-      const gap = line - p.deltaE
+          ? ((first.score - last.score) * (p.k - first.k)) / (last.k - first.k) + first.score
+          : first.score
+      const gap = line - p.score
       if (gap > bestGap) {
         bestGap = gap
         knee = p.k
@@ -958,7 +1372,7 @@ export class PaletteOptimizer {
 
     let floorK = curve[0].k
     for (let i = 1; i < curve.length; i++) {
-      if (curve[i - 1].deltaE - curve[i].deltaE < AUTO_MIN_GAIN) break
+      if (curve[i - 1].score - curve[i].score < AUTO_MIN_GAIN) break
       floorK = curve[i].k
     }
 
@@ -984,7 +1398,7 @@ export class PaletteOptimizer {
   private polish(passes: number): number {
     let improved: boolean
     let pass = 0
-    let objective = this.objectiveOf(this.statsFrom(this.nearestD, this.nearestI))
+    let objective = this.currentCost()
 
     do {
       improved = false
@@ -996,7 +1410,7 @@ export class PaletteOptimizer {
         for (let inn = 0; inn < this.c; inn++) {
           if (this.inState[inn]) continue
           const stats = this.evaluateSwap(out, inn)
-          const obj = this.objectiveOf(stats)
+          const obj = this.costOf(stats, this.scratchContrast)
           if (obj < bestObjective - 1e-9) {
             bestObjective = obj
             bestCandidate = inn
@@ -1034,6 +1448,7 @@ export class PaletteOptimizer {
         steps: 0,
         reason: 'finished',
         budget: 0,
+        contrast: 0,
       }
       return
     }
@@ -1051,7 +1466,7 @@ export class PaletteOptimizer {
     this.setState(init)
     this.rebuildNearest()
 
-    let currentObjective = this.objectiveOf(this.statsFrom(this.nearestD, this.nearestI))
+    let currentObjective = this.currentCost()
     let bestObjective = currentObjective
     this.bestSelected = [...this.selected]
 
@@ -1064,19 +1479,11 @@ export class PaletteOptimizer {
       curve,
     }
 
-    // 候选之间的对称距离（仅 library 模式用于局部邻域搜索）
+    // 候选之间的对称距离（library 模式用于局部邻域搜索；层次损失也用它）
     let candidateDist: Float64Array | null = null
     if (this.targetMode === 'library') {
-      candidateDist = new Float64Array(this.c * this.c)
-      for (let i = 0; i < this.c; i++) {
-        for (let j = 0; j < this.c; j++) {
-          candidateDist[i * this.c + j] = deltaEHue(
-            this.entries[i].lab,
-            this.entries[j].lab,
-            this.config.hueWeight ?? 2,
-          )
-        }
-      }
+      this.ensureCandDist()
+      candidateDist = this.candDist
     }
 
     let maxDist = 0
@@ -1135,7 +1542,7 @@ export class PaletteOptimizer {
       if (inn < 0) continue
 
       const stats = this.evaluateSwap(out, inn)
-      const nextObjective = this.objectiveOf(stats)
+      const nextObjective = this.costOf(stats, this.scratchContrast)
 
       const accept =
         nextObjective < currentObjective ||
@@ -1182,7 +1589,7 @@ export class PaletteOptimizer {
     this.rebuildNearest()
     if (cfg.polish) {
       this.polish(3)
-      const polishedObjective = this.objectiveOf(this.statsFrom(this.nearestD, this.nearestI))
+      const polishedObjective = this.currentCost()
       if (polishedObjective <= bestObjective + 1e-9) {
         bestObjective = polishedObjective
         this.bestSelected = [...this.selected]
@@ -1200,6 +1607,10 @@ export class PaletteOptimizer {
     this.fillToBudget(resultBudget)
     // 最后才合并近似豆：补色可能又塞进一颗「看起来一样」的豆，顺序反了就白合并
     this.mergeLookalikes()
+    // 最后拆层：这一步会故意把某些颜色钉到「不是最近」的豆上，所以必须排在所有
+    // 「按最近色重算」的收尾之后；拆完的分配就是最终图，别再 rebuildNearest
+    this.splitLayers(resultBudget)
+    if (this.contrastActive) this.currentContrast = this.contrastOf(this.nearestI)
 
     const mapping: { key: number; hex: string }[] = []
     for (let i = 0; i < this.t; i++) {
@@ -1219,6 +1630,7 @@ export class PaletteOptimizer {
       steps: step,
       reason,
       budget: this.resultSelection().length,
+      contrast: this.currentContrast,
     }
   }
 }

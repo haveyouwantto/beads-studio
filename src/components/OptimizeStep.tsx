@@ -345,6 +345,20 @@ export function OptimizeStep() {
               }}
             />
           </Field>
+          <Field
+            label="明暗层次保留"
+            hint="0 = 只追求 ΔE；2 = 默认：原图的明暗层被压平就拆回来（只换同色系的豆）"
+          >
+            <input
+              type="number"
+              min={0}
+              max={4}
+              step={0.5}
+              value={config.contrast}
+              onChange={(e) => setConfig({ contrast: Math.min(4, Math.max(0, Number(e.target.value) || 0)) })}
+            />
+          </Field>
+
           <Field label="随机种子">
             <input
               type="number"

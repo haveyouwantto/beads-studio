@@ -1027,9 +1027,18 @@ section('优化颜色 · 补色（预算没用满就补回来）')
   ]
 
   const runWith = async (k: number) => {
+    // 这一节只管「预算 / 补色」的行为，把层次损失关掉，免得两件事混在一起看
     const opt = new PaletteOptimizer(
       beads,
-      { ...DEFAULT_OPTIMIZE_CONFIG, mandatory: false, k, steps: 4000, patience: 1000, seed: 11 },
+      {
+        ...DEFAULT_OPTIMIZE_CONFIG,
+        mandatory: false,
+        contrast: 0,
+        k,
+        steps: 4000,
+        patience: 1000,
+        seed: 11,
+      },
       'grid',
     )
     opt.setTargets(targets)
@@ -1228,6 +1237,85 @@ section('优化颜色 · 自动色数')
 
   const capped = await runAuto(2)
   check('自动模式受上限约束', capped.budget <= 2, `${capped.budget}`)
+}
+
+section('优化颜色 · 明暗层次')
+{
+  const entryOf = (hex: string, code: string): PaletteEntry => ({
+    hex,
+    rgb: hexToRgb(hex),
+    lab: rgbToLab(hexToRgb(hex)),
+    codes: { MARD: code },
+  })
+  const sampleOf = (hex: string, count: number): TargetSample => {
+    const rgb = hexToRgb(hex)
+    return { rgb, lab: rgbToLab(rgb), count }
+  }
+  // 浅灰与深灰是同一片头发的两个亮度层，中间那颗 #B4A497 对两者都是最近的豆
+  const light = '#C8B9B2'
+  const dark = '#A59489'
+  const targets = [sampleOf(light, 100), sampleOf(dark, 40)]
+  const mid = entryOf('#B4A497', 'M1')
+  // 同色系的浅一档（#E6C9B7，色相 60°）与「换了个色系」的粉灰（#C5B2BC，色相 343°）
+  const sameHue = entryOf('#E6C9B7', 'M2')
+  const otherHue = entryOf('#C5B2BC', 'M3')
+
+  const runWith = async (beads: PaletteEntry[], contrast: number) => {
+    // 关掉「补色」：那一项本来就会为了凑满预算把颜色拆开，这里只想看层次这一项的效果
+    const opt = new PaletteOptimizer(
+      beads,
+      {
+        ...DEFAULT_OPTIMIZE_CONFIG,
+        mandatory: false,
+        fillBudget: false,
+        k: 2,
+        contrast,
+        steps: 4000,
+        patience: 1200,
+        seed: 9,
+      },
+      'grid',
+    )
+    opt.setTargets(targets)
+    let mapping: { key: number; hex: string }[] = []
+    let stats = { min: 0, max: 0, avg: 0, weightedAvg: 0 }
+    for await (const ev of opt.run()) {
+      if (ev.type === 'completed') {
+        mapping = ev.mapping
+        stats = ev.stats
+      }
+    }
+    const byKey = new Map(mapping.map((m) => [m.key, m.hex]))
+    const keyOf = (hex: string) => {
+      const [r, g, b] = hexToRgb(hex)
+      return (r << 16) | (g << 8) | b
+    }
+    return { light: byKey.get(keyOf(light)), dark: byKey.get(keyOf(dark)), stats, byKey }
+  }
+
+  const off = await runWith([mid, sameHue, otherHue], 0)
+  check('对比强度 0 = 只追求 ΔE：两个亮度层压在同一颗豆上', off.light === off.dark, `${off.light} vs ${off.dark}`)
+
+  const on = await runWith([mid, sameHue, otherHue], 2)
+  check(
+    '对比强度 2：明暗层被拆到两颗豆上',
+    !!on.light && !!on.dark && on.light !== on.dark,
+    `${on.light} vs ${on.dark}`,
+  )
+  check(
+    '拆层用的是同色系的豆，不会把头发染成粉灰',
+    on.light === sameHue.hex || on.dark === sameHue.hex,
+    `${on.light} vs ${on.dark}`,
+  )
+  check('拆层后每个颜色都有着落', on.byKey.size === 2, `${on.byKey.size}`)
+
+  // 只有「换色系」这一条路时，宁可压平也不换色系
+  const onlyOther = await runWith([mid, otherHue], 4)
+  check(
+    '只有跨色相的替代豆时宁可不拆',
+    onlyOther.light === onlyOther.dark,
+    `${onlyOther.light} vs ${onlyOther.dark}`,
+  )
 }
 
 section('颜色度量 · 色相敏感 ΔE')
