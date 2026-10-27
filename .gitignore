@@ -5,6 +5,6 @@ dist
 *.tsbuildinfo
 *.log
 hue_*.png
-hue_*.png
+preview/
 cmp_*.png
 pattern_preview.png
