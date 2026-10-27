@@ -57,30 +57,15 @@ export function deltaE(a: RGB, b: RGB): number {
 }
 
 /**
- * 无彩色门槛：两边彩度里较小的那个低于它，色相就没有意义（灰没有色相），
- * 此时不参与色相惩罚，避免把纯灰硬按到某个色相上。
+ * 色相权重随彩度渐入的起点/终点。
  *
- * 门槛必须很低。原以为 5 已经很宽松，实测在真实图纸上会翻车：暖灰的头发
- * （C≈7）会被配到 C≈4 的冷灰豆上，因为后者「没有色相」而不受惩罚 ——
- * 可拼豆的冷灰 #CECDD5 看上去就是淡紫，暖色调整个被换成冷色调。
+ * 彩度太低时人眼读不出色相：两个 C≈5 的淡色哪怕差 60°，看着都是同一块米白。
+ * 这时如果按「色相很重要」去罚，度量就会把淡色推到纯白/纯灰上去 ——
+ * 实测就是浅色头发变成白发（饱和度没了）。所以色相权重从 C=6 开始线性上升，
+ * 到 C=20 才用满 `wHue`；低彩度区等价于原 CIE76。
  */
-export const HUE_MIN_CHROMA = 2
-
-/**
- * 色相项的彩度参考下限。
- *
- * CIE76 的色相项等价于 `2√(C1·C2)·sin(Δh/2)`，当彩度趋近 0 时这一项会自动消失，
- * 于是「灰蓝」和「灰褐」算出来的距离几乎相等 —— 但低彩度恰恰是人对色相最敏感、
- * 也最容易看出「整块颜色变味」的地方。这里给彩度加个下限，让色相项不会因为
- * 颜色淡就失效。下限取 4：再低就只剩纯灰，色相本来就是噪声。
- */
-export const HUE_REF_MIN = 4
-
-/** 软阈值：色相差超过这个角度之后，惩罚开始额外加速 */
-export const HUE_SOFT_LIMIT_DEG = 24
-
-/** 超过软阈值后每超 1° 追加的倍率（1° 按 1+GAIN 度算） */
-export const HUE_EXCESS_GAIN = 3
+const HUE_RAMP_FROM = 6
+const HUE_RAMP_TO = 20
 
 /** 默认色相权重：选色与出图共用同一个值，避免「选色同族、出图跨族」的错位 */
 export const DEFAULT_HUE_WEIGHT = 2
@@ -103,14 +88,33 @@ export function labPolar(lab: RGB): readonly [number, number] {
 }
 
 /**
- * 色相敏感色差：把 Lab 的色相项从「弦长」改成「弧长」，并对大角度差加权。
+ * 彩度「掉下去」时的额外惩罚倍数。
  *
- * - `wHue = 0` 时退回纯 CIE76（`deltaE`）。
- * - `wHue = 1` 相当于只修掉「低彩度时色相项消失」这个 bug。
- * - 默认 `wHue = 2`：实测能把 sRGB 网格上色相偏差 >15° 的比例从 8.2% 压到 2.6%。
+ * 色相项写成 `2√(C1·C2)·sin(Δh/2)` 之后，无彩色候选的色相项恒等于 0 ——
+ * 它成了躲开色相惩罚的免费出口。预算紧、色板缺某个色相时，优化器就会去挑灰豆：
+ * 报表里的色相误差好看了，但整张图掉饱和度（浅色头发变白就是这条路走出来的）。
+ * 所以彩度下降按 1.5 倍计，灰不再免费；彩度上升照旧，不影响「配到更艳的豆」。
+ */
+const SAT_LOSS_GAIN = 1.5
+
+/** 彩度 → 色相权重的放大比例（1 = 原 CIE76 的色相项） */
+export function hueWeightAt(chroma: number, wHue: number): number {
+  const ramp = Math.min(1, Math.max(0, (chroma - HUE_RAMP_FROM) / (HUE_RAMP_TO - HUE_RAMP_FROM)))
+  return 1 + (wHue - 1) * ramp
+}
+
+/**
+ * 色相敏感色差。
  *
- * 超过 `HUE_SOFT_LIMIT_DEG` 的部分按 `HUE_EXCESS_GAIN` 放大，是连续且单调的
- * （不会出现 Infinity），所以可以用在退火目标函数里，也不需要「找不到同色相时的兜底」。
+ * 色相项沿用 CIE76 的形式 `2√(C1·C2)·sin(Δh/2)`，再乘一个随彩度渐入的权重：
+ *
+ * - `wHue = 0` 退回纯 CIE76（`deltaE`）。
+ * - 彩度 ≤6：权重 1，和 CIE76 一样，淡色不会被推向纯白。
+ * - 彩度 ≥20：权重 `wHue`（默认 2），低彩度区「整块变味」的问题才真正被治住。
+ * - 另外，彩度下降按 `SAT_LOSS_GAIN` 倍计，无彩色不再能靠「没有色相」躲开惩罚。
+ *
+ * 为什么不用「彩度下限 + 色相角弧长」：那样在淡色区会给出和 dL/dC 同量级甚至更大的
+ * 惩罚，把浅色头发直接换成白豆 —— 色相是保住了，饱和度没了。
  */
 export function deltaEHue(a: RGB, b: RGB, wHue = DEFAULT_HUE_WEIGHT): number {
   if (wHue <= 0) return deltaE(a, b)
@@ -131,18 +135,15 @@ export function deltaEHuePolar(
   h2: number,
   wHue = DEFAULT_HUE_WEIGHT,
 ): number {
-  const dC = c1 - c2
-  if (wHue <= 0) return Math.sqrt(dL * dL + dC * dC)
+  const dCraw = c1 - c2
+  if (wHue <= 0) return Math.sqrt(dL * dL + dCraw * dCraw)
+  const dC = dCraw > 0 ? dCraw * SAT_LOSS_GAIN : dCraw
 
-  let dH = 0
-  const chroma = c1 < c2 ? c1 : c2
-  if (chroma >= HUE_MIN_CHROMA) {
-    let d = h1 > h2 ? h1 - h2 : h2 - h1
-    if (d > Math.PI) d = 2 * Math.PI - d
-    const soft = (HUE_SOFT_LIMIT_DEG * Math.PI) / 180
-    const arc = d > soft ? d + HUE_EXCESS_GAIN * (d - soft) : d
-    dH = wHue * (chroma > HUE_REF_MIN ? chroma : HUE_REF_MIN) * arc
-  }
+  let d = h1 > h2 ? h1 - h2 : h2 - h1
+  if (d > Math.PI) d = 2 * Math.PI - d
+  const chord = 2 * Math.sqrt(c1 * c2) * Math.sin(d / 2)
+  const w = hueWeightAt(c1 < c2 ? c1 : c2, wHue)
+  const dH = w * chord
 
   return Math.sqrt(dL * dL + dC * dC + dH * dH)
 }

@@ -69,10 +69,6 @@ function check(name: string, condition: boolean, detail = ''): void {
   }
 }
 
-function deltaEhueStr(a: RGB, b: RGB, w: number): string {
-  return deltaEHue(a, b, w).toFixed(2)
-}
-
 function section(title: string): void {
   console.log(`\n${title}`)
 }
@@ -1078,8 +1074,27 @@ section('优化颜色 · 补色（预算没用满就补回来）')
   const tight = await runWith(2)
   check('预算比颜色数小时，结果色号数 = 预算', tight.selected.length === 2, `${tight.selected.length}`)
 
-  // 结果里的 ΔE 统计要按补完之后的分配算，不是按「最省 ΔE 但压掉颜色」的那套
-  check('ΔE 统计跟着最终分配走', tight.stats.weightedAvg >= roomy.stats.weightedAvg - 1e-9, `${tight.stats.weightedAvg.toFixed(2)} vs ${roomy.stats.weightedAvg.toFixed(2)}`)
+  // 结果里的 ΔE 统计要按补完之后的分配算，不是按「最省 ΔE 但压掉颜色」的那套。
+  // 直接按 mapping 复算一遍：预算少的只能挤，预算多的能铺开，这个不等式本身会受
+  // 「每颗豆都得用上」的匹配约束影响，不能拿来当判据。
+  const recompute = (m: { key: number; hex: string }[]): number => {
+    const byKey = new Map(m.map((x) => [x.key, x.hex]))
+    let sum = 0
+    let wsum = 0
+    for (const t of targets) {
+      const hex = byKey.get(keyOf(`#${[t.rgb[0], t.rgb[1], t.rgb[2]].map((v) => v.toString(16).padStart(2, '0')).join('')}`))
+      if (!hex) continue
+      sum += deltaEHue(t.lab, rgbToLab(hexToRgb(hex))) * t.count
+      wsum += t.count
+    }
+    return sum / wsum
+  }
+  check(
+    'ΔE 统计跟着最终分配走',
+    Math.abs(recompute(roomy.mapping) - roomy.stats.weightedAvg) < 0.01 &&
+      Math.abs(recompute(tight.mapping) - tight.stats.weightedAvg) < 0.01,
+    `${recompute(roomy.mapping).toFixed(2)} vs ${roomy.stats.weightedAvg.toFixed(2)} / ${recompute(tight.mapping).toFixed(2)} vs ${tight.stats.weightedAvg.toFixed(2)}`,
+  )
 }
 
 section('颜色度量 · 色相敏感 ΔE')
@@ -1092,9 +1107,18 @@ section('颜色度量 · 色相敏感 ΔE')
   check('色相权重 0 = 旧 CIE76', Math.abs(deltaEHue(a, b, 0) - deltaE(a, b)) < 1e-12,
     `${deltaEHue(a, b, 0)} vs ${deltaE(a, b)}`)
 
-  // 灰蓝 → 青灰：ΔE76 只差一点点，但色相偏了 58°，加权后必须明显变远
-  check('跨色相的近色被拉远', deltaEHue(a, b, 2) > deltaE(a, b) * 1.5,
-    `${deltaEhueStr(a, b, 2)} vs ${deltaE(a, b).toFixed(2)}`)
+  // 色相权重随彩度渐入：高彩度区罚得重，淡色区几乎不动（否则浅色会被推向白豆）
+  const ratio = (x: RGB, y: RGB) => deltaEHue(x, y, 2) / deltaE(x, y)
+  const vivid = ratio(labOf('#3DF0F0'), labOf('#F03DF0'))
+  const faint = ratio(labOf('#586880'), labOf('#697D80'))
+  check('彩度越高，色相偏差被罚得越重', vivid > faint * 1.4, `${vivid.toFixed(2)} vs ${faint.toFixed(2)}`)
+
+  // 淡暖色：同色相、彩度略高的豆必须比「接近纯白」的豆更近 ——
+  // 这条是「头发变白」的回归测试，色相项一旦在低彩度区发力过猛就会反过来
+  const pale = labOf('#EFE0CE')
+  const sameHue = deltaEHue(pale, labOf('#E3D2BC'), 2)
+  const washedOut = deltaEHue(pale, labOf('#EEE9EA'), 2)
+  check('淡色不会被推向纯白', washedOut > sameHue * 2, `${washedOut.toFixed(2)} vs ${sameHue.toFixed(2)}`)
 
   // 同色相、只差明暗的对比不该被牵连
   const dark = labOf('#3F4A5C')

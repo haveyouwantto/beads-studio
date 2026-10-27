@@ -312,7 +312,7 @@ export function OptimizeStep() {
               ]}
             />
           </Field>
-          <Field label="色相权重" hint="0 = 旧 CIE76；2 = 默认，低彩度区不再被换色相">
+          <Field label="色相权重" hint="0 = 旧 CIE76；2 = 默认：色相不跑偏，同时不拿饱和度去换">
             <input
               type="number"
               min={0}

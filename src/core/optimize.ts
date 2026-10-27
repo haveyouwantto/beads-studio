@@ -453,12 +453,41 @@ export class PaletteOptimizer {
 
     const total = this.weightSum || 1
     const out: HueFamily[] = []
-    for (const acc of bins.values()) {
+    // 相邻桶先合并：30° 分箱会把同一个族切在两只桶里（蓝 239° 和蓝 246° 就是两只桶），
+    // 分开算等于让一个色相占两个保底名额，预算小的时候把别的族直接挤掉。
+    const centerOf = (a: { cos: number; sin: number }) =>
+      ((Math.atan2(a.sin, a.cos) * 180) / Math.PI + 360) % 360
+    const ordered = [...bins.values()].sort((a, b) => centerOf(a) - centerOf(b))
+    const merged: typeof ordered = []
+    for (const acc of ordered) {
+      const prev = merged[merged.length - 1]
+      if (prev && hueGap(centerOf(prev), centerOf(acc)) < FAMILY_BIN_DEG) {
+        prev.w += acc.w
+        prev.cos += acc.cos
+        prev.sin += acc.sin
+        prev.members.push(...acc.members)
+      } else {
+        merged.push({ w: acc.w, cos: acc.cos, sin: acc.sin, members: [...acc.members] })
+      }
+    }
+    // 首尾是环形相邻的，跨 0° 的两只桶也要合
+    if (merged.length > 1) {
+      const first = merged[0]
+      const last = merged[merged.length - 1]
+      if (hueGap(centerOf(first), centerOf(last)) < FAMILY_BIN_DEG) {
+        first.w += last.w
+        first.cos += last.cos
+        first.sin += last.sin
+        first.members.push(...last.members)
+        merged.pop()
+      }
+    }
+
+    for (const acc of merged) {
       const share = acc.w / total
       if (share < FAMILY_MIN_SHARE) continue
       // 族中心用加权圆周平均：直接按分箱中点会被边界上的颜色带偏
-      const center = ((Math.atan2(acc.sin, acc.cos) * 180) / Math.PI + 360) % 360
-      out.push({ center, members: acc.members, share })
+      out.push({ center: centerOf(acc), members: acc.members, share })
     }
     out.sort((a, b) => b.share - a.share)
     return out.slice(0, Math.max(1, budget))
