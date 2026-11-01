@@ -595,7 +595,7 @@ section('② 量化')
 // ---------------------------------------------------------------- 优化
 section('③ 优化颜色（以规范化结果为优化目标）')
 {
-  const targetInfo = targetsFromPixmap(art, { maxTargets: 1200 })
+  const targetInfo = targetsFromPixmap(art)
   check('从网格提取出目标色', targetInfo.samples.length > 0, `${targetInfo.samples.length} 个`)
   check('目标权重之和 = 像素数', targetInfo.samples.reduce((a, s) => a + s.count, 0) === CELLS_W * CELLS_H)
 

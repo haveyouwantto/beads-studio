@@ -404,7 +404,7 @@ function optimizeInputs(state: StudioState): OptimizeInputs {
 
   const targetInfo =
     state.optimizeTargetMode === 'grid' && state.grid
-      ? targetsFromPixmap(state.grid, { maxTargets: 1200 })
+      ? targetsFromPixmap(state.grid)
       : {
           samples: candidates.map((e) => ({ rgb: e.rgb, lab: e.lab, count: 1 })),
           uniqueColors: candidates.length,

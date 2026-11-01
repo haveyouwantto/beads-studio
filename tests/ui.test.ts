@@ -327,7 +327,7 @@ section('② 优化颜色')
     check(
       '加权平均 ΔE 优于随机基准',
       (after.optimizeRun.stats?.weightedAvg ?? Infinity) <
-        naiveTarget(palette, targetsFromPixmap(grid, { maxTargets: 1200 }).samples),
+        naiveTarget(palette, targetsFromPixmap(grid).samples),
     )
 
     await act(async () => {
@@ -464,7 +464,7 @@ section('优化器与 store 一致性')
   const palette = buildLibraryPalette({ includeExtended: false })
   const grid = useStudio.getState().grid
   if (grid) {
-    const info = targetsFromPixmap(grid, { maxTargets: 1200 })
+    const info = targetsFromPixmap(grid)
     const opt = new PaletteOptimizer(palette, { ...useStudio.getState().optimizeConfig, steps: 2000, patience: 400, seed: 3 }, 'grid')
     opt.setTargets(info.samples)
     let finalStats: { weightedAvg: number } | null = null

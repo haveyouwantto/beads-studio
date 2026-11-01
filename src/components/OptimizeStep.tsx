@@ -47,7 +47,7 @@ export function OptimizeStep() {
   const projectName = useStudio(tabNameOf)
 
   // 优化目标预览：直接来自「规范化」的网格
-  const targetInfo = useMemo(() => (grid ? targetsFromPixmap(grid, { maxTargets: 1200 }) : null), [grid])
+  const targetInfo = useMemo(() => (grid ? targetsFromPixmap(grid) : null), [grid])
 
   useEffect(() => {
     if (!gridRef.current || !grid) return
@@ -176,6 +176,15 @@ export function OptimizeStep() {
               <Stat k={deltaLabel + '加权平均'} v={run.stats.weightedAvg.toFixed(2)} />
               <Stat k={deltaLabel + '最大'} v={run.stats.max.toFixed(2)} />
               <Stat k={deltaLabel + '最小'} v={run.stats.min.toFixed(2)} />
+              {run.stats.p95 !== undefined && (
+                <Stat k={deltaLabel + 'p95'} v={run.stats.p95.toFixed(2)} />
+              )}
+              {run.stats.hotRatio !== undefined && (
+                <Stat
+                  k={`${deltaLabel}>8 面积占比`}
+                  v={(run.stats.hotRatio * 100).toFixed(1) + '%'}
+                />
+              )}
             </div>
           )}
 

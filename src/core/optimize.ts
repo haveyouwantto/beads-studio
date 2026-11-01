@@ -1,4 +1,5 @@
 import { deltaEHue, rgbToLab } from './color.ts'
+import { octreeReduce } from './octree.ts'
 import { labPolar } from './color.ts'
 import type { PaletteEntry } from './palette.ts'
 import type { RGB, Pixmap } from './types.ts'
@@ -20,15 +21,18 @@ export interface TargetSourceInfo {
 
 /**
  * 从规范化结果里提取优化目标色。
- * 优先按精确 RGB 分组（像素画通常是有限色集）；
- * 若颜色过多（例如照片对齐），逐步加大分桶以把目标数压到 maxTargets 以内。
- * 每个目标带出现次数权重，保证「优化目标」偏向图案里真正占面积的颜色。
+ * 按精确 RGB 分组（像素画通常是有限色集），每个目标带出现次数权重，
+ * 保证「优化目标」偏向图案里真正占面积的颜色。
+ *
+ * 只有颜色数超过 maxInputColors（照片类素材）时才做粗略分桶 —— 纯粹是性能闸，
+ * 真正的减色交给下游的八叉树（octree.ts）。以前这里默认就分桶到 1200，
+ * 桶的「平均色」是图里根本不存在的颜色，八叉树再怎么减也救不回来。
  */
 export function targetsFromPixmap(
   img: Pixmap,
   options: { maxTargets?: number; ignoreTransparent?: boolean } = {},
 ): TargetSourceInfo {
-  const maxTargets = options.maxTargets ?? 1200
+  const maxTargets = options.maxTargets ?? 20000
   const ignoreTransparent = options.ignoreTransparent ?? true
   const d = img.data
 
@@ -152,6 +156,15 @@ export interface OptimizeConfig {
   contrastSlack: number
 }
 
+/**
+ * 八叉树减色后的目标色上限。
+ *
+ * 这个数不是「最后用几色」，只是「优化器要照顾多少种颜色」。取小了，碎色会被
+ * 并进离得远的大颜色（这张 80×80 的图在 64 时平均吸收 ΔE 6.9，128 时降到 5.0，
+ * 192 时 3.8）；取大了只是多算一点距离矩阵，代价很低。
+ */
+export const OCTREE_MAX_LEAVES = 128
+
 export const DEFAULT_OPTIMIZE_CONFIG: OptimizeConfig = {
   k: 30,
   kMode: 'fixed',
@@ -201,7 +214,7 @@ const FAMILY_MAX_COST = 1.5
  * 优化器会为了凑满预算，把颜色差几个 ΔE 的格子挪到另一颗豆上 —— 图纸上就是
  * 一大块同色里冒出几颗不一样的豆，也就是「花」。
  *
- * 另外「看起来一样」的源色已经在上游并成了同一个目标色（TARGET_MERGE_DE），
+ * 另外「看起来一样」的碎色已经被上游的八叉树并进同一个目标色，
  * 所以这里不用再担心拆开近色的问题，只要守住代价。
  */
 const FILL_MAX_COST = 4
@@ -260,7 +273,6 @@ const LOOKALIKE_DE = 2.5
  * 它们完全可能各自落在相邻的两颗豆上（都算「最近」），于是同一片颜色被切成深浅
  * 不一的格子 —— 这就是「颜色给多了反而花」。所以先把它们并成一个目标色，强制同豆。
  */
-const TARGET_MERGE_DE = 2.5
 
 export interface HueFamily {
   /** 族中心的色相角（度） */
@@ -282,7 +294,14 @@ export interface OptimizeStats {
   max: number
   avg: number
   weightedAvg: number
+  /** 按像素数加权的 95 分位 ΔE：平均看不出「少数格子很难看」 */
+  p95?: number
+  /** ΔE 超过 HOT_DE 的像素占比（0~1）：面积几乎不参与，专抓碎色和小细节 */
+  hotRatio?: number
 }
+
+/** 「这一格已经明显不对了」的门槛，用 ΔE00，8 大致是能一眼看出来的量级 */
+export const HOT_DE = 8
 
 export type OptimizeEvent =
   | {
@@ -361,6 +380,15 @@ export class PaletteOptimizer {
   private targetKeys = new Int32Array(0)
   /** 每个（合并后的）目标色对应哪些原始源色的 key，出图纸时要全部映射过去 */
   private targetGroupKeys: number[][] = []
+  /**
+   * 上面那些成员源色本身（key + 自己的 lab）。
+   *
+   * 八叉树叶子的「代表色」是成员里的主导色，它跟豆子的匹配结果只对主导色成立：
+   * 同一个叶子里的碎色（抗锯齿过渡色）被直接套上主导色的豆，就会出现
+   * 「深绿过渡色全变青」这种整族错色 —— 明明是最近的豆就在旁边。所以出图纸时
+   * 代表色沿用优化器的决定（层次拆层会故意钉住它），其余成员各自找最近的豆。
+   */
+  private groupMembers: { key: number; lab: RGB; count: number }[][] = []
 
   private selected: number[] = []
   private inState = new Uint8Array(0)
@@ -419,59 +447,30 @@ export class PaletteOptimizer {
   }
 
   setTargets(samples: TargetSample[]): void {
-    const wHue = this.config.hueWeight ?? 2
-    // 先把「看起来一样」的源色并成一个目标色：分开处理时它们会各自落在相邻的
-    // 两颗豆上，同一片颜色被切成深浅不一的格子（颜色越多越明显）
-    const keyOf = (s: TargetSample) => {
-      const [r, g, b] = s.rgb
+    // 八叉树减色：不设阈值，按「像素量最小的节点先被吸收」把碎色并进大颜色。
+    // 之前用 ΔE < 2.5 的贪心合并，对碎成上千色的抗锯齿图几乎不起作用 ——
+    // 1~3 格的碎色各自找最近豆，把只服务几个像素的豆拖进解里（又花又浪费豆位）。
+    const keyOf = (rgb: readonly [number, number, number]) => {
+      const [r, g, b] = rgb
       return (
         (Math.min(255, Math.max(0, Math.round(r))) << 16) |
         (Math.min(255, Math.max(0, Math.round(g))) << 8) |
         Math.min(255, Math.max(0, Math.round(b)))
       )
     }
-    const order = samples.map((_, i) => i).sort((a, b) => samples[b].count - samples[a].count)
-    const groupOf = new Int32Array(samples.length).fill(-1)
-    const merged: TargetSample[] = []
-    this.targetGroupKeys = []
-    for (const seed of order) {
-      if (groupOf[seed] >= 0) continue
-      const g = merged.length
-      const members: number[] = []
-      let weight = 0
-      let r = 0
-      let gr = 0
-      let b = 0
-      let L = 0
-      let aa = 0
-      let bb = 0
-      for (const j of order) {
-        if (groupOf[j] >= 0) continue
-        if (
-          deltaEHue(samples[seed].lab, samples[j].lab, wHue) >= TARGET_MERGE_DE &&
-          j !== seed
-        ) {
-          continue
-        }
-        groupOf[j] = g
-        members.push(j)
-        const c = samples[j].count
-        weight += c
-        r += samples[j].rgb[0] * c
-        gr += samples[j].rgb[1] * c
-        b += samples[j].rgb[2] * c
-        L += samples[j].lab[0] * c
-        aa += samples[j].lab[1] * c
-        bb += samples[j].lab[2] * c
-      }
-      const n = Math.max(1, weight)
-      merged.push({
-        rgb: [r / n, gr / n, b / n],
-        lab: [L / n, aa / n, bb / n],
-        count: weight,
-      })
-      this.targetGroupKeys.push(members.map((j) => keyOf(samples[j])))
-    }
+    const leaves = octreeReduce(
+      samples.map((s) => ({ rgb: s.rgb, count: s.count })),
+      OCTREE_MAX_LEAVES,
+    )
+    const merged: TargetSample[] = leaves.map((l) => ({
+      rgb: l.rgb,
+      lab: rgbToLab(l.rgb),
+      count: l.count,
+    }))
+    this.targetGroupKeys = leaves.map((l) => l.members.map((j) => keyOf(samples[j].rgb)))
+    this.groupMembers = leaves.map((l) =>
+      l.members.map((j) => ({ key: keyOf(samples[j].rgb), lab: samples[j].lab, count: samples[j].count })),
+    )
 
     this.t = merged.length
     this.weights = new Float64Array(this.t)
@@ -680,6 +679,84 @@ export class PaletteOptimizer {
       avg: sum / n,
       weightedAvg: this.weightSum > 0 ? wsum / this.weightSum : sum / n,
     }
+  }
+
+  /**
+   * 图纸上每一格最终落到哪颗豆，以及这一格自己的 ΔE。
+   *
+   * 目标色是八叉树叶子的代表色（成员里的主导色），nearestI 只对代表色成立。
+   * 同一个叶子里的过渡色被直接套上代表色的豆，就会整族错色 —— 这张 80×80 的图里
+   * 深绿的抗锯齿过渡色全被塞给一颗青色豆，ΔE 从 20 涨到 90，而平均 ΔE 只涨 0.08，
+   * 指标上完全看不见。所以成员各自找最近的豆，只有代表色沿用优化器的决定
+   * （拆层会故意把它钉在非最近的豆上）。
+   */
+  private finalAssignment(): { key: number; hex: string; d: number; count: number }[] {
+    const wHue = this.config.hueWeight ?? 2
+    const out: { key: number; hex: string; d: number; count: number }[] = []
+    for (let i = 0; i < this.t; i++) {
+      const j = this.nearestI[i]
+      if (j < 0) continue
+      const repKey = this.targetKeys[i]
+      const members = this.groupMembers[i]
+      if (!members || members.length === 0) {
+        out.push({ key: repKey, hex: this.entries[j].hex, d: this.nearestD[i], count: this.weights[i] })
+        continue
+      }
+      for (const mem of members) {
+        if (mem.key === repKey) {
+          out.push({ key: repKey, hex: this.entries[j].hex, d: deltaEHue(mem.lab, this.entries[j].lab, wHue), count: mem.count })
+          continue
+        }
+        let bestJ = j
+        let bestD = deltaEHue(mem.lab, this.entries[j].lab, wHue)
+        for (const s of this.selected) {
+          if (s === j) continue
+          const d = deltaEHue(mem.lab, this.entries[s].lab, wHue)
+          if (d < bestD) {
+            bestD = d
+            bestJ = s
+          }
+        }
+        out.push({ key: mem.key, hex: this.entries[bestJ].hex, d: bestD, count: mem.count })
+      }
+    }
+    return out
+  }
+
+  /** 按「图上真实的每一格」统计误差 —— 目标级的 nearestD 会低报百分之十几 */
+  private statsOf(rows: { d: number; count: number }[]): OptimizeStats {
+    if (!rows.length) return { min: 0, max: 0, avg: 0, weightedAvg: 0, p95: 0, hotRatio: 0 }
+    let min = Infinity
+    let max = 0
+    let sum = 0
+    let wsum = 0
+    let wtot = 0
+    for (const r of rows) {
+      const w = Math.max(1, r.count)
+      if (r.d < min) min = r.d
+      if (r.d > max) max = r.d
+      sum += r.d
+      wsum += r.d * w
+      wtot += w
+    }
+    // 加权分位 + 超阈值像素占比：平均值把「一片大平面对了、几个格子完全错」抹平，
+    // 这两个数专门把这个信息留下来
+    const sorted = rows.slice().sort((a, b) => a.d - b.d)
+    const target = wtot * 0.95
+    let acc = 0
+    let picked = false
+    let p95 = max
+    let hot = 0
+    for (const r of sorted) {
+      const w = Math.max(1, r.count)
+      acc += w
+      if (!picked && acc >= target) {
+        p95 = r.d
+        picked = true
+      }
+      if (r.d > HOT_DE) hot += w
+    }
+    return { min, max, avg: sum / rows.length, weightedAvg: wsum / wtot, p95, hotRatio: hot / wtot }
   }
 
   /** 用当前 selected 全量重算最近色 */
@@ -1614,19 +1691,12 @@ export class PaletteOptimizer {
     this.splitLayers(resultBudget)
     if (this.pairWSum) this.currentContrast = this.contrastOf(this.nearestI)
 
-    const mapping: { key: number; hex: string }[] = []
-    for (let i = 0; i < this.t; i++) {
-      const j = this.nearestI[i]
-      if (j < 0) continue
-      const hex = this.entries[j].hex
-      const keys = this.targetGroupKeys[i]
-      if (keys && keys.length) for (const key of keys) mapping.push({ key, hex })
-      else mapping.push({ key: this.targetKeys[i], hex })
-    }
+    const final = this.finalAssignment()
+    const mapping = final.map((f) => ({ key: f.key, hex: f.hex }))
 
     yield {
       type: 'completed',
-      stats: this.statsFrom(this.nearestD, this.nearestI),
+      stats: this.statsOf(final),
       selected: this.resultSelection(),
       mapping,
       steps: step,
