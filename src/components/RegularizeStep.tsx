@@ -476,7 +476,7 @@ export function RegularizeStep({ onOpenFile }: { onOpenFile: () => void }) {
 
           {alignmentMode === 'auto' && (
             <>
-              <Field label="X 周期（像素/格）" value={periodX.toFixed(2)}>
+              <Field label="X 周期" value={periodX.toFixed(2)}>
                 <input
                   type="range"
                   min={1}
@@ -486,7 +486,7 @@ export function RegularizeStep({ onOpenFile }: { onOpenFile: () => void }) {
                   onChange={(e) => setPeriod('x', Number(e.target.value))}
                 />
               </Field>
-              <Field label="Y 周期（像素/格）" value={periodY.toFixed(2)}>
+              <Field label="Y 周期" value={periodY.toFixed(2)}>
                 <input
                   type="range"
                   min={1}
@@ -496,7 +496,7 @@ export function RegularizeStep({ onOpenFile }: { onOpenFile: () => void }) {
                   onChange={(e) => setPeriod('y', Number(e.target.value))}
                 />
               </Field>
-              <Field label="X 相位（偏移）" value={phaseX.toFixed(1)}>
+              <Field label="X 相位" value={phaseX.toFixed(1)}>
                 <input
                   type="range"
                   min={0}
@@ -506,7 +506,7 @@ export function RegularizeStep({ onOpenFile }: { onOpenFile: () => void }) {
                   onChange={(e) => setPhase('x', Number(e.target.value))}
                 />
               </Field>
-              <Field label="Y 相位（偏移）" value={phaseY.toFixed(1)}>
+              <Field label="Y 相位" value={phaseY.toFixed(1)}>
                 <input
                   type="range"
                   min={0}
@@ -525,7 +525,7 @@ export function RegularizeStep({ onOpenFile }: { onOpenFile: () => void }) {
 
           {alignmentMode === 'quad' && (
             <>
-              <Field label="列数（横向豆数）">
+              <Field label="列数">
                 <input
                   type="number"
                   min={1}
@@ -533,7 +533,7 @@ export function RegularizeStep({ onOpenFile }: { onOpenFile: () => void }) {
                   onChange={(e) => setManualSize(Number(e.target.value), manualRows)}
                 />
               </Field>
-              <Field label="行数（纵向豆数）">
+              <Field label="行数">
                 <input
                   type="number"
                   min={1}

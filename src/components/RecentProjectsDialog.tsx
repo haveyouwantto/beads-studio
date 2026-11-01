@@ -48,7 +48,7 @@ export function RecentProjectsDialog({
           </div>
           <span style={{ flex: 1 }} />
           <button className="btn-flat btn-small waves-effect" onClick={onClose}>
-            关闭 (Esc)
+            关闭
           </button>
         </header>
 
@@ -117,7 +117,7 @@ export function RecentProjectsDialog({
 
         <footer className="modal-foot">
           <Check checked={autosave} onChange={setAutosave}>
-            自动保存（关闭后只保留当前会话）
+            自动保存
           </Check>
           <span style={{ flex: 1 }} />
         </footer>

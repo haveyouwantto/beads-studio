@@ -396,7 +396,7 @@ export function PatternStep({ onOpenFullscreen }: { onOpenFullscreen: () => void
                   setPalette(hexes.map((h) => map.get(h)).filter((e): e is NonNullable<typeof e> => Boolean(e)))
                 }}
               >
-                应用（{parsePaletteText(pasteText, libraryPalette, codeSystem).length} 个）
+                应用 ({parsePaletteText(pasteText, libraryPalette, codeSystem).length})
               </button>
             </div>
           )}
@@ -434,7 +434,7 @@ export function PatternStep({ onOpenFullscreen }: { onOpenFullscreen: () => void
                 onChange={(v) => setRenderOptions({ rulerStart: v })}
                 options={[
                   { value: 'second', label: '从第二格', title: '把第二格的左上角当原点：第二格标 1，最外一圈不标数字' },
-                  { value: 'first', label: '从第一格', title: '第一格就标 1（和以前一样）' },
+                  { value: 'first', label: '从第一格', title: '第一格标 1' },
                 ]}
               />
             </Field>
@@ -445,7 +445,7 @@ export function PatternStep({ onOpenFullscreen }: { onOpenFullscreen: () => void
               在格子上标注<b>色号</b>
             </Check>
             <Check checked={renderOptions.grid} onChange={(v) => setRenderOptions({ grid: v })}>
-              绘制<b>网格线</b>（每格细线）
+              绘制<b>网格线</b>
             </Check>
             <Check checked={renderOptions.rulers} onChange={(v) => setRenderOptions({ rulers: v })}>
               显示<b>行列标尺</b>

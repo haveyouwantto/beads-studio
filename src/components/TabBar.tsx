@@ -37,7 +37,7 @@ export function TabBar({ onRequestFile }: { onRequestFile: () => void }) {
               key={tab.id}
               className={active ? 'tab active' : 'tab'}
               onClick={() => switchTab(tab.id)}
-              title={`${tab.name}${active ? '（当前）' : ''}`}
+              title={tab.name}
             >
               {preview ? <img className="tab-thumb" src={preview} alt="" /> : <span className="tab-blank" />}
 

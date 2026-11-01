@@ -125,7 +125,7 @@ export function FullscreenPreview({
           重置
         </button>
         <button className="btn btn-small waves-effect waves-light" onClick={onClose}>
-          退出<span className="kbd-hint"> (Esc)</span>
+          退出
         </button>
       </div>
 

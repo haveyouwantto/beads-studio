@@ -100,7 +100,7 @@ export function CandidateColorsDialog({ onClose }: { onClose: () => void }) {
             <h2>选择候选色</h2>
             <p className="tiny muted">
               已选 <b>{selectedCount}</b> / {total} 色
-              {includeExtended ? ' · 含扩展色号' : ' · MARD A–M'}
+              {includeExtended ? ' · 含扩展色' : ' · MARD A–M'}
             </p>
           </div>
           <span style={{ flex: 1 }} />
@@ -133,7 +133,7 @@ export function CandidateColorsDialog({ onClose }: { onClose: () => void }) {
               <button
                 className="btn-flat btn-small waves-effect"
                 onClick={() => importRef.current?.click()}
-                title="导入色号列表 / HEX 列表 / JSON"
+                title="导入色号列表、HEX 列表或 JSON"
               >
                 导入
               </button>
@@ -264,7 +264,7 @@ export function CandidateColorsDialog({ onClose }: { onClose: () => void }) {
               onClose()
             }}
           >
-            应用（{selectedCount} 色）
+            应用 ({selectedCount})
           </button>
         </footer>
       </div>

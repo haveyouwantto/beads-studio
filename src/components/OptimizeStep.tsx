@@ -119,7 +119,7 @@ export function OptimizeStep() {
 
         <Panel
           title="优化目标"
-          hint={targetMode === 'grid' ? '来自规范化结果' : '全量色谱（构建通用色板）'}
+          hint={targetMode === 'grid' ? '来自规范化结果' : '全量色谱'}
           actions={
             <Segmented
               value={targetMode}
@@ -150,7 +150,7 @@ export function OptimizeStep() {
         </Panel>
 
         <Panel
-          title={`优化结果${sortedResult.length ? `（${sortedResult.length} 个色号）` : ''}`}
+          title={sortedResult.length ? `优化结果 · ${sortedResult.length} 色` : '优化结果'}
           hint={run.reason}
           actions={
             <>
@@ -289,8 +289,8 @@ export function OptimizeStep() {
               <div className="row tight" style={{ marginTop: 12, justifyContent: 'space-between' }}>
                 <span className="tiny muted">
                   {sweep.pickedId
-                    ? `已选「${sweep.results.find((r) => r.id === sweep.pickedId)?.label}」——点别的图可以换`
-                    : '点一张图选中它'}
+                    ? `已选「${sweep.results.find((r) => r.id === sweep.pickedId)?.label}」`
+                    : '点击选择方案'}
                 </span>
                 <button
                   className="btn btn-small waves-effect waves-light"
@@ -347,7 +347,7 @@ export function OptimizeStep() {
                 <option value="">套用方案…</option>
                 {candidateSets.map((s) => (
                   <option key={s.id} value={s.id}>
-                    {s.name}（{s.hexes.length} 色）
+                    {s.name} · {s.hexes.length} 色
                   </option>
                 ))}
               </select>
@@ -362,8 +362,8 @@ export function OptimizeStep() {
             hint={
               config.kMode === 'auto'
                 ? run.budget
-                  ? `自动选定 ${run.budget} 色：再往上加颜色，画面几乎不变`
-                  : '先扫一遍「多一颗豆能降多少 ΔE」，取拐点；K 变成上限'
+                  ? `自动选定 ${run.budget} 色`
+                  : '自动寻找 ΔE 拐点'
                 : undefined
             }
           >
@@ -394,7 +394,7 @@ export function OptimizeStep() {
               onChange={(e) => setConfig({ steps: Math.max(1000, Number(e.target.value) || 1000) })}
             />
           </Field>
-          <Field label="提前终止耐心值" hint="没有更好解就结束">
+          <Field label="提前终止耐心值" hint="无更优解即结束">
             <input
               type="number"
               min={200}
@@ -414,7 +414,7 @@ export function OptimizeStep() {
               ]}
             />
           </Field>
-          <Field label="色相权重" hint="0 = 旧 CIE76；2 = 默认：色相不跑偏，同时不拿饱和度去换">
+          <Field label="色相权重" hint="提高饱和度与色相准确度（默认 2）">
             <input
               type="number"
               min={0}
@@ -431,7 +431,7 @@ export function OptimizeStep() {
           </Field>
           <Field
             label="明暗层次保留"
-            hint="0 = 只追求 ΔE；2 = 默认：原图的明暗层被压平就拆回来（只换同色系的豆）"
+            hint="保留明暗过渡细节（默认 2）"
           >
             <input
               type="number"
@@ -469,7 +469,7 @@ export function OptimizeStep() {
               按出现次数<b>加权</b>
             </Check>
             <Check checked={config.mandatory} onChange={(v) => setConfig({ mandatory: v })}>
-              固定包含<b>黑白</b>（MARD H02 / H07）
+              固定包含<b>黑白</b>
             </Check>
             <Check checked={config.greedyInit} onChange={(v) => setConfig({ greedyInit: v })}>
               贪心最远点<b>初始解</b>
@@ -478,16 +478,16 @@ export function OptimizeStep() {
               退火后做<b>贪心精修</b>
             </Check>
             <Check checked={config.hueFamilies} onChange={(v) => setConfig({ hueFamilies: v })}>
-              面积小的<b>色相族</b>各留一颗豆
+              保留小面积<b>色相</b>
             </Check>
             <Check checked={config.fillBudget} onChange={(v) => setConfig({ fillBudget: v })}>
-              预算没用满时<b>补色</b>（代价大的不补）
+              预算未满时<b>补色</b>
             </Check>
             <Check checked={config.mergeLookalikes} onChange={(v) => setConfig({ mergeLookalikes: v })}>
-              看起来一样的豆<b>只留一颗</b>
+              过滤相近重复色
             </Check>
             <Check checked={includeExtended} onChange={setIncludeExtended}>
-              色号库包含<b>扩展色号</b>（P/Q/R/T/Y/ZG）
+              包含<b>扩展色号</b>
             </Check>
           </div>
 

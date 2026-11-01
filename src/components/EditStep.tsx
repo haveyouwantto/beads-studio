@@ -511,8 +511,8 @@ export function EditStep() {
                 value={fillMode}
                 onChange={setFillMode}
                 options={[
-                  { value: 'color', label: '按颜色', title: '只填颜色一模一样的相连格子' },
-                  { value: 'cluster', label: '按聚类', title: '同色系（抗锯齿边、轻微渐变）当成一块' },
+                  { value: 'color', label: '按颜色', title: '只填充完全同色的相连区域' },
+                  { value: 'cluster', label: '按聚类', title: '填充相近色相的相连区域' },
                 ]}
               />
             </div>
@@ -534,7 +534,7 @@ export function EditStep() {
                     hex={p.transparent ? undefined : p.hex}
                     transparent={p.transparent}
                     selected={active}
-                    title={p.transparent ? `${p.code} 透明（忽略）` : `${p.code} · ${p.hex}`}
+                    title={p.transparent ? `${p.code} 透明` : `${p.code} · ${p.hex}`}
                     onClick={() => {
                       setColor(p.transparent ? null : p.hex)
                     }}
@@ -583,7 +583,7 @@ export function EditStep() {
       <div>
         <Panel title="编辑图片" tight>
           <div className="tiny muted">
-            涂成<b>透明</b>的格子将被忽略（不参与配色与图纸生成）。
+            涂成<b>透明</b>的格子将被忽略。
           </div>
           <div className="divider" />
           <div className="row tight">
