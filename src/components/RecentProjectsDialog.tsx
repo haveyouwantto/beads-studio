@@ -4,8 +4,7 @@ import { estimateUsage, formatBytes, formatTime } from '../core/storage.ts'
 import { Check } from './ui.tsx'
 
 /**
- * 「最近项目」弹窗：列出 localStorage 里自动存档的项目，可以打开或删除。
- * 索引里只存缩略图和元信息，所以打开这个弹窗不会去解析上兆的项目正文。
+ * 「最近项目」弹窗组件。
  */
 export function RecentProjectsDialog({
   onClose,

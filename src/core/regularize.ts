@@ -45,7 +45,7 @@ function median(arr: number[]): number {
   return a.length % 2 ? a[m] : (a[m - 1] + a[m]) / 2
 }
 
-/** 灰度 + 一阶梯度。这里不需要 Canny：目标是像素格的周期边界，不是物体轮廓。 */
+/** 灰度与一阶边缘梯度图计算 */
 export function makeEdgeMap(img: Pixmap): EdgeMap {
   const { width, height, data } = img
   const gray = new Float32Array(width * height)
@@ -106,8 +106,7 @@ export function smooth(arr: Float64Array, radius = 2): Float64Array {
 }
 
 /**
- * 自相关峰检测。
- * 只找实际存在的 peak train，不对某个 period 的倍数位置做累加。
+ * 自相关峰值检测。
  */
 export function findPeaks(ac: Float64Array): Peak[] {
   const peaks: Peak[] = []
@@ -121,7 +120,7 @@ export function findPeaks(ac: Float64Array): Peak[] {
 
   for (let i = 2; i < maxLag - 2; i++) {
     if (ac[i] > threshold && ac[i] >= ac[i - 1] && ac[i] > ac[i + 1]) {
-      // 非极大值抑制：只合并非常接近的重复小峰
+      // 非极大值抑制
       if (!peaks.length || i - peaks[peaks.length - 1].pos > 2) {
         peaks.push({ pos: i, value: ac[i] })
       } else if (ac[i] > peaks[peaks.length - 1].value) {
@@ -133,8 +132,7 @@ export function findPeaks(ac: Float64Array): Peak[] {
 }
 
 /**
- * 由相邻峰距生成候选基频：Δ、Δ/2、Δ/3、Δ/4 全部入列，
- * 因为峰列可能缺项（P 2P P → 中间差值会变成 2P）。
+ * 由相邻峰距生成候选基频（包含 1..4 次分频以应对峰列缺项）。
  */
 export function generatePeriodCandidates(peaks: Peak[]): number[] {
   const candidates: number[] = []
@@ -169,9 +167,7 @@ export function generatePeriodCandidates(peaks: Peak[]): number[] {
 }
 
 /**
- * Peak lattice fitting：peak ≈ k × P。
- * 评分看四件事：对齐峰数、对齐误差、harmonic 是否连续、harmonic bin 空缺。
- * 这是为了防止把 25/50/75/100/125/150 错误压成 50/100/150（2P）。
+ * 晶格周期拟合评估（peak ≈ k × P），评估覆盖度、对齐误差与谐波连续性。
  */
 export function scorePeriod(peaks: Peak[], period: number): PeriodScore | null {
   if (peaks.length < 3) return null
@@ -222,7 +218,7 @@ export function scorePeriod(peaks: Peak[], period: number): PeriodScore | null {
   }
 }
 
-/** 候选基频逐个局部细化（0.25 px 步长）后取最优 */
+/** 候选基频局部细化后取最优 */
 export function detectPeriod(ac: Float64Array): PeriodResult {
   const peaks = findPeaks(ac)
   const candidates = generatePeriodCandidates(peaks)
@@ -243,7 +239,7 @@ export function detectPeriod(ac: Float64Array): PeriodResult {
   scored.sort((a, b) => b.score - a.score)
   let winner = scored[0]
 
-  // 若大周期 ≈ 小周期 × 整数，且小周期的 coverage / occupancy 不明显更差，优先小周期
+  // 谐波去重：若大周期为小周期的整数倍且指标相当，优先选用较小周期
   for (const candidate of scored) {
     if (candidate.period >= winner.period) continue
     const ratio = winner.period / candidate.period
@@ -262,8 +258,7 @@ export function detectPeriod(ac: Float64Array): PeriodResult {
 }
 
 /**
- * 已知周期 P 后，在 phase ∈ [0, P) 搜索网格边界位置：
- * 网格边界应正好落在大量像素边缘上。
+ * 在 phase ∈ [0, P) 搜索与边缘投影对齐的最优网格相位。
  */
 export function findPhase(projection: Float64Array, period: number): number {
   let bestPhase = 0
@@ -297,8 +292,7 @@ export function findPhase(projection: Float64Array, period: number): number {
 }
 
 /**
- * 把一串像素样本按取样方式合成一个颜色。
- * `center` 不在这里 —— 它只要格中心那一个点，由调用方直接取。
+ * 将像素样本集合按指定采样模式聚合为 RGBA 颜色。
  */
 export function aggregateSamples(samples: number[][], mode: SampleMode): [number, number, number, number] {
   if (!samples.length) return [0, 0, 0, 255]
@@ -328,7 +322,7 @@ export function aggregateSamples(samples: number[][], mode: SampleMode): [number
   }
 }
 
-/** 格内取样：center 单独处理，其余模式收集整格像素（不做 trim / 丢弃） */
+/** 单元格内取样：center 直接取格中心像素，其余模式聚合网格覆盖范围内的样本 */
 function sampleCell(
   source: Uint8ClampedArray,
   width: number,
@@ -368,8 +362,7 @@ export interface SampleResult {
 }
 
 /**
- * 按检测到的周期 / 相位重采样为 1:1 像素图。
- * 输出尺寸恰好覆盖整幅图，可能比原图多出边缘上不完整的一格。
+ * 按检测到的周期与相位重采样为 1:1 像素图。
  */
 export function sampleImage(
   source: Uint8ClampedArray,
@@ -430,7 +423,7 @@ export interface DetectReport {
   projectionY: Float64Array
 }
 
-/** 完整自动分析流程：灰度 → 投影 → 自相关 → 基频 → 相位 */
+/** 周期与相位完整分析流程：灰度 → 投影 → 自相关 → 基频检测 → 相位估算 */
 export function analyzePeriods(img: Pixmap): DetectReport | null {
   const { width, height } = img
   if (width < 8 || height < 8) return null

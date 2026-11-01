@@ -28,8 +28,7 @@ export function isHexColor(s: string): boolean {
 }
 
 /**
- * sRGB → CIE Lab（D65）。与原 beads-color-sampler 使用同一套系数，
- * 保证 ΔE 数值与旧工具一致。
+ * sRGB → CIE Lab（D65）。
  */
 export function rgbToLab(rgb: RGB): RGB {
   const [r, g, b] = rgb.map((x) => {
@@ -57,24 +56,16 @@ export function deltaE(a: RGB, b: RGB): number {
 }
 
 /**
- * 色相权重随彩度渐入的起点/终点。
- *
- * 彩度太低时人眼读不出色相：两个 C≈5 的淡色哪怕差 60°，看着都是同一块米白。
- * 这时如果按「色相很重要」去罚，度量就会把淡色推到纯白/纯灰上去 ——
- * 实测就是浅色头发变成白发（饱和度没了）。所以色相权重从 C=6 开始线性上升，
- * 到 C=20 才用满 `wHue`；低彩度区等价于原 CIE76。
+ * 色相权重随彩度渐入的区间（低彩度区平滑过渡到设定权重）。
  */
 const HUE_RAMP_FROM = 6
 const HUE_RAMP_TO = 20
 
-/** 默认色相权重：选色与出图共用同一个值，避免「选色同族、出图跨族」的错位 */
+/** 默认色相权重 */
 export const DEFAULT_HUE_WEIGHT = 2
 
 /**
- * Lab → (彩度, 色相角) 的记忆化。
- *
- * 色板条目的 lab 数组是稳定的，同一颗豆会被同一张图的每个像素问一遍；
- * 把 atan2/hypot 的结果挂在数组上复用，最近色匹配就不会因为换了度量慢一个数量级。
+ * Lab → (彩度, 色相角) 的缓存。
  */
 const POLAR = new WeakMap<RGB, readonly [number, number]>()
 
@@ -87,37 +78,22 @@ export function labPolar(lab: RGB): readonly [number, number] {
   return p
 }
 
-/**
- * 彩度「掉下去」时的额外惩罚倍数。
- *
- * 色相项写成 `2√(C1·C2)·sin(Δh/2)` 之后，无彩色候选的色相项恒等于 0 ——
- * 它成了躲开色相惩罚的免费出口。预算紧、色板缺某个色相时，优化器就会去挑灰豆：
- * 报表里的色相误差好看了，但整张图掉饱和度（浅色头发变白就是这条路走出来的）。
- * 所以彩度下降按 1.5 倍计，灰不再免费；彩度上升照旧，不影响「配到更艳的豆」。
- */
+/** 彩度下降时的惩罚倍数，避免过度倾向低彩度颜色 */
 const SAT_LOSS_GAIN = 1.5
 
-/** 彩度 → 色相权重的放大比例（1 = 原 CIE76 的色相项） */
+/** 彩度 → 色相权重的放大比例（1 = 标准 CIE76 色相分量） */
 export function hueWeightAt(chroma: number, wHue: number): number {
   const ramp = Math.min(1, Math.max(0, (chroma - HUE_RAMP_FROM) / (HUE_RAMP_TO - HUE_RAMP_FROM)))
   return 1 + (wHue - 1) * ramp
 }
 
 /**
- * 色相敏感色差。
+ * 色相加权色差计算。
  *
- * 色相项沿用 CIE76 的形式 `2√(C1·C2)·sin(Δh/2)`，再乘一个随彩度渐入的权重：
- *
- * - `wHue = 0` 退回纯 CIE76（`deltaE`）。
- * - 权重按**源色**（要被还原的那个颜色）的彩度取值：≤6 时是 1，淡色不会被推向纯白；
- *   ≥20 时用满 `wHue`（默认 2），「整块变味」的问题才真正被治住。
- * - 另外，彩度下降按 `SAT_LOSS_GAIN` 倍计，无彩色不再能靠「没有色相」躲开惩罚。
- *
- * 为什么权重挂在源色而不是两端的较小值：灰豆的彩度只有 4，取 min 就把权重压回 1，
- * 于是深棕会被配成一颗冷灰 —— 报表上「色相误差」不难看，图上那块颜色却废了。
- *
- * 为什么不用「彩度下限 + 色相角弧长」：那样在淡色区会给出和 dL/dC 同量级甚至更大的
- * 惩罚，把浅色头发直接换成白豆 —— 色相是保住了，饱和度没了。
+ * 在 CIE76 基础上结合彩度渐入与色相角差异进行加权：
+ * - `wHue = 0` 退化为标准 CIE76（`deltaE`）。
+ * - 权重按源色（目标色）的彩度在 [HUE_RAMP_FROM, HUE_RAMP_TO] 平滑过渡。
+ * - 彩度下降应用额外的增益惩罚。
  */
 export function deltaEHue(a: RGB, b: RGB, wHue = DEFAULT_HUE_WEIGHT): number {
   if (wHue <= 0) return deltaE(a, b)
@@ -127,8 +103,7 @@ export function deltaEHue(a: RGB, b: RGB, wHue = DEFAULT_HUE_WEIGHT): number {
 }
 
 /**
- * 上一行公式的裸参数版本：ΔL 与两端的 (彩度, 色相角) 由调用方给。
- * 最近色匹配要对每个像素遍历整张色板，彩度/色相预先算好再走这里，省掉重复的 atan2。
+ * 色相加权色差的极坐标版本（预计算彩度与色相角以优化批量匹配性能）。
  */
 export function deltaEHuePolar(
   dL: number,
@@ -145,15 +120,13 @@ export function deltaEHuePolar(
   let d = h1 > h2 ? h1 - h2 : h2 - h1
   if (d > Math.PI) d = 2 * Math.PI - d
   const chord = 2 * Math.sqrt(c1 * c2) * Math.sin(d / 2)
-  // 权重只看「被还原的那个颜色有多彩」：用两端的较小值会被无彩色候选钻空子 ——
-  // 一颗灰豆的彩度是 4，min 就变 4，色相权重直接掉回 1，于是深棕被配成冷灰。
   const w = hueWeightAt(c1, wHue)
   const dH = w * chord
 
   return Math.sqrt(dL * dL + dC * dC + dH * dH)
 }
 
-/** 感知亮度 0..1，用于决定叠在色块上的文字用黑还是白 */
+/** 感知亮度 0..1，用于决定文字颜色 */
 export function luminance(rgb: RGB): number {
   return (0.299 * rgb[0] + 0.587 * rgb[1] + 0.114 * rgb[2]) / 255
 }
@@ -162,7 +135,7 @@ export function idealTextColor(rgb: RGB): string {
   return luminance(rgb) > 0.55 ? '#0b1220' : '#f8fafc'
 }
 
-/** 0.3 / 0.59 / 0.11 加权 RGB 距离 —— 旧「拼豆工具箱」的配色距离 */
+/** 0.3 / 0.59 / 0.11 加权 RGB 距离 */
 export function weightedRgbDistance(r: number, g: number, b: number, c: RGB): number {
   const dr = r - c[0]
   const dg = g - c[1]
@@ -188,7 +161,7 @@ export function medianValue(values: number[]): number {
   return sorted.length % 2 ? sorted[mid] : (sorted[mid - 1] + sorted[mid]) / 2
 }
 
-/** 几何平均：值为 0 时用 log((v+1)/256) 规避 log(0)，不丢弃任何样本 */
+/** 几何平均，使用对数空间避免乘法下溢 */
 export function geometricMean(values: number[]): number {
   if (!values.length) return 0
   let logSum = 0
@@ -196,7 +169,7 @@ export function geometricMean(values: number[]): number {
   return clamp(Math.exp(logSum / values.length) * 256 - 1, 0, 255)
 }
 
-/** 众数：按 quantization 分桶后取出现次数最多的桶，桶内取原始均值 */
+/** 众数：按 quantization 分桶后取出现次数最多的桶 */
 export function modeColor(samples: number[][], quantization = 16): RGBA {
   if (!samples.length) return [0, 0, 0, 255]
   const buckets = new Map<string, { count: number; sums: [number, number, number, number] }>()

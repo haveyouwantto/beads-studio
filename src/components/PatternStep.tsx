@@ -59,7 +59,6 @@ export function PatternStep({ onOpenFullscreen }: { onOpenFullscreen: () => void
   const setCodeSystem = useStudio((s) => s.setCodeSystem)
   const optimizedPalette = useStudio((s) => s.optimizedPalette)
   const libraryPalette = useStudio((s) => s.libraryPalette)
-  // 导出文件名用项目名，别让一堆导出都叫 beads-xxxx
   const projectName = useStudio(tabNameOf)
   const fileBase = safeFileName(projectName)
 
@@ -67,7 +66,7 @@ export function PatternStep({ onOpenFullscreen }: { onOpenFullscreen: () => void
   const [exportScale, setExportScale] = useState(2)
   const [busy, setBusy] = useState(false)
 
-  // 预览尺寸：超大图纸自动降档，但预览始终是矢量的，放大不会糊
+  // 预览参数配置
   const previewOptions = useMemo(
     () =>
       result
@@ -86,32 +85,28 @@ export function PatternStep({ onOpenFullscreen }: { onOpenFullscreen: () => void
     [result, palette, renderOptions],
   )
 
-  // 拆分成了几块板（不拆就是 1 × 1）
+  // 拼豆板分块布局
   const layout = useMemo(() => (result ? boardLayout(result, renderOptions) : null), [result, renderOptions])
-  /** 文件名后缀：拆了板就标出来，免得和整张的导出互相覆盖 */
   const splitTag = layout && layout.boards.length > 1 ? `-${renderOptions.boardSize}分板` : ''
 
   const counts = useMemo(() => (result ? usageCounts(result, palette) : new Uint32Array(0)), [result, palette])
   const bom = useMemo(() => buildBom(palette, counts, codeSystem), [palette, counts, codeSystem])
-  // 半透明豆（H01）在清单里也要按「看上去是什么颜色」画，不然会是一块纯白
   const swatchByHex = useMemo(() => new Map(palette.map((e) => [e.hex, swatchHex(e)])), [palette])
   const totalBeads = useMemo(() => bom.reduce((a, r) => a + r.count, 0), [bom])
   const usedSet = useMemo(() => new Set(bom.map((r) => r.hex)), [bom])
   const lookup = useMemo(() => buildHexLookup(palette), [palette])
 
-  // 侧栏只有 330px 宽，五个中文标签放不下；界面上用短名，完整名字放 title
   const PALETTE_SHORT: Partial<Record<typeof paletteSource, string>> = {
     optimized: '优化结果',
     library: '全色',
     kit: '套装',
     custom: '自定义',
   }
-  // 每个来源一句话说明它是干什么的
   const PALETTE_HINT: Partial<Record<typeof paletteSource, string>> = {
     optimized: '「优化颜色」选出的方案',
     library: includeExtended ? 'MARD 完整 291 色' : 'MARD 标准 221 色',
-    kit: '常见零售套装，在下面选档位',
-    custom: '自己填 #RGB，一行一个',
+    kit: '常见零售套装',
+    custom: '自定义 HEX 颜色列表',
   }
 
   const paletteOptions = VISIBLE_PALETTE_SOURCES.map((value) => ({

@@ -13,11 +13,7 @@ export function downloadBlob(blob: Blob, filename: string): void {
   setTimeout(() => URL.revokeObjectURL(url), 2000)
 }
 
-/**
- * 下载文件名：以项目名开头，这样一堆导出能看出是哪个项目的。
- * 文件系统不允许的字符（`\ / : * ? " < > |`、控制符）换成空格，
- * 去掉首尾的点和空格（开头的点会让文件变成隐藏文件），太长的截断。
- */
+/** 规范化安全文件名 */
 export function safeFileName(name: string, fallback = 'beads-studio'): string {
   const cleaned = (name ?? '')
     .replace(/[\\/:*?"<>|]/g, ' ')
@@ -82,8 +78,6 @@ export function buildPaletteExport(
   if (format === 'json') {
     return JSON.stringify(
       {
-        // 本工具自己的格式版本，和项目存档一样从 1 起
-        // （旧的 '3.0' 是从原「配色采样器」搬过来的字面量，跟这里没关系）
         app: 'beads-studio',
         version: 1,
         codeSystem: system,
@@ -101,12 +95,8 @@ export function buildPaletteExport(
 }
 
 /**
- * 读回色板文件：自动认「优化结果」那三种导出格式。
- *   1. JSON —— 色板导出的 `{ selectedHexValues / codes }`、项目存档的 `paletteHex`、
- *      或者干脆就是一个 HEX 字符串数组；
- *   2. HEX 列表 —— 一行一个 #RRGGBB；
- *   3. 色号列表 —— 一行一个色号（H07 / A13 …）。
- * 返回 HEX 列表（顺序按文件里的顺序，重复的去掉）。
+ * 解析色板文件内容。
+ * 支持 JSON、HEX 列表、色号列表格式。
  */
 export function parsePaletteFile(text: string, palette: PaletteEntry[], system: CodeSystem): string[] {
   const trimmed = text.trim()

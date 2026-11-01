@@ -2,9 +2,7 @@ import { useState } from 'react'
 import { getTabSnapshot, useStudio } from '../store/studio.ts'
 
 /**
- * 浏览器式的项目标签栏。
- * 每个标签页是一个独立项目（各自的图、网格、色板、配色结果），
- * 点一下切换，右侧 × 关闭；点当前标签的名字就地改名（双击任意标签也行）。
+ * 项目标签栏组件。
  */
 export function TabBar({ onRequestFile }: { onRequestFile: () => void }) {
   const tabs = useStudio((s) => s.tabs)

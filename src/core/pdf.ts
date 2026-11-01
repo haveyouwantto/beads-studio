@@ -1,14 +1,4 @@
-/**
- * 拼豆图纸的 PDF 导出：**纯矢量**，一页一块板。
- *
- * 图纸本来就是「一堆方块 + 网格线 + 色号文字」，PDF 里正好一一对应：
- *   方块 → `re f`（或一条 path 里多个 re，一次填充）
- *   网格线 → `m/l S`
- *   文字 → 标准 Helvetica（色号都是 ASCII，不用嵌字体）
- * 所以不引第三方 PDF 库，也不光栅化 —— 放到多大都是清楚的。
- *
- * 页面用 A4，每块板按自身长宽比缩放到页内居中；多页时页脚写「3 / 9」。
- */
+/** 拼豆图纸矢量 PDF 导出 */
 import { hexToRgb, luminance } from './color.ts'
 import { IGNORED_ALPHA } from './edit.ts'
 import { codeOf, type PaletteEntry } from './palette.ts'
@@ -24,10 +14,10 @@ const PAGE_MARGIN = 26
 const CODE_SIZE = 0.42
 /** 标尺数字字高（格） */
 const RULER_SIZE = 0.9
-/** 字号小于这个值就不画色号（印出来看不清） */
+/** 最小色号字号（pt） */
 const MIN_CODE_PT = 3.2
 
-/** 字符串按单字节写（内容全是 ASCII） */
+/** 编码 ASCII 字符串 */
 function enc(text: string): Uint8Array {
   const out = new Uint8Array(text.length)
   for (let i = 0; i < text.length; i++) out[i] = text.charCodeAt(i) & 0xff
@@ -67,7 +57,7 @@ function textWidth(text: string, size: number): number {
   return (w / 1000) * size
 }
 
-/** 一块板画成 PDF 内容（坐标单位是「格」，外面用 cm 缩放） */
+/** 单块板 PDF 内容流 */
 function boardContent(
   img: Pixmap,
   palette: PaletteEntry[],
@@ -80,13 +70,11 @@ function boardContent(
   const boxW = W + pad * 2
   const boxH = H + pad * 2
   const out: string[] = []
-  /** 格子坐标（左上原点）→ PDF 坐标（左下原点） */
   const py = (y: number) => boxH - pad - y
 
   out.push(fillColor(options.background))
   out.push(`0 0 ${f(boxW)} ${f(boxH)} re f`)
 
-  // 按颜色分组：一条 path 里多个 re，一次填充
   const byColor = new Map<string, string[]>()
   for (let y = 0; y < H; y++) {
     for (let x = 0; x < W; x++) {
@@ -251,14 +239,11 @@ function assemblePdf(pages: PdfPageContent[]): Blob {
 }
 
 export interface PatternPdfOptions {
-  /** 页脚：一页一块板时写「3 / 9」，单页不写 */
+  /** 是否在多页导出时显示页脚页码 */
   pageLabels?: boolean
 }
 
-/**
- * 拼豆图纸 → 矢量 PDF（一页一块板，不拆分就是整张一页）。
- * 页面 A4，每块板按长宽比缩放居中，四周留边距。
- */
+/** 生成矢量 PDF 图纸（每块板一页） */
 export function buildPatternPdf(
   img: Pixmap,
   palette: PaletteEntry[],

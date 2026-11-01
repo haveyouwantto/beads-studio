@@ -3,17 +3,13 @@ import { useEffect } from 'react'
 import { hexToRgb, idealTextColor } from '../core/color.ts'
 
 /**
- * 全站唯一的色块。
+ * 通用色块组件。
  *
- * 之前「优化结果」「色板用量」「图中颜色」「候选色」各写了一套，
- * 结果有的忘了按底色自动切黑/白文字（浅色块上白字看不见）。
- * 现在统一走这里：底色决定文字色，图标/数量/色号按需叠加。
- *
- * size：
- *   md    默认，可以放色号与 HEX
- *   dense 色板用量那种小格
- *   chip  画笔调色板那种 26px 小方块（不放文字）
- *   dot   用料清单 / 方案预览里那种 14px 圆点，只有颜色没有文字
+ * size:
+ * - md: 默认，支持色号与 HEX
+ * - dense: 色板用量紧凑网格
+ * - chip: 调色板小方块
+ * - dot: 用料清单/方案预览小圆点
  */
 export function Swatch({
   hex,
@@ -38,9 +34,9 @@ export function Swatch({
   lock?: boolean
   selected?: boolean
   dimmed?: boolean
-  /** 透明档：画成棋盘格 */
+  /** 透明格样式 */
   transparent?: boolean
-  /** 「+」按钮那种空块 */
+  /** 添加按钮样式 */
   add?: boolean
   size?: 'md' | 'dense' | 'chip' | 'dot'
   onClick?: () => void
@@ -52,7 +48,7 @@ export function Swatch({
   if (transparent) cls.push('transparent')
   if (add) cls.push('add')
 
-  // 文字颜色跟着「实际显示出来的底色」走 —— 半透明豆的观感色也在这里传进来
+  // 根据背景色动态匹配前景色
   const style = add || transparent ? undefined : { background: hex, color: idealTextColor(hexToRgb(hex ?? '#000000')) }
   const Tag = onClick || onContextMenu ? 'button' : 'div'
 
@@ -85,11 +81,7 @@ export function Swatch({
 }
 
 /**
- * MD 涟漪：在点击位置扩散一圈。
- *
- * 用事件委托挂在 document 上，这样动态新增的按钮（标签栏、弹窗里的）也自动生效，
- * 不用给每个按钮单独接线。和 Materialize 的 Waves 思路一致，但不依赖它的 JS
- * —— Materialize 的 JS 组件会改 DOM 结构，和 React 受控节点冲突。
+ * 涟漪动画：挂载在 document 实现全局事件委托。
  */
 export function useMaterialRipple(): void {
   useEffect(() => {
@@ -103,7 +95,7 @@ export function useMaterialRipple(): void {
       if (window.matchMedia?.('(prefers-reduced-motion: reduce)').matches) return
 
       const rect = host.getBoundingClientRect()
-      // 半径取到最远角，保证涟漪铺满整个控件
+      // 计算涟漪范围
       const radius = Math.hypot(Math.max(e.clientX - rect.left, rect.right - e.clientX), Math.max(e.clientY - rect.top, rect.bottom - e.clientY))
       const ripple = document.createElement('span')
       ripple.className = 'md-ripple'
@@ -191,7 +183,6 @@ export function Segmented<T extends string>({
 }) {
   const index = options.findIndex((o) => o.value === value)
   return (
-    // Materialize tabs：ul.tabs > li.tab > a，激活项加 .active
     <ul className="tabs tabs-fixed-width segmented">
       {options.map((o) => (
         <li key={o.value} className="tab">
@@ -208,7 +199,6 @@ export function Segmented<T extends string>({
           </a>
         </li>
       ))}
-      {/* Materialize 的移动下划线由它的 JS 注入，这里由 React 按等分宽度直接定位 */}
       {index >= 0 && (
         <li
           className="indicator"

@@ -1,15 +1,9 @@
 import type { Pixmap } from './types.ts'
 
 /**
- * 探测「设计稿被整数倍放大」的倍数。
+ * 探测图像是否为整数倍放大的像素块网格。
  *
- * 思路：先算两条边界差异表 ——
- *   colDiff[x] = 是否存在某行在 x-1 / x 之间颜色不同
- *   rowDiff[y] = 是否存在某列在 y-1 / y 之间颜色不同
- * 那么 N×N 块内颜色一致 ⟺ 所有不是 N 的整数倍的列/行都没有差异。
- * 一次 O(w·h) 扫描 + 每个候选 N 的 O(w+h) 检查，比逐块比较快得多。
- *
- * 返回可以被整除的最大倍数；没有明显放大时返回 1。
+ * 通过扫描行与列边界，检测最大无损压缩块尺寸。
  */
 export function detectUniformBlock(img: Pixmap, maxBlock = 64): number {
   const { width: w, height: h, data } = img
@@ -60,7 +54,7 @@ export function detectUniformBlock(img: Pixmap, maxBlock = 64): number {
   return 1
 }
 
-/** 把 N×N 像素块取左上角像素，压成一张 1 格 = 1 豆的图 */
+/** 像素块坍缩：按块大小取样左上角像素 */
 export function collapseBlocks(img: Pixmap, block: number): Pixmap {
   const n = Math.max(1, Math.round(block))
   if (n === 1) {

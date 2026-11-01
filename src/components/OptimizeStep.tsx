@@ -43,10 +43,9 @@ export function OptimizeStep() {
   const candidateHex = useStudio((s) => s.candidateHex)
   const candidateCount = candidateHex.length ? candidateHex.length : libraryPalette.length
   const candidateSets = useStudio((s) => s.candidateSets)
-  // 导出文件名用项目名
   const projectName = useStudio(tabNameOf)
 
-  // 优化目标预览：直接来自「规范化」的网格
+  // 优化目标信息
   const targetInfo = useMemo(() => (grid ? targetsFromPixmap(grid) : null), [grid])
 
   useEffect(() => {
@@ -531,23 +530,24 @@ function downloadExport(
   downloadText(text, `${safeFileName(projectName)}-色板-${system}.${ext}`, mime)
 }
 
-/** 一张对比卡：成品预览 + 一行的量化指标（指标只是参考，挑哪张靠看） */
-function SweepCard({
-  result,
-  picked,
-  onPick,
-}: {
-  result: { id: string; label: string; hint: string; budget: number; loss: number; stats: OptimizeStats; preview: Pixmap | null; entries: PaletteEntry[] }
-  picked: boolean
-  onPick: () => void
-}) {
+  /** 
+   * 对比卡片组件：预览成品与核心量化指标。
+   */
+  function SweepCard({
+    result,
+    picked,
+    onPick,
+  }: {
+    result: { id: string; label: string; hint: string; budget: number; loss: number; stats: OptimizeStats; preview: Pixmap | null; entries: PaletteEntry[] }
+    picked: boolean
+    onPick: () => void
+  }) {
   const ref = useRef<HTMLCanvasElement>(null)
   useEffect(() => {
     const canvas = ref.current
     const img = result.preview
     if (!canvas || !img) return
-    // 按卡片实际宽度出图：手机上一行两张时卡片比桌面宽，
-    // 固定 160 会先被画小再被 CSS 拉伸，边缘会发虚
+    // 按容器宽度绘制图片
     const cssWidth = canvas.parentElement?.clientWidth ?? 160
     const dpr = typeof window === 'undefined' ? 1 : window.devicePixelRatio || 1
     const scale = Math.max(1, Math.ceil((cssWidth * dpr) / Math.max(img.width, img.height)))

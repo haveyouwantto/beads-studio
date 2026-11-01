@@ -1,8 +1,7 @@
 import { STAGE_ORDER, type StageId } from '../store/studio.ts'
 
 /**
- * 三个阶段的标签与图标。
- * 侧边导航和页面标题共用同一份定义，避免两处各写一遍图标名。
+ * 阶段标签与图标元数据。
  */
 export const STAGE_META: Record<StageId, { label: string; icon: string }> = {
   regularize: { label: '规范化', icon: 'center_focus_strong' },

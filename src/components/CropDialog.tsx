@@ -11,8 +11,7 @@ const MAX_H = 520
 type Handle = 'move' | 'nw' | 'ne' | 'sw' | 'se'
 
 /**
- * 上传后的预处理：矩形裁剪，只做这一次（不进存档）。
- * 拖框内平移、拖四角改大小；「跳过裁剪」= 整张用原图。
+ * 图片裁剪对话框组件。
  */
 export function CropDialog() {
   const crop = useStudio((s) => s.crop)
@@ -25,7 +24,7 @@ export function CropDialog() {
   const [rect, setRect] = useState<Rect>(() => ({ x: 0, y: 0, width: 0, height: 0 }))
   const drag = useRef<{ mode: Handle; startX: number; startY: number; start: Rect } | null>(null)
 
-  // 换图时把框重置成整张
+  // 换图时重置选框为整张图
   useEffect(() => {
     if (!img) return
     setRect({ x: 0, y: 0, width: img.width, height: img.height })
@@ -73,14 +72,14 @@ export function CropDialog() {
     if (d.mode === 'move') {
       next = { ...s, x: s.x + dx, y: s.y + dy }
     } else {
-      // 拖角：固定对角，另一角跟着走
+      // 拖拽手柄调整四边
       const left = d.mode === 'nw' || d.mode === 'sw' ? s.x + dx : s.x
       const top = d.mode === 'nw' || d.mode === 'ne' ? s.y + dy : s.y
       const right = d.mode === 'ne' || d.mode === 'se' ? s.x + s.width + dx : s.x + s.width
       const bottom = d.mode === 'sw' || d.mode === 'se' ? s.y + s.height + dy : s.y + s.height
       next = { x: left, y: top, width: right - left, height: bottom - top }
     }
-    // 让宽高至少 MIN_CROP，再夹进图片里
+    // 限制最小尺寸并保持在图片边界内
     if (next.width < MIN_CROP) next = { ...next, width: MIN_CROP }
     if (next.height < MIN_CROP) next = { ...next, height: MIN_CROP }
     setRect(clampRect(next, img.width, img.height))
@@ -91,14 +90,12 @@ export function CropDialog() {
     try {
       e.currentTarget.releasePointerCapture(e.pointerId)
     } catch {
-      /* 已经释放 */
+      /* 已释放 */
     }
   }
 
   const cropped = rect.width < img.width || rect.height < img.height
-  // 遮罩拆成四块，而不是给裁剪框加 9999px 的 box-shadow ——
-  // 那样会把外层 .crop-body 的滚动区域撑到几万像素，四角的手柄被挤到滚动条底下，
-  // 拖一小段就抓不住了（尤其是框拉到最大的时候）。
+  // 计算遮罩区域尺寸
   const rl = rect.x * scale
   const rt = rect.y * scale
   const rw = rect.width * scale

@@ -5,14 +5,11 @@ import type { Pixmap } from './types.ts'
 
 export interface QuantizeOptions {
   metric: DistanceMetric
-  /** 是否把颜色吸附到色板（关闭则保留规范化后的原始像素） */
+  /** 是否把颜色吸附到色板 */
   quantize: boolean
   /** 抖动方式 */
   dither: 'none' | 'floyd-steinberg'
-  /**
-   * 色相权重，必须与「优化颜色」阶段用的一致（缺省 = 默认 2）。
-   * 否则会出现选色时按同色相、出图时按旧 CIE76 跨色相的错位。
-   */
+  /** 色相权重 */
   hueWeight?: number
 }
 
@@ -41,14 +38,7 @@ function distributeErr(
   data[i + 2] = Math.min(255, Math.max(0, data[i + 2] + eb * factor))
 }
 
-/**
- * 把规范化后的像素图映射到拼豆色板。
- * 抖动使用 Floyd–Steinberg 误差扩散（与旧「拼豆工具箱」一致）。
- *
- * overrides：优化结果里「这个颜色指定用哪颗豆」的分配（key = 源色 RGB 数值）。
- * 优化为了让结果色号数达标，会把一部分颜色放到「不是最近色」的豆上；
- * 出图纸时必须照这份分配走，否则按最近色重新映射会把补出来的色又压回去。
- */
+/** 将像素图量化吸附至目标色板 */
 export function quantizeToPalette(
   img: Pixmap,
   palette: PaletteEntry[],
@@ -63,15 +53,9 @@ export function quantizeToPalette(
     return { width: w, height: h, data }
   }
 
-  // 逐个像素都要扫一遍色板，先把匹配函数编译好（色板一侧的彩度/色相只算一次）
   const match = prepareNearest(palette, options.metric, options.hueWeight ?? DEFAULT_HUE_WEIGHT)
-
-  // 结果里写「豆子本身的颜色」——调色板可能是「半透明豆已换成叠在背景上的观感色」的版本
-  // （H01 匹配时是浅灰），但图纸上要记的是那颗豆，所以输出一律按 hex 取色，
-  // 否则后面按 hex 查色号会全部落空。
   const outRgb = palette.map((entry) => hexToRgb(entry.hex))
 
-  // 指定分配：源色 RGB → 色板下标（指定的色号不在色板里就忽略，退回最近色）
   let forced: Map<number, number> | null = null
   if (overrides?.length) {
     const byHex = new Map<string, number>()
@@ -125,7 +109,7 @@ export function quantizeToPalette(
   return { width: w, height: h, data }
 }
 
-/** 每种色板颜色的用量统计（用于用料清单 / BOM） */
+/** 每种色板颜色的用量统计 */
 export function usageCounts(img: Pixmap, palette: PaletteEntry[]): Uint32Array {
   const counts = new Uint32Array(palette.length)
   const index = new Map<string, number>()
@@ -133,7 +117,6 @@ export function usageCounts(img: Pixmap, palette: PaletteEntry[]): Uint32Array {
 
   const data = img.data
   for (let i = 0; i < data.length; i += 4) {
-    // 透明格 = 忽略：不算一颗豆，别进用料清单
     if (data[i + 3] < 8) continue
     const hex =
       '#' +

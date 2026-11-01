@@ -158,10 +158,7 @@ export interface OptimizeConfig {
 
 /**
  * 八叉树减色后的目标色上限。
- *
- * 这个数不是「最后用几色」，只是「优化器要照顾多少种颜色」。取小了，碎色会被
- * 并进离得远的大颜色（这张 80×80 的图在 64 时平均吸收 ΔE 6.9，128 时降到 5.0，
- * 192 时 3.8）；取大了只是多算一点距离矩阵，代价很低。
+ * 控制优化算法处理的目标颜色集合大小，在保真度与计算开销之间取得平衡。
  */
 export const OCTREE_MAX_LEAVES = 128
 
@@ -376,17 +373,12 @@ export class PaletteOptimizer {
   private dist = new Float64Array(0)
   private weights = new Float64Array(0)
   private weightSum = 0
-  /** 目标色的 RGB 数值（r<<16|g<<8|b），出图纸时要按它查最终分配 */
+  /** 目标色的 RGB 数值（r<<16|g<<8|b），用于最终颜色映射分配 */
   private targetKeys = new Int32Array(0)
-  /** 每个（合并后的）目标色对应哪些原始源色的 key，出图纸时要全部映射过去 */
-  private targetGroupKeys: number[][] = []
   /**
-   * 上面那些成员源色本身（key + 自己的 lab）。
-   *
-   * 八叉树叶子的「代表色」是成员里的主导色，它跟豆子的匹配结果只对主导色成立：
-   * 同一个叶子里的碎色（抗锯齿过渡色）被直接套上主导色的豆，就会出现
-   * 「深绿过渡色全变青」这种整族错色 —— 明明是最近的豆就在旁边。所以出图纸时
-   * 代表色沿用优化器的决定（层次拆层会故意钉住它），其余成员各自找最近的豆。
+   * 八叉树叶子的成员源色信息。
+   * 八叉树叶子的代表色与优化结果对应。在最终生成图纸时，为避免抗锯齿过渡色错误匹配至代表色的映射，
+   * 需对叶子内成员分别计算最近距离进行重新分配。
    */
   private groupMembers: { key: number; lab: RGB; count: number }[][] = []
 
@@ -447,9 +439,7 @@ export class PaletteOptimizer {
   }
 
   setTargets(samples: TargetSample[]): void {
-    // 八叉树减色：不设阈值，按「像素量最小的节点先被吸收」把碎色并进大颜色。
-    // 之前用 ΔE < 2.5 的贪心合并，对碎成上千色的抗锯齿图几乎不起作用 ——
-    // 1~3 格的碎色各自找最近豆，把只服务几个像素的豆拖进解里（又花又浪费豆位）。
+    // 使用八叉树进行颜色减色，按叶子节点包含的像素数量进行归并，以保留主要色彩信息。
     const keyOf = (rgb: readonly [number, number, number]) => {
       const [r, g, b] = rgb
       return (
@@ -467,7 +457,6 @@ export class PaletteOptimizer {
       lab: rgbToLab(l.rgb),
       count: l.count,
     }))
-    this.targetGroupKeys = leaves.map((l) => l.members.map((j) => keyOf(samples[j].rgb)))
     this.groupMembers = leaves.map((l) =>
       l.members.map((j) => ({ key: keyOf(samples[j].rgb), lab: samples[j].lab, count: samples[j].count })),
     )
@@ -681,15 +670,7 @@ export class PaletteOptimizer {
     }
   }
 
-  /**
-   * 图纸上每一格最终落到哪颗豆，以及这一格自己的 ΔE。
-   *
-   * 目标色是八叉树叶子的代表色（成员里的主导色），nearestI 只对代表色成立。
-   * 同一个叶子里的过渡色被直接套上代表色的豆，就会整族错色 —— 这张 80×80 的图里
-   * 深绿的抗锯齿过渡色全被塞给一颗青色豆，ΔE 从 20 涨到 90，而平均 ΔE 只涨 0.08，
-   * 指标上完全看不见。所以成员各自找最近的豆，只有代表色沿用优化器的决定
-   * （拆层会故意把它钉在非最近的豆上）。
-   */
+  /** 最终图纸分配：计算各区域对应颜色与误差。 */
   private finalAssignment(): { key: number; hex: string; d: number; count: number }[] {
     const wHue = this.config.hueWeight ?? 2
     const out: { key: number; hex: string; d: number; count: number }[] = []
@@ -1087,14 +1068,11 @@ export class PaletteOptimizer {
   }
 
   /**
-   * 拆层：把「明明分得开、却压在同一颗豆上」的两个颜色拆到各自的豆上。
+   * 拆层：分离原本不同但映射到相同候选色的目标颜色对，恢复色彩层次。
    *
-   * 为什么不能交给退火：这一步要让某个颜色用一颗「不是最近」的豆。最近色是硬约束，
-   * 加豆也没用（新豆离它更远，永远不会被选中）；只有直接钉住分配才能做到。
-   * 所以放在收尾：先让 ΔE 把颜色放到最近处，再挑层次损失最大的几对，
-   * 一次挪一层、撤掉一颗最不顶用的豆腾位置，按「ΔE + contrast × 层次损失」决定收不收。
-   *
-   * 两道闸：替代豆必须同色系（否则头发会被染成粉灰）、ΔE 涨幅有上限。
+   * 模拟退火阶段以最近颜色为硬约束，难以主动选择次优点以保留对比度。
+   * 此阶段在退火后针对层次损失显著的目标对进行定向调整，
+   * 替换收益最低的候选色，并在 ΔE 变化和同色系限制下评估综合代价（ΔE + contrast × 层次损失）。
    */
   private splitLayers(budget: number): void {
     if (!this.contrastActive || !this.pairWSum || this.t > AUTO_CONTRAST_MAX_T) return
@@ -1327,17 +1305,9 @@ export class PaletteOptimizer {
   }
 
   /**
-   * 自动色数：前向贪心扫一遍「每多一颗豆，分数降到多少」，再取曲线拐点。
-   *
-   * 分数 = 加权 ΔE + contrast × 层次损失 —— 和退火用的目标函数是同一条。
-   * 只按 ΔE 扫的话，图省事会得出「头发三层压成两层也差不多」的结论，于是少买一颗豆。
-   *
-   * 为什么不按「ΔE 低于某个阈值就停」：不同图的 ΔE 量级差太多（8 色像素画和照片
-   * 不是一个尺度），阈值没法通用；拐点是尺度无关的 —— 拐点之后再买颜色，画面几乎
-   * 不变，只是多备几种豆。
-   *
-   * 另外再兜一道底线：每一步至少得买回 AUTO_MIN_GAIN 的分数，曲线还在陡降就说明
-   * 拐点取早了。
+   * 自动计算色数预算：通过前向贪心评估不同候选色数量对综合评分的影响，并寻找收益拐点。
+   * 评分函数综合考虑加权 ΔE 与层次损失。使用拐点判定可自适应不同图像类型（如简易像素画或照片），
+   * 并在边际收益递减时确定最优预算。
    */
   private autoBudget(maxK: number): { k: number; curve: { k: number; deltaE: number }[] } {
     const chosen: number[] = []

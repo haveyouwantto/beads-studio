@@ -10,8 +10,7 @@ export interface DrawerItem {
 }
 
 /**
- * 手机上的侧边栏：顶部工具栏在窄屏放不下，收进抽屉里选。
- * 遮罩点击 / Esc / 选中任一项都关闭。
+ * 响应式抽屉菜单组件。
  */
 export function MenuDrawer({ items, onClose }: { items: DrawerItem[]; onClose: () => void }) {
   useEffect(() => {

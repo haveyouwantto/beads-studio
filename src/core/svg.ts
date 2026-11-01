@@ -1,4 +1,4 @@
-﻿import { luminance } from './color.ts'
+import { luminance } from './color.ts'
 import { IGNORED_ALPHA } from './edit.ts'
 import { blendOver, codeOf, type CodeSystem, type PaletteEntry } from './palette.ts'
 import type { Pixmap, RGB } from './types.ts'
@@ -6,33 +6,26 @@ import type { Pixmap, RGB } from './types.ts'
 export interface RenderOptions {
   /** 'flat' 方格图纸；'beads' 圆形珠子预览 */
   style: 'flat' | 'beads'
-  /** 每个格子在 SVG 里占多少像素（决定默认显示与导出尺寸，缩放时不受影响） */
+  /** 单元格尺寸（像素） */
   cellSize: number
-  /** 珠子之间的间隙 */
+  /** 珠子间隙 */
   gap: number
-  /** 是否画网格线 */
+  /** 是否绘制网格线 */
   grid: boolean
-  /** 每隔多少格画一条粗线（图纸的主网格） */
+  /** 主网格间隔格数 */
   majorEvery: number
   background: string
-  /** 是否在格子上写色号 */
+  /** 是否标注色号 */
   codes: boolean
   codeSystem: CodeSystem
-  /** 是否画行列标尺 */
+  /** 是否绘制标尺 */
   rulers: boolean
   rulerStep: number
-  /** 四边的留白（以「格」为单位）：标尺数字就写在留白里 */
+  /** 四周留白（格数） */
   margin: number
-  /**
-   * 拼豆板拆分：0 = 不拆分（整张一张图纸）；
-   * 50 / 52 = 按 50×50 或 52×52 的板切成若干块，每块各自生成一张图纸再排在一起。
-   */
+  /** 拼豆板拆分规格：0 为不拆分，50/52 为分块规格 */
   boardSize: number
-  /**
-   * 拆分模式下标尺（参考线）从哪一格开始数：
-   * 'second'（默认）把第二格的左上角当原点 —— 第二格标 1，第一圈不标数字；
-   * 'first' 从第一格开始数（第一格标 1，和以前一样）。
-   */
+  /** 拆分模式标尺起始格：'first' 从第一格开始；'second' 从第二格开始 */
   rulerStart: 'first' | 'second'
 }
 
@@ -47,38 +40,34 @@ export const DEFAULT_RENDER_OPTIONS: RenderOptions = {
   codeSystem: 'MARD',
   rulers: true,
   rulerStep: 10,
-  // 2.6 是标尺数字需要的地方：比这更窄，左上的数字就贴着图纸了
+  // 预留标尺数字空间
   margin: 2.6,
   boardSize: 0,
   rulerStart: 'second',
 }
 
-/** 线宽以「格」为单位，保证跟着图一起缩放，永远是矢量 */
+/** 线宽（格） */
 const THIN_WIDTH = 0.05
 const THICK_WIDTH = 0.18
 
-/**
- * 图纸四边的留白（格）。
- * 标尺数字写在留白里，不再自己额外撑开一条边 —— 四边永远一样宽。
- * 老存档里没有这个字段，缺省按默认值走。
- */
+/** 边距（格） */
 export function patternMargin(options: RenderOptions): number {
   return Number.isFinite(options.margin) ? Math.max(0, options.margin) : DEFAULT_RENDER_OPTIONS.margin
 }
 
-/** 和界面一致的 Roboto 无衬线字体栈 */
+/** 字体栈 */
 export const SVG_FONT =
   "Roboto, 'Segoe UI', 'PingFang SC', 'Microsoft YaHei', system-ui, sans-serif"
 
-/** 格子太多时不再逐格写色号，否则 SVG 会大到浏览器吃不消 */
+/** 格子数限制，超出则省略色号 */
 const CODE_CELL_LIMIT = 12000
-/** 珠子样式逐颗绘制，元素数量大，超过这个规模建议用方格 */
+/** 珠子渲染限制，超出则退回方格 */
 const BEAD_CELL_LIMIT = 60000
 
-/** 拆分后板与板之间的空隙、每块板标题占的高度（都以「格」为单位，跟着图纸一起缩放） */
+/** 板间隙与标题高度（格） */
 const BOARD_GAP = 1.6
 const BOARD_LABEL = 2
-/** 只有这一档板子的标尺可以选择起点（带边框的板） */
+/** 标尺起始偏移板尺寸 */
 const RULER_START_BOARD_SIZE = 52
 
 export interface PatternSvg {
@@ -111,16 +100,7 @@ function hexOf(data: Uint8ClampedArray, i: number): string {
   )
 }
 
-/**
- * 把拼豆图案生成为 SVG。
- *
- * 为什么用 SVG：图纸本质是矢量图，放大多少倍都应该清晰；
- * 用 canvas 渲染再靠 CSS 放大一定会糊。
- *
- * 性能上做了两件事：
- * - 同色格子合并成一条 `<path>`（几十个元素，而不是几万个 `<rect>`）
- * - 网格线合并成两条 `<path>`（细线一条、粗线一条）
- */
+/** 将图案渲染为矢量 SVG */
 export function buildPatternSvg(
   img: Pixmap,
   palette: PaletteEntry[],
@@ -136,15 +116,11 @@ export function buildPatternSvg(
   }
 }
 
-/**
- * 单张图纸的内容（不含最外层 <svg> 标签）。
- * 拆成若干块拼豆板时，每块都拿它生成一次，再按排版拼到一起。
- */
+/** 单张图纸渲染（不含 svg 标签） */
 function patternBody(
   img: Pixmap,
   palette: PaletteEntry[],
   options: RenderOptions,
-  /** 标尺从哪一格开始数：0 = 第一格标 1；1 = 第二格标 1（第二格左上角当原点） */
   rulerFrom = 0,
 ): { body: string; outW: number; outH: number; vbW: number; vbH: number; codesSuppressed: boolean; beadSuppressed: boolean } {
   const { width: W, height: H, data } = img
@@ -167,9 +143,7 @@ function patternBody(
   /** 半透明豆画的是它的颜料色（H01 = 纯白），透明度由 fill-opacity 表达 */
   const pigmentOf = (entry: PaletteEntry) => entry.pigmentHex ?? entry.hex
 
-  // 半透明豆（H01 这种透明塑料）：出图按真·半透明画，
-  // 也就是那颗豆的实色 + fill-opacity，背景会从底下透出来。
-  // 按「颜色 + 透明度」分组，避免给每个格子单独写属性。
+  // 半透明豆通过 fill-opacity 渲染，按「颜色 + 透明度」合并分组
   const groupKey = (hex: string) => {
     const entry = lookup.get(hex)
     if (!entry?.alpha || entry.alpha >= 1) return hex
@@ -188,8 +162,7 @@ function patternBody(
   const codesSuppressed = codes && totalCells > CODE_CELL_LIMIT
   const drawCodes = codes && !codesSuppressed && cellSize >= 8
 
-  // 四边留同样的白（以「格」为单位），标尺数字写在留白里。
-  // 以前只有左上的标尺占位、右下贴边，看起来是歪的。
+  // 四边保留一致边距，标尺数字绘制在留白区域内
   const pad = patternMargin(options)
   const g0 = pad
   const vbW = W + g0 * 2
@@ -268,8 +241,7 @@ function patternBody(
     const step = Math.max(1, Math.round(majorEvery))
     const thin: string[] = []
     const thick: string[] = []
-    // 参考线（粗线）跟着标尺原点走：原点在第 2 格左上角时，
-    // 粗线落在 2、12、22… 每一组的起始边上，标尺数字才是从这一格开始数的
+    // 粗参考线位置随标尺起点偏移
     const thickAt = (i: number) => (i - rulerFrom) % step === 0
     for (let x = 0; x <= W; x++) {
       const target = thickAt(x) ? thick : thin

@@ -17,25 +17,20 @@ import {
 } from '../core/edit.ts'
 import type { Pixmap } from '../core/types.ts'
 
-/** 编辑区里的一格画多大（屏幕像素），太大就看不下整张图，太小点不准 */
+/** 编辑区单元格尺寸范围（像素） */
 const MIN_CELL = 4
 const MAX_CELL = 40
-/** 打开时先按容器宽度适应，但别超过这个值（小图在宽屏上不至于一格顶满屏） */
 const FIT_MAX_CELL = 24
 
-/** 工具按钮：图标用 Material Icons（和界面其它地方一致） */
 const TOOLS: { id: EditTool; icon: string; label: string }[] = [
   { id: 'paint', icon: 'brush', label: '画笔' },
-  { id: 'fill', icon: 'format_color_fill', label: '填充（油漆桶）' },
-  { id: 'pick', icon: 'colorize', label: '吸管（取色并加入调色板）' },
-  { id: 'pan', icon: 'pan_tool', label: '移动（拖动滚动画布）' },
+  { id: 'fill', icon: 'format_color_fill', label: '油漆桶' },
+  { id: 'pick', icon: 'colorize', label: '吸管' },
+  { id: 'pan', icon: 'pan_tool', label: '移动' },
 ]
 
 /**
- * 像素编辑：一个够用的迷你画板。
- *
- * 只做三件事：拿预设色涂格子、吸管取色、把格子涂成「透明」（= 忽略）。
- * 忽略的格子后面既不参与配色优化，也不出图、不计数。
+ * 像素编辑步骤组件。
  */
 export function EditStep() {
   const grid = useStudio((s) => s.grid)
@@ -46,23 +41,16 @@ export function EditStep() {
 
   const canvasRef = useRef<HTMLCanvasElement>(null)
   const hostRef = useRef<HTMLDivElement>(null)
-  // 编辑期间直接改这块缓冲，松手才写回 store（否则每拖一个点就整块复制一次）
   const draft = useRef<Uint8ClampedArray | null>(null)
   const undoStack = useRef<Uint8ClampedArray[]>([])
   const redoStack = useRef<Uint8ClampedArray[]>([])
-  /** 这一笔落笔前的缓冲：提交时才知道有没有真的改动 */
   const strokeStart = useRef<Uint8ClampedArray | null>(null)
-  /** 自己提交出去的那个网格对象：它引起的 grid 变化不算「换了网格」 */
   const ownGrid = useRef<Pixmap | null>(null)
   const painting = useRef(false)
   const lastCell = useRef<{ x: number; y: number } | null>(null)
-  /** 现在按着的手指；双指按下就是「要滚动」，不再画 */
   const pointers = useRef(new Map<number, { x: number; y: number }>())
-  /** 平移中：上一次的手指中点（屏幕坐标） */
   const panFrom = useRef<{ x: number; y: number } | null>(null)
-  /** 双指间距（屏幕像素）：只有「移动」工具用它做缩放 */
   const pinchDist = useRef(0)
-  /** 缩放前后要摆回原处的那一点：屏幕坐标 + 它缩放前的内容坐标 + 倍数 */
   const zoomAnchor = useRef<{ screen: { x: number; y: number }; content: { x: number; y: number }; ratio: number } | null>(
     null,
   )
@@ -76,25 +64,22 @@ export function EditStep() {
   const swatches = useStudio((s) => s.editSwatches)
   const addSwatch = useStudio((s) => s.addEditSwatch)
   const [cell, setCell] = useState(16)
-  /** 格子大小的即时值：同一帧里连续缩放（事件被批处理）时不能靠 state 的旧闭包 */
   const cellRef = useRef(cell)
   cellRef.current = cell
   const [version, setVersion] = useState(0)
 
-  // 取色对话框：点「+」或右键某个色块时打开，初值就是那个颜色
+  // 拾色器弹窗状态
   const [picker, setPicker] = useState<{ title: string; initial: string } | null>(null)
   const openPicker = useCallback((from: string | null) => {
     setPicker({ title: '选择颜色', initial: from ?? color ?? '#000000' })
   }, [color])
 
   const onPickedColor = (hex: string) => {
-    addSwatch(hex) // 一次只加一个（在对话框里按「确定」时才走到这里）
+    addSwatch(hex)
     setColor(hex)
   }
 
-  // 网格换了（重新规范化 / 换图 / 切标签页）才重置草稿与历史。
-  // 注意每落一笔也会往 store 提交一个新网格，那种变化必须保留历史，
-  // 否则撤销栈刚记上就被清掉，两个按钮永远点不动。
+  // 网格数据变动时重置编辑历史
   useEffect(() => {
     if (grid && grid === ownGrid.current) return
     draft.current = grid ? new Uint8ClampedArray(grid.data) : null
@@ -598,7 +583,7 @@ export function EditStep() {
       <div>
         <Panel title="编辑图片" tight>
           <div className="tiny muted">
-            涂成<b>透明</b>的格子会被忽略（不参与配色、也不出图）。不需要编辑就直接下一步。
+            涂成<b>透明</b>的格子将被忽略（不参与配色与图纸生成）。
           </div>
           <div className="divider" />
           <div className="row tight">

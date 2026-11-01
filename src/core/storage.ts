@@ -1,14 +1,5 @@
 /**
- * localStorage 持久化。
- *
- * 分两层存：
- * - 索引（beads-studio:index）：只放轻量元信息 + 缩略图，打开「最近项目」时只读这一层
- * - 正文（beads-studio:project:<id>）：完整项目（含原图 PNG 与网格像素）
- *
- * localStorage 通常只有 5MB，原图 PNG 很容易撑爆，所以：
- * - 写入失败时先丢掉原图重试（网格、色板、设置照常保留）
- * - 再失败就淘汰最旧的其它项目后重试
- * - 全部失败则返回失败原因，由 UI 提示，不静默丢数据
+ * localStorage 持久化封装。
  */
 import type { Pixmap } from './types.ts'
 
@@ -17,10 +8,7 @@ export const PROJECT_KEY_PREFIX = 'beads-studio:project:'
 export const SESSION_KEY = 'beads-studio:session'
 export const CANDIDATE_SETS_KEY = 'beads-studio:candidate-sets'
 
-/**
- * 候选色方案：一组勾好的色号，存成本地方案，换项目也能直接套用。
- * 和项目存档分开存 —— 方案是跨项目的，不属于某一个项目。
- */
+/** 跨项目候选色方案 */
 export interface CandidateSet {
   id: string
   name: string
@@ -59,11 +47,11 @@ export function writeCandidateSets(sets: CandidateSet[]): void {
   try {
     ls.setItem(CANDIDATE_SETS_KEY, JSON.stringify(sets))
   } catch {
-    /* 方案很小，写不进去通常意味着存储被禁用，忽略即可 */
+    /* 存储不可用或满时忽略 */
   }
 }
 
-/** 上次退出时打开着哪些标签页 */
+/** 退出时打开的会话状态 */
 export interface SessionState {
   tabs: { id: string; name: string }[]
   activeId: string
@@ -89,7 +77,7 @@ export function writeSession(session: SessionState): void {
   try {
     ls.setItem(SESSION_KEY, JSON.stringify(session))
   } catch {
-    /* 会话信息写不进去不影响项目本身的保存 */
+    /* 会话写入失败不影响主数据 */
   }
 }
 
@@ -127,13 +115,13 @@ export interface PersistedProject {
   manualRows: number
   directBlock: number
   paletteSource: string
-  /** 选了「套装」色板时用哪一档（24/48/72/96/120）；老存档没有这个字段 */
+  /** 套装色板规模（24/48/72/96/120） */
   kitSize?: number
-  /** 保存时停在哪一步；读回来直接跳过去（老存档没有就回第一步） */
+  /** 当前所在步骤 */
   activeStage?: string
-  /** 网格是否被像素编辑改过 */
+  /** 是否经过像素编辑 */
   edited?: boolean
-  /** 配色优化的候选色；空数组 = 全库参与 */
+  /** 优化候选色 */
   candidateHex?: string[]
   includeExtended: boolean
   paletteHex: string[]
@@ -143,13 +131,9 @@ export interface PersistedProject {
   optimizeTargetMode: string
   optimizeConfig: unknown
   optimizedHex: string[]
-  /** 优化结果里的「源色 → 色号」分配（补色阶段会用到）；老存档没有这个字段 */
+  /** 优化源色到色号的映射 */
   optimizedMap?: { key: number; hex: string }[] | null
-  /**
-   * 规范化的原始结果（没被「像素编辑」动过的那份）。
-   * 规范化页显示的是它，编辑改的是 grid，所以编辑不会改到规范化结果。
-   * 老存档没有这个字段，读回来按当时的 grid 兜底。
-   */
+  /** 规范化原始结果 */
   regularizedGrid?: { width: number; height: number; data: string } | null
   source: PersistedSource | null
   sourceOmitted: boolean
@@ -273,10 +257,7 @@ export function listProjects(): IndexEntry[] {
   return readIndex().sort((a, b) => b.savedAt - a.savedAt)
 }
 
-/**
- * 改个名字：只动索引里那一条。
- * 改名不该把整个项目（含原图 PNG）重写一遍，那太贵了。
- */
+/** 更新项目索引条目的名称 */
 export function renameProjectEntry(id: string, name: string): void {
   const entries = readIndex()
   if (!entries.some((e) => e.id === id)) return

@@ -9,7 +9,7 @@ import { STAGE_META } from './stages.ts'
 const VIEW_MAX_W = 760
 const VIEW_MAX_H = 540
 
-/** 自相关曲线 + 峰标记（沿用旧「像素图自动规范化」的可视化） */
+/** 自相关曲线及峰值标记组件 */
 function AutocorrelationChart({
   data,
   peaks,
@@ -173,11 +173,7 @@ export function RegularizeStep({ onOpenFile }: { onOpenFile: () => void }) {
     }
   }, [source, alignmentMode, corners, scale, viewW, viewH, dragging])
 
-  /**
-   * 网格单独一层：画白色 + CSS 差值混合 —— 也就是反色。
-   * 自动识别的格线、四角变换的内部格线都画在这里：
-   * 以前一个用 55% 蓝、一个用 18% 白，压在照片上都不明显，反色后深底浅底都清楚。
-   */
+  // 绘制反色对齐辅助网格
   useEffect(() => {
     const canvas = gridLayerRef.current
     if (!canvas || !source) return
@@ -584,14 +580,13 @@ export function RegularizeStep({ onOpenFile }: { onOpenFile: () => void }) {
         </Panel>
       </div>
 
-      {/* 编辑过的网格再重新生成会丢掉那些修改，所以这里直接把整个画面盖住，
-          点掉「继续」才能操作；确认后标记清零，不再反复弹。 */}
+      {/* 编辑冲突保护提示 */}
       {edited && (
         <div className="modal-overlay open" role="presentation">
           <div className="modal open guard" role="alertdialog" aria-modal="true" aria-label="网格已被编辑">
             <div className="modal-content modal-body guard-body">
               <i className="material-icons">warning</i>
-              <div>这个网格在「编辑」里改过，重新生成会丢掉修改。</div>
+              <div>网格已在「编辑」中修改，重新生成将覆盖修改。</div>
             </div>
             <footer className="modal-foot">
               <span style={{ flex: 1 }} />

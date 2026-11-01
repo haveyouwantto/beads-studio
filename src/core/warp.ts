@@ -2,15 +2,11 @@ import { aggregateSamples } from './regularize.ts'
 import type { Pixmap, Pt, Quad, SampleMode } from './types.ts'
 
 /**
- * 手动四角对齐采样。
+ * 四角透视变换对齐采样。
  *
- * 格的四个角先用双线性插值映射到源图，得到一个四边形；
- * 再按 `mode` 决定怎么取色（和「自动识别」共用同一套取样方式）：
- * - center：只取格中心那一个像素（默认，最不容易被格子缝里的杂色带偏）
- * - mean / median / geometric / mode：把四边形覆盖到的像素合起来
- *
- * 对应旧「拼豆工具箱」的角点拖拽流程，适合拍照有透视 / 旋转、
- * 自动周期检测不可靠的场景。
+ * 将四角点通过双线性插值映射到源图四边形区域，再按 `mode` 取色：
+ * - center: 取单元格中心像素采样
+ * - mean / median / geometric / mode: 聚合四边形覆盖的像素样本
  */
 export function sampleQuad(
   img: Pixmap,
@@ -47,7 +43,6 @@ export function sampleQuad(
     for (let x = 0; x < w; x++) {
       const target = (y * w + x) * 4
 
-      // 格中心：所有模式都用它兜底（格子太小时平均取不到任何像素）
       const center = at((x + 0.5) / w, (y + 0.5) / h)
       const fallback = pixelAt(Math.floor(center.x), Math.floor(center.y))
 
@@ -70,7 +65,7 @@ export function sampleQuad(
   return { width: w, height: h, data: out }
 }
 
-/** 四边形（凸的，四个角按顺序）覆盖到的像素：按像素中心点判断在不在里面 */
+/** 提取四边形内覆盖的像素样本 */
 function pixelsInQuad(quad: Pt[], width: number, height: number, src: Uint8ClampedArray): number[][] {
   let minX = Infinity
   let minY = Infinity
@@ -110,7 +105,7 @@ function inQuad(quad: Pt[], px: number, py: number): boolean {
   return inside
 }
 
-/** 默认四角：向内收缩 20%，与原工具一致 */
+/** 默认四角：向内收缩边距（默认 20%） */
 export function defaultCorners(width: number, height: number, inset = 0.2): Quad {
   const padX = width * inset
   const padY = height * inset
@@ -122,7 +117,7 @@ export function defaultCorners(width: number, height: number, inset = 0.2): Quad
   ]
 }
 
-/** 按四角构成的四边形估算每个格子的平均边长，用于给出手动模式的默认行列数 */
+/** 估算单元格的平均边长 */
 export function estimateCellSize(corners: Quad, cols: number, rows: number): { w: number; h: number } {
   const [tl, tr, br, bl] = corners
   const topW = Math.hypot(tr.x - tl.x, tr.y - tl.y)

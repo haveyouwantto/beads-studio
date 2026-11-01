@@ -16,28 +16,20 @@ export interface PaletteEntry {
   hex: string
   rgb: RGB
   lab: RGB
-  /** 各品牌色号，例如 MARD: "A01" */
+  /** 各品牌色号 */
   codes: Record<string, string>
-  /** 不透明度（0–1）。只有半透明豆才有，缺省表示实心 */
+  /** 不透明度（0–1） */
   alpha?: number
-  /** 半透明豆的颜料色（H01 = 纯白）：画图与匹配用它，hex 仍是色号对应的实色 */
+  /** 半透明豆的颜料基础色 */
   pigmentHex?: string
 }
 
-/**
- * 半透明豆。
- *
- * 这些色号现实中是透明塑料做的，色卡上的颜色只是它盖在白底上扫描出来的近似值，
- * 不能当实心色用 —— 否则「匹配」会把大片白色区域都算到它头上，出图也会画成纯白。
- * 物理上它是「纯白颜料 + 25% 不透明度」：H01 = `#FFFFFF40`（0x40/255）。
- *
- * 单一来源：用户实测（手上的 H01 是透明塑料）。
- */
+/** 半透明豆配置 */
 export const TRANSLUCENT_MARD: Record<string, { hex: string; alpha: number }> = {
   H01: { hex: '#FFFFFF', alpha: 0x40 / 255 },
 }
 
-/** 按 alpha 把前景色叠到背景色上，得到「看起来是什么颜色」 */
+/** 按 alpha 把前景色叠到背景色上，得到实际观感色 */
 export function blendOver(fore: RGB, alpha: number, back: RGB): RGB {
   const a = Math.min(1, Math.max(0, alpha))
   return [
@@ -47,25 +39,19 @@ export function blendOver(fore: RGB, alpha: number, back: RGB): RGB {
   ]
 }
 
-/** 某个色号叠在给定背景上的实际观感色（实心色就是它自己） */
+/** 获取色号叠在背景色上的实际观感色 */
 export function appearanceRgb(entry: PaletteEntry, backgroundHex: string): RGB {
   if (!entry.alpha || entry.alpha >= 1) return entry.rgb
   return blendOver(hexToRgb(entry.pigmentHex ?? entry.hex), entry.alpha, hexToRgb(backgroundHex))
 }
 
-/**
- * 界面上画色块用的颜色：半透明豆按叠在面板底色上的观感画，
- * 否则它看起来和 H02 纯白一模一样，没人知道那是颗透明豆。
- */
+/** 获取界面色块展示颜色 */
 export function swatchHex(entry: PaletteEntry, panelHex = '#232323'): string {
   if (!entry.alpha || entry.alpha >= 1) return entry.hex
   return rgbToHex(appearanceRgb(entry, panelHex))
 }
 
-/**
- * 把半透明豆的透明度写进像素（导出 1:1 像素图用）：
- * H01 的格子会变成 #FFFFFF40，而不是它盖在背景上的观感色，换工具再用时透明度还在。
- */
+/** 将半透明豆的透明度写回像素数据 */
 export function applyBeadAlpha(img: Pixmap, palette: PaletteEntry[]): Pixmap {
   const alphaOf = new Map(palette.filter((e) => e.alpha && e.alpha < 1).map((e) => [e.hex, e]))
   if (!alphaOf.size) return img
@@ -82,14 +68,7 @@ export function applyBeadAlpha(img: Pixmap, palette: PaletteEntry[]): Pixmap {
   return { width: img.width, height: img.height, data }
 }
 
-/**
- * 供「颜色匹配」用的调色板。
- *
- * 1. 半透明豆换成它叠在图纸背景上的观感色（hex / codes 不动，它仍是那颗豆）；
- * 2. 如果它的观感和某个实心豆几乎一样，就直接不参与匹配 ——
- *    比如白底上的 H01（25% 白）看起来和 H02 纯白没区别，但现实里透明豆是专门买的，
- *    不该悄悄顶替白色格子。差异要超过 `redundantWithin` 个 ΔE 才留着。
- */
+/** 颜色匹配专用调色板，过滤色差较小的冗余半透明候选 */
 export function matchPalette(palette: PaletteEntry[], backgroundHex: string, redundantWithin = 3): PaletteEntry[] {
   const translucent = palette.filter((e) => e.alpha && e.alpha < 1)
   if (!translucent.length) return palette
@@ -110,11 +89,7 @@ export function matchPalette(palette: PaletteEntry[], backgroundHex: string, red
 }
 
 /**
- * 旧「拼豆工具箱」内置的 31 色板。
- *
- * 注意：这 31 个颜色是 wplace 的调色板，**不是拼豆的颜色**，
- * 所以不再出现在界面上，只在代码里保留（名字也按来源叫 wplace_colors）。
- * 想要拼豆用的精简色板请用「基础 24 色 / 基础 48 色」。
+ * wplace 31 色板。
  */
 export const WPLACE_COLORS: RGB[] = [
   [0, 0, 0], [60, 60, 60], [120, 120, 120], [210, 210, 210], [255, 255, 255],
@@ -137,22 +112,15 @@ export function makeEntry(hex: string, codes: Record<string, string> = {}): Pale
   return entry
 }
 
-/** MARD 色号的系列字母（A–H / M / P / Q / R / T / Y / ZG…） */
+/** 提取 MARD 色号系列 */
 export function mardSeries(code: string): string {
   const m = /^([A-Za-z]+)/.exec(code || '')
   return m ? m[1].toUpperCase() : ''
 }
 
-/**
- * MARD 官方把色号分成两档（多来源一致）：
- * - 标准 221 色：A B C D E F G H M 九个系列
- * - 完整 291 色：再加 P Q R T Y ZG 六个系列
- * 所以 M 属于标准色，只有 P/Q/R/T/Y/ZG 才是「扩展色号」，
- * 界面上不勾扩展时给的就是 221 色。
- */
 const STANDARD_SERIES = new Set(['A', 'B', 'C', 'D', 'E', 'F', 'G', 'H', 'M'])
 
-/** 从内嵌色号库构建调色板；includeExtended 打开时给完整的 291 色 */
+/** 构建色板库，includeExtended 为 true 时包含全部扩展色号 */
 export function buildLibraryPalette(options: { includeExtended?: boolean } = {}): PaletteEntry[] {
   const entries: PaletteEntry[] = []
   for (const [hex, info] of Object.entries(BEAD_COLOR_DATA)) {
@@ -174,11 +142,7 @@ export function buildWplacePalette(): PaletteEntry[] {
 }
 
 /**
- * MARD 零售套装：24 / 48 / 72 / 96 / 120，每档比上一档多 24 色，且严格包含上一档。
- *
- * 色号取自公开色卡（拼豆Pic 与 FuseBeadsHub 两家逐色一致），全部落在 MARD 标准 221 色内。
- * 电商上还有「144 色」套装和 144 张色号贴纸，但那是商家自己配的，没有公开统一的色号表，
- * 而且卖家之间不一样，所以这里不收录 —— 需要的话按 120 色再加自己手里多出来的 24 色即可。
+ * MARD 常用零售套装色号（24 / 48 / 72 / 96 / 120 色）。
  */
 export const KIT_SIZES = [24, 48, 72, 96, 120] as const
 export type KitSize = (typeof KIT_SIZES)[number]
@@ -248,7 +212,7 @@ function compareByCodeMard(a: PaletteEntry, b: PaletteEntry): number {
   })
 }
 
-/** 按套装规模取色板；套装色号全部在标准 221 色内，所以用标准色号库解析 */
+/** 按套装规模取色板 */
 export function buildKitPalette(size: KitSize = 24): PaletteEntry[] {
   const codes = KIT_MARD[size] ?? KIT_MARD[24]
   return paletteFromMard(codes, buildLibraryPalette({ includeExtended: false }))
@@ -264,10 +228,10 @@ export const PALETTE_SOURCE_LABELS: Record<PaletteSource, string> = {
   wplace: 'wplace 色板',
 }
 
-/** 界面上可见的色板来源（wplace 色板不是拼豆颜色，已隐藏） */
+/** 界面上可见的色板来源 */
 export const VISIBLE_PALETTE_SOURCES: PaletteSource[] = ['optimized', 'library', 'kit', 'custom']
 
-/** 色号体系（对应旧工具的 code-type） */
+/** 色号体系 */
 export const CODE_SYSTEMS = ['MARD', 'COCO', '漫漫', '盼盼', '咪小窝'] as const
 export type CodeSystem = (typeof CODE_SYSTEMS)[number]
 
@@ -275,7 +239,7 @@ export function codeOf(entry: PaletteEntry, system: CodeSystem): string {
   return entry.codes[system] || entry.codes.MARD || ''
 }
 
-/** 按目标色号自然排序（A01 < A02 < A10） */
+/** 按目标色号自然排序 */
 export function compareByCode(a: PaletteEntry, b: PaletteEntry, system: CodeSystem): number {
   const ca = codeOf(a, system)
   const cb = codeOf(b, system)
@@ -286,14 +250,10 @@ export type DistanceMetric = 'lab' | 'weighted-rgb'
 
 export const METRIC_LABELS: Record<DistanceMetric, string> = {
   lab: 'Lab ΔE · 色相加权（推荐）',
-  'weighted-rgb': '加权 RGB（旧工具算法）',
+  'weighted-rgb': '加权 RGB',
 }
 
-/**
- * 在调色板中找最接近的颜色，返回索引。
- * lab 模式走色相敏感色差 `deltaEHue`（hueWeight=0 时等价于旧 CIE76 ΔE）；
- * weighted-rgb 模式复刻旧「拼豆工具箱」的 0.3/0.59/0.11 距离。
- */
+/** 在调色板中检索最接近颜色的索引 */
 export function nearestIndex(
   r: number,
   g: number,
@@ -306,12 +266,7 @@ export function nearestIndex(
   return prepareNearest(palette, metric, hueWeight)(r, g, b)
 }
 
-/**
- * 把 (调色板, 度量) 编译成一个逐像素调用的匹配函数。
- *
- * 整张图会给每个像素遍历一遍调色板，所以色板一侧的彩度/色相在这里算一次就固定下来，
- * 逐像素只剩加减乘除。语义与 `nearestIndex` 完全一致（它内部也是调这里）。
- */
+/** 预编译高性能匹配函数 */
 export function prepareNearest(
   palette: PaletteEntry[],
   metric: DistanceMetric = 'lab',
@@ -337,7 +292,6 @@ export function prepareNearest(
 
   const labs = palette.map((e) => e.lab)
 
-  // hueWeight = 0 就是原本的 CIE76，别绕极坐标那一圈（色相项需要 dH，这里给不出来）
   if (hueWeight <= 0) {
     return (r, g, b) => {
       const lab = rgbToLab([r, g, b])
@@ -379,7 +333,6 @@ export function prepareNearest(
   }
 }
 
-/** 去重并保留顺序 */
 export function uniqueEntries(entries: PaletteEntry[]): PaletteEntry[] {
   const seen = new Set<string>()
   const out: PaletteEntry[] = []
@@ -396,13 +349,7 @@ export function entryByHex(entries: PaletteEntry[], hex: string): PaletteEntry |
   return entries.find((e) => e.hex === target)
 }
 
-/**
- * 解析用户粘贴的文本（色号或 HEX，空格/逗号/换行分隔），
- * 返回匹配到的调色板 HEX 列表（去重、保持输入顺序）。
- *
- * 注意：不同品牌的色号会重号（例如 COCO 的 B02 与 MARD 的 B02 是两个颜色），
- * 所以优先按当前选定的色号体系匹配，其余体系只在没有歧义时兜底。
- */
+/** 解析色号或 HEX 文本 */
 export function parsePaletteText(text: string, palette: PaletteEntry[], system: CodeSystem = 'MARD'): string[] {
   const tokens = text
     .split(/[\s,;、]+/)

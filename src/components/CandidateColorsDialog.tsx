@@ -6,12 +6,7 @@ import { formatTime } from '../core/storage.ts'
 import { Swatch } from './ui.tsx'
 
 /**
- * 候选色选择弹窗。
- *
- * 配色优化不必把整本色号库都当成候选：按 MARD 系列（A/B/C/D/E/F/G/H…）分组，
- * 逐个颜色勾选，或者整组一键开关。没勾过任何颜色时 = 全部参与。
- *
- * 勾选结果存在 candidateHex 里（空数组表示全库参与）。
+ * 候选色选择弹窗组件。
  */
 export function CandidateColorsDialog({ onClose }: { onClose: () => void }) {
   const libraryPalette = useStudio((s) => s.libraryPalette)
@@ -22,12 +17,11 @@ export function CandidateColorsDialog({ onClose }: { onClose: () => void }) {
   const deleteCandidateSet = useStudio((s) => s.deleteCandidateSet)
   const includeExtended = useStudio((s) => s.includeExtended)
   const codeSystem = useStudio((s) => s.codeSystem)
-  // 方案预览的圆点：h01 这类半透明豆按观感色画，和别的色板走同一套
   const swatchByHex = useMemo(() => new Map(libraryPalette.map((e) => [e.hex, swatchHex(e)])), [libraryPalette])
   const entryByHex = useMemo(() => new Map(libraryPalette.map((e) => [e.hex, e])), [libraryPalette])
   const importRef = useRef<HTMLInputElement>(null)
 
-  /** 导出一个方案：色号列表，一行一个 */
+  /** 导出当前方案 */
   const exportSet = (name: string, hexes: string[]) => {
     const entries = hexes.map((h) => entryByHex.get(h)).filter((e): e is PaletteEntry => Boolean(e))
     if (!entries.length) return
@@ -37,19 +31,19 @@ export function CandidateColorsDialog({ onClose }: { onClose: () => void }) {
     )
   }
 
-  /** 导入：自动认 JSON / HEX 列表 / 色号列表（就是优化结果那三种导出格式） */
+  /** 导入方案 */
   const importFile = async (file: File) => {
     try {
       const hexes = parsePaletteFile(await file.text(), libraryPalette, codeSystem)
       if (!hexes.length) return
-      const name = file.name.replace(/\.[^.]+$/, '').trim() || `导入的方案`
+      const name = file.name.replace(/\.[^.]+$/, '').trim() || `导入方案`
       saveCandidateSet(name, hexes)
     } catch {
-      /* 读不出来就不动，方案列表没变化本身就是反馈 */
+      // 解析失败静默忽略
     }
   }
 
-  // 本地草稿：点「应用」才写回 store，取消则不变
+  // 本地勾选草稿
   const [selected, setSelected] = useState<Set<string>>(
     () => new Set(candidateHex.length ? candidateHex : libraryPalette.map((e) => e.hex)),
   )
@@ -174,7 +168,7 @@ export function CandidateColorsDialog({ onClose }: { onClose: () => void }) {
             </header>
 
             {candidateSets.length === 0 ? (
-              <div className="tiny muted set-empty">把当前勾选存成方案，下次一键套用。</div>
+              <div className="tiny muted set-empty">保存当前勾选，以便日后快速套用。</div>
             ) : (
               <ul className="set-list">
                 {candidateSets.map((s) => (

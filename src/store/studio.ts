@@ -47,26 +47,25 @@ import {
 } from '../core/optimize.ts'
 
 /**
- * 三个阶段：① 规范化 → ② 优化颜色 → ③ 转拼豆图纸。
- * 规范化产出 1:1 网格，作为「优化颜色」的优化目标，再交给「转拼豆图纸」出图。
+ * 工作流阶段定义
+ * 规范化 → 像素编辑 → 颜色优化 → 生成图纸
  */
 export type StageId = 'regularize' | 'edit' | 'optimize' | 'pattern'
 
-/** 工作流顺序：规范化 → 像素编辑 → 优化颜色 → 转拼豆图纸 */
 export const STAGE_ORDER: StageId[] = ['regularize', 'edit', 'optimize', 'pattern']
 
-/** 编辑器工具：画笔 / 油漆桶 / 吸管 */
+/** 编辑器工具 */
 export type EditTool = 'paint' | 'fill' | 'pick' | 'pan'
 
 /**
- * 规范化的三种输入方式：
- * - auto   像素自动识别（FFT 自相关检测周期/相位）
- * - quad   四角变换（手动拖四角，适配拍照透视）
- * - direct 已经是 1:1 的设计稿，直接作为网格
+ * 规范化模式：
+ * - auto: 自动识别（FFT检测）
+ * - quad: 四角透视变换
+ * - direct: 直接作为网格
  */
 export type AlignmentMode = 'auto' | 'quad' | 'direct'
 
-/** 载入图片时的最长边上限：太大既慢又没必要 */
+/** 图片载入限制 */
 export const MAX_IMAGE_DIM = 2400
 
 export interface SourceImage {
@@ -74,7 +73,6 @@ export interface SourceImage {
   width: number
   height: number
   pixmap: Pixmap
-  /** object URL，用于 <img> 预览 */
   url: string
 }
 
@@ -91,7 +89,7 @@ export interface OptimizeRunState {
   bucket: number
   elapsedMs: number
   reason: string
-  /** 本次实际用上的色数（kMode = auto 时是自动选出来的） */
+  /** 实际使用的色数 */
   budget: number
 }
 
@@ -111,12 +109,7 @@ const EMPTY_RUN: OptimizeRunState = {
   budget: 0,
 }
 
-/**
- * 多方案对比里的一套结果。
- *
- * 存的是「成品图」而不是只存色号：挑方案靠的是看，不是看 ΔE ——
- * 平均 ΔE 最低的那张经常不是最好看的那张。
- */
+/** 方案对比结果 */
 export interface SweepResult {
   id: string
   label: string
@@ -125,25 +118,22 @@ export interface SweepResult {
   entries: PaletteEntry[]
   mapping: { key: number; hex: string }[]
   stats: OptimizeStats
-  /** 实际用上的色数 */
+  /** 实际使用的色数 */
   budget: number
-  /** 层次损失（0 起，越小越好） */
+  /** 层次损失（越小越好） */
   loss: number
   elapsedMs: number
-  /** 按这套色号落子的成品预览；全量色谱模式下没有网格，为 null */
+  /** 成品预览图 */
   preview: Pixmap | null
 }
 
 export interface SweepState {
   status: 'idle' | 'running' | 'done' | 'stopped'
   axis: SweepAxis
-  /** 正在跑第几套（0 起） */
   index: number
   total: number
-  /** 总进度 0～100，跨方案累计 */
   progress: number
   results: SweepResult[]
-  /** 用户挑中的那套 */
   pickedId: string | null
   candidates: number
   targets: number
@@ -166,14 +156,10 @@ const EMPTY_SWEEP: SweepState = {
 export interface ProjectTab {
   id: string
   name: string
-  /** 小缩略图（PNG dataURL），自动保存时更新 */
   thumb?: string
 }
 
-/**
- * 属于「单个项目」的字段。
- * 每个标签页各存一份，切换标签页时整组换掉，其余（当前阶段、色号库、存储状态）是全局的。
- */
+/** 归属于单个项目的数据字段 */
 const PROJECT_KEYS = [
   'visited',
   'activeStage',
@@ -485,17 +471,14 @@ function projectPatch(project: ProjectState): Partial<StudioState> {
     ...project,
     libraryPalette: buildLibraryPalette({ includeExtended: project.includeExtended }),
     optimizeRun: { ...EMPTY_RUN },
-    // 对比方案里存着上一张图的成品预览，换项目必须清掉，否则会张冠李戴
+    // 清空方案对比预览状态
     sweep: { ...EMPTY_SWEEP },
   }
 }
 
 /**
  * 按「色板来源」算出实际要用的色板。
- *
- * 关键点：优化结果一直存在 optimizedPalette 里，不会被别的来源覆盖，
- * 所以「切到色号库再切回优化结果」能原样拿回自己那套颜色。
- * 返回 null 表示这个来源当前不可用（例如还没跑过优化）。
+ * 返回 null 表示来源不可用（如尚未运行优化）。
  */
 function resolvePaletteForSource(source: PaletteSource, s: StudioState): PaletteEntry[] | null {
   switch (source) {

@@ -8,8 +8,7 @@ const MIN_ZOOM = 0.2
 const MAX_ZOOM = 16
 
 /**
- * 全屏看图：拼豆时要对着屏幕一颗颗摆，需要放大 + 拖动，并且屏幕别自动熄灭。
- * 图纸是 SVG，缩放只是改 CSS 尺寸，不会像 canvas 那样放大就糊。
+ * 全屏图纸预览组件。
  */
 export function FullscreenPreview({
   pixmap,
@@ -30,13 +29,7 @@ export function FullscreenPreview({
   const wakeLock = useRef<WakeLockSentinel | null>(null)
 
   /**
-   * 以某个屏幕点为锚缩放：缩放前后，那个点下面的豆子待在原地。
-   *
-   * 内容在舞台里居中，再叠加 pan 位移，于是：
-   *   视口点 = 舞台中心 + pan + zoom × (内容坐标 − 内容中心)
-   * 令锚点下的内容坐标不变，解出 pan' = d1 − k × (d0 − pan)，d = 锚点 − 舞台中心。
-   * 不传锚点（加减按钮、滚轮）时 d0 = d1 = 0，退化成「以视口中心为基准」，
-   * 也就是 pan' = pan × k。捏合时 d0/d1 分别是前后两指中点，顺带处理了双指平移。
+   * 以指定屏幕点为锚点缩放。
    */
   const zoomTo = (next: number, anchor?: { x: number; y: number }, prevAnchor?: { x: number; y: number }) => {
     const stage = stageRef.current
@@ -69,7 +62,6 @@ export function FullscreenPreview({
 
   const pattern = useMemo(
     () =>
-      // 和图纸页一样：选了拼豆板拆分，全屏看图也跟着拆
       buildBoardPatternSvg(pixmap, palette, {
         ...renderOptions,
         rulers: true,
@@ -151,9 +143,6 @@ export function FullscreenPreview({
             top: '50%',
             width: pattern.width,
             height: pattern.height,
-            // 先缩放到画布中心，再按 pan 平移，最后把自身中心摆到舞台中心。
-            // 这样「内容中心」永远等于 舞台中心 + pan，缩放锚点的公式才成立
-            // （靠 grid 居中在内容比容器大时会被夹到起始边，锚点就偏了）。
             transform: `translate(-50%, -50%) translate(${pan.x}px, ${pan.y}px) scale(${zoom})`,
             boxShadow: '0 20px 60px rgba(0, 0, 0, 0.6)',
           }}
