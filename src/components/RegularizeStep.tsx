@@ -207,10 +207,13 @@ export function RegularizeStep({ onOpenFile }: { onOpenFile: () => void }) {
         ctx.lineTo(viewW, y * scale)
       }
     } else if (alignmentMode === 'quad') {
+      // 画真实的 manualCols × manualRows 网格，和 sampleQuad 的双线性插值
+      // 用同一套映射（u 沿上/下边、v 沿左/右边），看到的格子才是采样用的格子。
       const pts = corners.map((p) => ({ x: p.x * scale, y: p.y * scale }))
-      const steps = Math.min(24, Math.max(4, Math.round(manualCols / 2)))
-      for (let i = 1; i < steps; i++) {
-        const u = i / steps
+      const cols = Math.max(1, manualCols)
+      const rows = Math.max(1, manualRows)
+      for (let i = 1; i < cols; i++) {
+        const u = i / cols
         const tx = pts[0].x + (pts[1].x - pts[0].x) * u
         const ty = pts[0].y + (pts[1].y - pts[0].y) * u
         const bx = pts[3].x + (pts[2].x - pts[3].x) * u
@@ -218,8 +221,8 @@ export function RegularizeStep({ onOpenFile }: { onOpenFile: () => void }) {
         ctx.moveTo(tx, ty)
         ctx.lineTo(bx, by)
       }
-      for (let i = 1; i < steps; i++) {
-        const v = i / steps
+      for (let j = 1; j < rows; j++) {
+        const v = j / rows
         const lx = pts[0].x + (pts[3].x - pts[0].x) * v
         const ly = pts[0].y + (pts[3].y - pts[0].y) * v
         const rx = pts[1].x + (pts[2].x - pts[1].x) * v
