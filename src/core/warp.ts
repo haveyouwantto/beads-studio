@@ -47,12 +47,13 @@ export function sampleQuad(
       const fallback = pixelAt(Math.floor(center.x), Math.floor(center.y))
 
       let color: [number, number, number, number]
+      // 越界 = 全透明（忽略该格），不是黑豆
       if (mode === 'center') {
-        color = fallback ?? [0, 0, 0, 255]
+        color = fallback ?? [0, 0, 0, 0]
       } else {
         const quad = [at(x / w, y / h), at((x + 1) / w, y / h), at((x + 1) / w, (y + 1) / h), at(x / w, (y + 1) / h)]
         const samples = pixelsInQuad(quad, sw, sh, src)
-        color = samples.length ? aggregateSamples(samples, mode) : (fallback ?? [0, 0, 0, 255])
+        color = samples.length ? aggregateSamples(samples, mode) : (fallback ?? [0, 0, 0, 0])
       }
 
       out[target] = Math.round(Math.max(0, Math.min(255, color[0])))

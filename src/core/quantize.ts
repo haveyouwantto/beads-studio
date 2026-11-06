@@ -1,6 +1,7 @@
 import type { DistanceMetric, PaletteEntry } from './palette.ts'
 import { prepareNearest } from './palette.ts'
 import { DEFAULT_HUE_WEIGHT, hexToRgb } from './color.ts'
+import { IGNORED_ALPHA } from './edit.ts'
 import type { Pixmap } from './types.ts'
 
 export interface QuantizeOptions {
@@ -33,6 +34,7 @@ function distributeErr(
 ): void {
   if (x < 0 || x >= w || y < 0 || y >= h) return
   const i = (y * w + x) * 4
+  if (data[i + 3] < IGNORED_ALPHA) return // 透明格不收误差：RGB 被污染后 alpha 一丢就是黑豆
   data[i] = Math.min(255, Math.max(0, data[i] + er * factor))
   data[i + 1] = Math.min(255, Math.max(0, data[i + 1] + eg * factor))
   data[i + 2] = Math.min(255, Math.max(0, data[i + 2] + eb * factor))
@@ -72,6 +74,7 @@ export function quantizeToPalette(
     for (let y = 0; y < h; y++) {
       for (let x = 0; x < w; x++) {
         const i = (y * w + x) * 4
+        if (data[i + 3] < IGNORED_ALPHA) continue // 全透明 = 忽略
         const oldR = data[i]
         const oldG = data[i + 1]
         const oldB = data[i + 2]
@@ -97,6 +100,7 @@ export function quantizeToPalette(
   }
 
   for (let i = 0; i < data.length; i += 4) {
+    if (data[i + 3] < IGNORED_ALPHA) continue // 全透明 = 忽略
     const idx =
       forced?.get((data[i] << 16) | (data[i + 1] << 8) | data[i + 2]) ??
       match(data[i], data[i + 1], data[i + 2])

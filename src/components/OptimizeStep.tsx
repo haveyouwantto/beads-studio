@@ -381,7 +381,32 @@ export function OptimizeStep() {
               onChange={(e) => setConfig({ k: Number(e.target.value) })}
             />
           </Field>
-          <Field label="色彩空间" hint={COLOR_SPACES.find((s) => s.value === config.colorSpace)?.hint}>
+          <Field
+            label="聚类空间"
+            hint={COLOR_SPACES.find((s) => s.value === config.clusterSpace)?.hint}
+          >
+            <select
+              value={config.clusterSpace}
+              onChange={(e) => setConfig({ clusterSpace: e.target.value as OptimizeConfig['clusterSpace'] })}
+            >
+              {COLOR_SPACES.map((s) => (
+                <option key={s.value} value={s.value}>
+                  {s.label}
+                </option>
+              ))}
+            </select>
+          </Field>
+          <Field label="聚类半径" hint="半径内的颜色整球同豆：0 = 逐色独立匹配（最像但会花）">
+            <input
+              type="range"
+              min={0}
+              max={20}
+              step={0.5}
+              value={config.clusterRadius}
+              onChange={(e) => setConfig({ clusterRadius: Number(e.target.value) })}
+            />
+          </Field>
+          <Field label="匹配空间" hint="簇均色 → 豆的选豆距离在这算（实验室终审：Lab 欧氏）">
             <select
               value={config.colorSpace}
               onChange={(e) => setConfig({ colorSpace: e.target.value as OptimizeConfig['colorSpace'] })}
@@ -393,7 +418,7 @@ export function OptimizeStep() {
               ))}
             </select>
           </Field>
-          <Field label="距离算法" hint={DISTANCES.find((d) => d.value === config.distance)?.hint}>
+          <Field label="匹配距离" hint={DISTANCES.find((d) => d.value === config.distance)?.hint}>
             <select
               value={config.distance}
               onChange={(e) => setConfig({ distance: e.target.value as OptimizeConfig['distance'] })}
@@ -404,20 +429,6 @@ export function OptimizeStep() {
                 </option>
               ))}
             </select>
-          </Field>
-          <Field
-            label="聚类半径"
-            value={config.clusterRadius === 0 ? '不聚类' : String(config.clusterRadius)}
-            hint="半径内的颜色整球同豆：0 = 逐色独立匹配（最像但会花）"
-          >
-            <input
-              type="range"
-              min={0}
-              max={20}
-              step={0.5}
-              value={config.clusterRadius}
-              onChange={(e) => setConfig({ clusterRadius: Number(e.target.value) })}
-            />
           </Field>
 
           <Field label="色号体系">

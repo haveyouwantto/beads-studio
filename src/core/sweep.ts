@@ -28,11 +28,12 @@ function scaleK(k: number, factor: number): number {
  */
 export function sweepVariants(axis: SweepAxis, cfg: OptimizeConfig): SweepVariant[] {
   if (axis === 'algo') {
-    // quant-lab 实验矩阵里有区分度的五个组合：YUV 曼哈顿（拆色最低）、
-    // Lab 欧氏（精度最高）、YUV 欧氏（均衡）、Lab 曼哈顿、加权RGB 欧氏（原版度量）
+    // quant-lab 实验矩阵里有区分度的五个组合：
+    // Lab 欧氏（12 张存档批量终审冠军）、YUV 曼哈顿（拆色最低）、
+    // YUV 欧氏（均衡）、Lab 曼哈顿、加权RGB 欧氏（原版度量）
     return [
-      { id: 'yuv-manhattan', label: 'YUV·曼哈顿', hint: '实验综合冠军：最不容易花', patch: { colorSpace: 'yuv', distance: 'manhattan' } },
-      { id: 'lab-euclid', label: 'Lab·欧氏', hint: '精度冠军：ΔE 最低', patch: { colorSpace: 'lab', distance: 'euclidean' } },
+      { id: 'lab-euclid', label: 'Lab·欧氏', hint: '实验室终审冠军（默认配置）：ΔE 最低', patch: { colorSpace: 'lab', distance: 'euclidean' } },
+      { id: 'yuv-manhattan', label: 'YUV·曼哈顿', hint: '拆色最低：最不容易花', patch: { colorSpace: 'yuv', distance: 'manhattan' } },
       { id: 'yuv-euclid', label: 'YUV·欧氏', hint: '两项之间的均衡选择', patch: { colorSpace: 'yuv', distance: 'euclidean' } },
       { id: 'lab-manhattan', label: 'Lab·曼哈顿', hint: '感知空间 + 抗花距离', patch: { colorSpace: 'lab', distance: 'manhattan' } },
       { id: 'wrgb-euclid', label: '加权RGB·欧氏', hint: '原版工具的度量，作对照', patch: { colorSpace: 'weightedRgb', distance: 'euclidean' } },

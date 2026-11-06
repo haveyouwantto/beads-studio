@@ -184,6 +184,9 @@ export function targetsFromPixmap(
 
 // ================================================================ 配置
 
+/** 聚类空间。与匹配空间解耦：实验室终审 = YUV 聚类 + Lab 匹配 */
+export type ClusterSpaceId = ColorSpaceId
+
 export interface OptimizeConfig {
   /** 颜料预算：最终要选多少种拼豆颜色（kMode = auto 时是上限） */
   k: number
@@ -193,12 +196,14 @@ export interface OptimizeConfig {
    * - `auto`：贪心扫描「多一颗豆还能降多少 ΔE」的曲线，收益低于 minGain 即停 —— 拐点。
    */
   kMode: 'fixed' | 'auto'
-  /** 匹配用的色彩空间 */
+  /** 匹配用的色彩空间（簇均色 → 豆的距离在这算） */
   colorSpace: ColorSpaceId
   /** 匹配用的距离算法 */
   distance: DistanceId
+  /** 球覆盖聚类用的色彩空间（源色分团在这算） */
+  clusterSpace: ClusterSpaceId
   /**
-   * 球覆盖聚类半径（所在空间的单位）。
+   * 球覆盖聚类半径（聚类空间的单位）。
    * 半径内的源色归一个球，整球强制同豆 —— 这是「不花」的来源。
    * 0 = 不聚类，每个源色独立找最近豆（最忠实但会花）。
    */
@@ -209,13 +214,15 @@ export interface OptimizeConfig {
   minGain: number
 }
 
+/** 默认配置 = quant-lab 12 张存档批量终审冠军：YUV 聚类 r9 → Lab 欧氏，拐点 0.02，不强制黑白 */
 export const DEFAULT_OPTIMIZE_CONFIG: OptimizeConfig = {
   k: 30,
   kMode: 'auto',
-  colorSpace: 'yuv',
-  distance: 'manhattan',
+  colorSpace: 'lab',
+  distance: 'euclidean',
+  clusterSpace: 'yuv',
   clusterRadius: 9,
-  mandatory: true,
+  mandatory: false,
   minGain: 0.02,
 }
 
@@ -388,8 +395,10 @@ export class PaletteOptimizer {
   targetMode: TargetMode
 
   private samples: TargetSample[] = []
-  /** 每个源色 / 每个簇在目标空间里的坐标 */
+  /** 聚类空间坐标（只喂球覆盖） */
   private pts: Float64Array = new Float64Array(0)
+  /** 匹配空间坐标（簇均色与选豆距离在这算） */
+  private matchPts: Float64Array = new Float64Array(0)
   private weights = new Float64Array(0)
   private weightSum = 0
   /** 源色的精确 key（r<<16|g<<8|b），出图纸的强制分配按它查表 */
@@ -419,17 +428,22 @@ export class PaletteOptimizer {
   setTargets(samples: TargetSample[]): void {
     this.samples = samples
     const n = samples.length
-    const space = this.config.colorSpace
-
+    const clusterSpace = this.config.clusterSpace
+    const matchSpace = this.config.colorSpace
     this.pts = new Float64Array(n * 3)
+    this.matchPts = new Float64Array(n * 3)
     this.weights = new Float64Array(n)
     this.weightSum = 0
     this.sourceKeys = new Array(n)
     for (let i = 0; i < n; i++) {
-      const p = toSpace(samples[i].rgb, space)
-      this.pts[i * 3] = p[0]
-      this.pts[i * 3 + 1] = p[1]
-      this.pts[i * 3 + 2] = p[2]
+      const cp = toSpace(samples[i].rgb, clusterSpace)
+      this.pts[i * 3] = cp[0]
+      this.pts[i * 3 + 1] = cp[1]
+      this.pts[i * 3 + 2] = cp[2]
+      const mp = toSpace(samples[i].rgb, matchSpace)
+      this.matchPts[i * 3] = mp[0]
+      this.matchPts[i * 3 + 1] = mp[1]
+      this.matchPts[i * 3 + 2] = mp[2]
       this.weights[i] = Math.max(1, samples[i].count)
       this.weightSum += this.weights[i]
       const [r, g, b] = samples[i].rgb
@@ -449,19 +463,19 @@ export class PaletteOptimizer {
     }
     this.nClusters = n ? Math.max(...this.labels) + 1 : 0
 
-    // 簇加权均色
+    // 簇加权均色（匹配空间坐标）
     this.clusterMean = new Float64Array(this.nClusters * 3)
     const cw = new Float64Array(this.nClusters)
     for (let i = 0; i < n; i++) {
       const c = this.labels[i]
       cw[c] += this.weights[i]
-      for (let d = 0; d < 3; d++) this.clusterMean[c * 3 + d] += this.pts[i * 3 + d] * this.weights[i]
+      for (let d = 0; d < 3; d++) this.clusterMean[c * 3 + d] += this.matchPts[i * 3 + d] * this.weights[i]
     }
     for (let c = 0; c < this.nClusters; c++) {
       for (let d = 0; d < 3; d++) this.clusterMean[c * 3 + d] /= cw[c] || 1
     }
 
-    // 簇 × 候选豆 距离矩阵
+    // 簇 × 候选豆 距离矩阵（匹配空间 + 匹配距离算法）
     const C = this.entries.length
     this.dist = new Float64Array(this.nClusters * C)
     const meanBuf: [number, number, number] = [0, 0, 0]
@@ -470,7 +484,7 @@ export class PaletteOptimizer {
       meanBuf[1] = this.clusterMean[c * 3 + 1]
       meanBuf[2] = this.clusterMean[c * 3 + 2]
       for (let j = 0; j < C; j++) {
-        const jp = toSpace(this.entries[j].rgb, space)
+        const jp = toSpace(this.entries[j].rgb, matchSpace)
         this.dist[c * C + j] = distanceOf(meanBuf, jp, this.config.distance)
       }
     }
@@ -747,9 +761,9 @@ export class PaletteOptimizer {
     yield progressEvent(30, greedySel)
     await new Promise((resolve) => setTimeout(resolve, 0))
 
-    // 交换精修（固定模式才值得做：auto 的拐点本身来自同一把尺子）
+    // 交换精修：实验室用 ILP 精确解，贪心解不做局部搜索够不着它的质量
     let selected = greedySel
-    if (this.config.kMode === 'fixed' && !this.stopped) {
+    if (!this.stopped) {
       const passes = this.nClusters > 800 ? 1 : 3
       const polished = this.polish(greedySel, passes)
       if (this.weightedDeltaE(polished, null) < this.weightedDeltaE(greedySel, null) - 1e-9) {

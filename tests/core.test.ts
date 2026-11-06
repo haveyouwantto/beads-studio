@@ -602,6 +602,7 @@ section('③ 优化颜色（以规范化结果为优化目标）')
     k: 6,
     kMode: 'fixed',
     clusterRadius: 0,
+    mandatory: true,
   }
 
   const runOnce = async () => {

@@ -293,32 +293,39 @@ export function findPhase(projection: Float64Array, period: number): number {
 
 /**
  * 将像素样本集合按指定采样模式聚合为 RGBA 颜色。
+ * 透明样本（alpha < 8）不参与 RGB 统计（RGB=0 混进来会拉暗）；
+ * 全透明样本输出全透明。
  */
 export function aggregateSamples(samples: number[][], mode: SampleMode): [number, number, number, number] {
-  if (!samples.length) return [0, 0, 0, 255]
+  if (!samples.length) return [0, 0, 0, 0]
+
+  const opaque = samples.filter((c) => c[3] >= 8)
+  if (!opaque.length) return [0, 0, 0, 0]
 
   const rs: number[] = []
   const gs: number[] = []
   const bs: number[] = []
   const as: number[] = []
-  for (const c of samples) {
+  for (const c of opaque) {
     rs.push(c[0])
     gs.push(c[1])
     bs.push(c[2])
     as.push(c[3])
   }
+  // alpha 用全部样本平均：混了透明的格子观感更接近半透明
+  const alphaAll = samples.map((c) => c[3])
 
   switch (mode) {
     case 'mean':
-      return [arithmeticMean(rs), arithmeticMean(gs), arithmeticMean(bs), arithmeticMean(as)]
+      return [arithmeticMean(rs), arithmeticMean(gs), arithmeticMean(bs), arithmeticMean(alphaAll)]
     case 'median':
-      return [medianValue(rs), medianValue(gs), medianValue(bs), medianValue(as)]
+      return [medianValue(rs), medianValue(gs), medianValue(bs), medianValue(alphaAll)]
     case 'geometric':
-      return [geometricMean(rs), geometricMean(gs), geometricMean(bs), arithmeticMean(as)]
+      return [geometricMean(rs), geometricMean(gs), geometricMean(bs), arithmeticMean(alphaAll)]
     case 'mode':
-      return modeColor(samples)
+      return modeColor(opaque)
     default:
-      return [arithmeticMean(rs), arithmeticMean(gs), arithmeticMean(bs), arithmeticMean(as)]
+      return [arithmeticMean(rs), arithmeticMean(gs), arithmeticMean(bs), arithmeticMean(alphaAll)]
   }
 }
 

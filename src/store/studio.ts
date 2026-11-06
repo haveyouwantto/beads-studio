@@ -703,7 +703,8 @@ async function deserializeProject(p: PersistedProject): Promise<ProjectState> {
     result: null,
     codeSystem: p.codeSystem as CodeSystem,
     optimizeTargetMode: p.optimizeTargetMode as TargetMode,
-    optimizeConfig: { ...DEFAULT_OPTIMIZE_CONFIG, ...(p.optimizeConfig as object) },
+    // 优化参数一律用当前默认（实验室终审冠军组合）
+    optimizeConfig: { ...DEFAULT_OPTIMIZE_CONFIG },
     optimizedPalette: resolve(p.optimizedHex),
     optimizedMap: Array.isArray(p.optimizedMap)
       ? p.optimizedMap.filter((e) => e && Number.isFinite(e.key) && typeof e.hex === 'string')
