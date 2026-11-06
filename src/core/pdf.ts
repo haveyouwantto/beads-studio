@@ -2,7 +2,7 @@
 import { hexToRgb, luminance } from './color.ts'
 import { IGNORED_ALPHA } from './edit.ts'
 import { codeOf, type PaletteEntry } from './palette.ts'
-import { boardLayout, patternMargin, rulerOffset, sliceBoard, type RenderOptions } from './svg.ts'
+import { boardLayout, patternMargin, rulerOffset, sliceBoard, trimEmptyBeads, type RenderOptions } from './svg.ts'
 import type { Pixmap } from './types.ts'
 
 /** A4（pt） */
@@ -250,13 +250,14 @@ export function buildPatternPdf(
   options: RenderOptions,
   cfg: PatternPdfOptions = {},
 ): Blob {
-  const layout = boardLayout(img, options)
+  const trimmed = trimEmptyBeads(img, options)
+  const layout = boardLayout(trimmed, options)
   const pad = patternMargin(options)
   const rulerFrom = rulerOffset(options)
   const multi = layout.boards.length > 1
 
   const contents = layout.boards.map((board) => {
-    const tile = sliceBoard(img, board.x0, board.y0, board.cols, board.rows)
+    const tile = sliceBoard(trimmed, board.x0, board.y0, board.cols, board.rows)
     const boxW = tile.width + pad * 2
     const boxH = tile.height + pad * 2
     // 每块板都按自己的长宽比缩放到页内（pt/格）

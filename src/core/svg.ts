@@ -27,6 +27,10 @@ export interface RenderOptions {
   boardSize: number
   /** 拆分模式标尺起始格：'first' 从第一格开始；'second' 从第二格开始 */
   rulerStart: 'first' | 'second'
+  /** 删掉四周没有豆的空白行列（只影响图纸绘制，不动数据） */
+  trimEmpty: boolean
+  /** 裁掉空白后四周再留几格板边 */
+  boardPadding: number
 }
 
 export const DEFAULT_RENDER_OPTIONS: RenderOptions = {
@@ -44,6 +48,8 @@ export const DEFAULT_RENDER_OPTIONS: RenderOptions = {
   margin: 2.6,
   boardSize: 0,
   rulerStart: 'second',
+  trimEmpty: true,
+  boardPadding: 0,
 }
 
 /** 线宽（格） */
@@ -53,6 +59,44 @@ const THICK_WIDTH = 0.18
 /** 边距（格） */
 export function patternMargin(options: RenderOptions): number {
   return Number.isFinite(options.margin) ? Math.max(0, options.margin) : DEFAULT_RENDER_OPTIONS.margin
+}
+
+/**
+ * 裁掉四周没有豆的空白行列：图纸顶格从有豆的地方开始画。
+ * 视图级裁剪，返回新的 Pixmap，原数据不动；整张没豆或没有空白时原样返回。
+ */
+export function trimEmptyBeads(img: Pixmap, options: RenderOptions): Pixmap {
+  if (!options.trimEmpty) return img
+  const { width: W, height: H, data } = img
+  let minX = W
+  let minY = H
+  let maxX = -1
+  let maxY = -1
+  for (let y = 0; y < H; y++) {
+    for (let x = 0; x < W; x++) {
+      if (data[(y * W + x) * 4 + 3] >= IGNORED_ALPHA) {
+        if (x < minX) minX = x
+        if (x > maxX) maxX = x
+        if (y < minY) minY = y
+        if (y > maxY) maxY = y
+      }
+    }
+  }
+  if (maxX < 0) return img
+  const pad = Math.max(0, Math.floor(options.boardPadding ?? 0))
+  const x0 = Math.max(0, minX - pad)
+  const y0 = Math.max(0, minY - pad)
+  const x1 = Math.min(W - 1, maxX + pad)
+  const y1 = Math.min(H - 1, maxY + pad)
+  const w2 = x1 - x0 + 1
+  const h2 = y1 - y0 + 1
+  if (w2 === W && h2 === H) return img
+  const out = new Uint8ClampedArray(w2 * h2 * 4)
+  for (let y = 0; y < h2; y++) {
+    const from = ((y0 + y) * W + x0) * 4
+    out.set(data.subarray(from, from + w2 * 4), y * w2 * 4)
+  }
+  return { width: w2, height: h2, data: out }
 }
 
 /** 字体栈 */
@@ -106,7 +150,7 @@ export function buildPatternSvg(
   palette: PaletteEntry[],
   options: RenderOptions = DEFAULT_RENDER_OPTIONS,
 ): PatternSvg {
-  const body = patternBody(img, palette, options, 0)
+  const body = patternBody(trimEmptyBeads(img, options), palette, options, 0)
   return {
     svg: `<svg xmlns="http://www.w3.org/2000/svg" width="${body.outW}" height="${body.outH}" viewBox="0 0 ${n(body.vbW)} ${n(body.vbH)}" font-family="${SVG_FONT}">${body.body}</svg>`,
     width: body.outW,
@@ -440,8 +484,9 @@ export function buildBoardPatternSvg(
   palette: PaletteEntry[],
   options: RenderOptions = DEFAULT_RENDER_OPTIONS,
 ): PatternSvg {
-  const layout = boardLayout(img, options)
-  if (layout.boards.length <= 1) return buildPatternSvg(img, palette, options)
+  const trimmed = trimEmptyBeads(img, options)
+  const layout = boardLayout(trimmed, options)
+  if (layout.boards.length <= 1) return buildPatternSvg(trimmed, palette, options)
 
   const cellSize = options.cellSize
   const outW = Math.max(1, Math.round(layout.widthCells * cellSize))
@@ -459,7 +504,7 @@ export function buildBoardPatternSvg(
   let beadSuppressed = false
 
   for (const board of layout.boards) {
-    const tile = sliceBoard(img, board.x0, board.y0, board.cols, board.rows)
+    const tile = sliceBoard(trimmed, board.x0, board.y0, board.cols, board.rows)
     const inner = patternBody(tile, palette, options, rulerFrom)
     codesSuppressed = codesSuppressed || inner.codesSuppressed
     beadSuppressed = beadSuppressed || inner.beadSuppressed

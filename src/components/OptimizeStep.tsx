@@ -360,7 +360,7 @@ export function OptimizeStep() {
               config.kMode === 'auto'
                 ? run.budget
                   ? `自动选定 ${run.budget} 色`
-                  : '自动寻找 ΔE 收益拐点'
+                  : '豆色加到不再明显变好就停'
                 : undefined
             }
           >
@@ -532,7 +532,7 @@ function downloadExport(
       {/* 拆成几个不换行的词：窄卡片上整句会被拆得很难看 */}
       <div className="sweep-meta tiny muted">
         <span>{result.budget} 色</span>
-        <span>ΔE {result.stats.weightedAvg.toFixed(2)}</span>
+        <span>色差 {result.stats.weightedAvg.toFixed(2)}</span>
         {result.loss > 0.005 && <span>层次损失 {result.loss.toFixed(2)}</span>}
       </div>
       <div className="sweep-hint tiny muted">{result.hint}</div>

@@ -450,9 +450,29 @@ export function PatternStep({ onOpenFullscreen }: { onOpenFullscreen: () => void
             <Check checked={renderOptions.rulers} onChange={(v) => setRenderOptions({ rulers: v })}>
               显示<b>行列标尺</b>
             </Check>
+            <Check checked={renderOptions.trimEmpty} onChange={(v) => setRenderOptions({ trimEmpty: v })}>
+              删掉<b>四周空白</b>（没放豆的行列）
+            </Check>
           </div>
 
           <div className="divider" />
+
+          {renderOptions.trimEmpty && (
+            <Field
+              label="板边留白"
+              value={renderOptions.boardPadding === 0 ? '顶格（不留）' : `${renderOptions.boardPadding} 格`}
+              hint="裁掉空白后，图纸四周再留几格空"
+            >
+              <input
+                type="range"
+                min={0}
+                max={10}
+                step={1}
+                value={renderOptions.boardPadding}
+                onChange={(e) => setRenderOptions({ boardPadding: Number(e.target.value) })}
+              />
+            </Field>
+          )}
 
           <Field
             label="粗线间隔"

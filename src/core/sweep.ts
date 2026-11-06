@@ -6,9 +6,9 @@ import type { OptimizeConfig } from './optimize.ts'
 export type SweepAxis = 'algo' | 'budget' | 'mixed'
 
 export const SWEEP_AXES: { value: SweepAxis; label: string; hint: string }[] = [
-  { value: 'algo', label: '算法', hint: '不同「色彩空间 × 距离」组合各出一张' },
-  { value: 'budget', label: '色数', hint: '只动颜料预算，算法设置不变' },
-  { value: 'mixed', label: '综合', hint: '省豆 / 均衡 / 忠实 / 自动，各来一张' },
+  { value: 'algo', label: '算法', hint: '换几种配色思路各出一张，挑顺眼的' },
+  { value: 'budget', label: '色数', hint: '只动豆色数量，配法不变' },
+  { value: 'mixed', label: '综合', hint: '推荐 / 省豆 / 忠实 / 自动，各来一张' },
 ]
 
 export interface SweepVariant {
@@ -28,15 +28,13 @@ function scaleK(k: number, factor: number): number {
  */
 export function sweepVariants(axis: SweepAxis, cfg: OptimizeConfig): SweepVariant[] {
   if (axis === 'algo') {
-    // quant-lab 实验矩阵里有区分度的五个组合：
-    // Lab 欧氏（12 张存档批量终审冠军）、YUV 曼哈顿（拆色最低）、
-    // YUV 欧氏（均衡）、Lab 曼哈顿、加权RGB 欧氏（原版度量）
+    // 排第一的是实验室终审冠军（默认配置）
     return [
-      { id: 'lab-euclid', label: 'Lab·欧氏', hint: '实验室终审冠军（默认配置）：ΔE 最低', patch: { colorSpace: 'lab', distance: 'euclidean' } },
-      { id: 'yuv-manhattan', label: 'YUV·曼哈顿', hint: '拆色最低：最不容易花', patch: { colorSpace: 'yuv', distance: 'manhattan' } },
-      { id: 'yuv-euclid', label: 'YUV·欧氏', hint: '两项之间的均衡选择', patch: { colorSpace: 'yuv', distance: 'euclidean' } },
-      { id: 'lab-manhattan', label: 'Lab·曼哈顿', hint: '感知空间 + 抗花距离', patch: { colorSpace: 'lab', distance: 'manhattan' } },
-      { id: 'wrgb-euclid', label: '加权RGB·欧氏', hint: '原版工具的度量，作对照', patch: { colorSpace: 'weightedRgb', distance: 'euclidean' } },
+      { id: 'lab-euclid', label: '推荐 · 颜色最准', hint: '实验室 12 张图测出来的最优配法（也是默认设置）', patch: { colorSpace: 'lab', distance: 'euclidean' } },
+      { id: 'yuv-manhattan', label: '最不容易花', hint: '同色区域整片用一颗豆，最不容易碎成花斑', patch: { colorSpace: 'yuv', distance: 'manhattan' } },
+      { id: 'yuv-euclid', label: '均衡', hint: '「准」和「不花」之间的折中', patch: { colorSpace: 'yuv', distance: 'euclidean' } },
+      { id: 'lab-manhattan', label: '准而不碎', hint: '和推荐接近，但整片感更好一点', patch: { colorSpace: 'lab', distance: 'manhattan' } },
+      { id: 'wrgb-euclid', label: '原版对照', hint: '原版拼豆工具的配法，放这对比用', patch: { colorSpace: 'weightedRgb', distance: 'euclidean' } },
     ]
   }
 
@@ -58,27 +56,32 @@ export function sweepVariants(axis: SweepAxis, cfg: OptimizeConfig): SweepVarian
     return out
   }
 
-  // 综合方案
+  // 综合方案：推荐（当前设置）排第一
   const k = cfg.k
   const lean = scaleK(k, 0.7)
   return [
     {
+      id: 'm-balanced',
+      label: '推荐 · 当前设置',
+      hint: '就用现在面板上的设置跑一张',
+      patch: {},
+    },
+    {
       id: 'm-sparse',
       label: '省豆',
-      hint: `${lean} 色：颜色少、买豆便宜，观感略粗`,
+      hint: `${lean} 色：买豆便宜，观感略粗`,
       patch: { kMode: 'fixed', k: lean },
     },
-    { id: 'm-balanced', label: '均衡', hint: `当前设置原样跑一张`, patch: {} },
     {
       id: 'm-faithful',
       label: '忠实原色',
-      hint: '不聚类逐色最近匹配：最像原图，但同色片段容易花',
+      hint: '不做整片归并，逐色找最近的豆：最像原图，但同色区域容易碎成花斑',
       patch: { clusterRadius: 0, kMode: 'fixed' },
     },
     {
       id: 'm-auto',
       label: '自动挑最少',
-      hint: `上限 ${k} 色，按 ΔE 收益拐点自动停`,
+      hint: `上限 ${k} 色，豆色加到不再明显变好就自动停`,
       patch: { kMode: 'auto' },
     },
   ]
