@@ -3,12 +3,12 @@ import type { OptimizeConfig } from './optimize.ts'
 /**
  * 多方案参数对比变体生成。
  */
-export type SweepAxis = 'layers' | 'budget' | 'mixed'
+export type SweepAxis = 'algo' | 'budget' | 'mixed'
 
 export const SWEEP_AXES: { value: SweepAxis; label: string; hint: string }[] = [
-  { value: 'mixed', label: '综合', hint: '省豆 / 均衡 / 忠实 / 保层次，各来一张' },
-  { value: 'layers', label: '明暗层次', hint: '只动「明暗层次保留」0～4' },
-  { value: 'budget', label: '色数', hint: '只动颜料预算，层次设置不变' },
+  { value: 'algo', label: '算法', hint: '不同「色彩空间 × 距离」组合各出一张' },
+  { value: 'budget', label: '色数', hint: '只动颜料预算，算法设置不变' },
+  { value: 'mixed', label: '综合', hint: '省豆 / 均衡 / 忠实 / 自动，各来一张' },
 ]
 
 export interface SweepVariant {
@@ -27,6 +27,18 @@ function scaleK(k: number, factor: number): number {
  * 根据指定对比轴生成候选参数变体。
  */
 export function sweepVariants(axis: SweepAxis, cfg: OptimizeConfig): SweepVariant[] {
+  if (axis === 'algo') {
+    // quant-lab 实验矩阵里有区分度的五个组合：YUV 曼哈顿（拆色最低）、
+    // Lab 欧氏（精度最高）、YUV 欧氏（均衡）、Lab 曼哈顿、加权RGB 欧氏（原版度量）
+    return [
+      { id: 'yuv-manhattan', label: 'YUV·曼哈顿', hint: '实验综合冠军：最不容易花', patch: { colorSpace: 'yuv', distance: 'manhattan' } },
+      { id: 'lab-euclid', label: 'Lab·欧氏', hint: '精度冠军：ΔE 最低', patch: { colorSpace: 'lab', distance: 'euclidean' } },
+      { id: 'yuv-euclid', label: 'YUV·欧氏', hint: '两项之间的均衡选择', patch: { colorSpace: 'yuv', distance: 'euclidean' } },
+      { id: 'lab-manhattan', label: 'Lab·曼哈顿', hint: '感知空间 + 抗花距离', patch: { colorSpace: 'lab', distance: 'manhattan' } },
+      { id: 'wrgb-euclid', label: '加权RGB·欧氏', hint: '原版工具的度量，作对照', patch: { colorSpace: 'weightedRgb', distance: 'euclidean' } },
+    ]
+  }
+
   if (axis === 'budget') {
     const k = cfg.k
     const spots = [scaleK(k, 0.7), scaleK(k, 0.85), k, scaleK(k, 1.3)]
@@ -45,37 +57,28 @@ export function sweepVariants(axis: SweepAxis, cfg: OptimizeConfig): SweepVarian
     return out
   }
 
-  if (axis === 'layers') {
-    return [
-      { id: 'c0', label: '只求像', hint: '层次 0：ΔE 最低', patch: { contrast: 0 } },
-      { id: 'c1', label: '略保层次', hint: '层次 1：救损失最大的处所', patch: { contrast: 1 } },
-      { id: 'c2', label: '均衡', hint: '层次 2：默认设置', patch: { contrast: 2 } },
-      { id: 'c4', label: '强保层次', hint: '层次 4：宁可增加预算也要保住明暗', patch: { contrast: 4 } },
-    ]
-  }
-
   // 综合方案
   const k = cfg.k
-  const lean = scaleK(k, 0.75)
+  const lean = scaleK(k, 0.7)
   return [
     {
       id: 'm-sparse',
       label: '省豆',
-      hint: `预算 ${lean} 色 · 层次 1：颜色少但明暗不至于模糊`,
-      patch: { kMode: 'fixed', k: lean, contrast: 1 },
+      hint: `${lean} 色：颜色少、买豆便宜，观感略粗`,
+      patch: { kMode: 'fixed', k: lean },
     },
-    { id: 'm-balanced', label: '均衡', hint: `预算 ${k} 色 · 层次 2：默认设置`, patch: { kMode: 'fixed', k, contrast: 2 } },
+    { id: 'm-balanced', label: '均衡', hint: `当前设置原样跑一张`, patch: {} },
     {
       id: 'm-faithful',
       label: '忠实原色',
-      hint: `预算 ${k} 色 · 层次 0：追求颜色匹配最精准`,
-      patch: { kMode: 'fixed', k, contrast: 0 },
+      hint: '不聚类逐色最近匹配：最像原图，但同色片段容易花',
+      patch: { clusterRadius: 0, kMode: 'fixed' },
     },
     {
-      id: 'm-layers',
-      label: '保层次',
-      hint: `预算 ${k} 色 · 层次 4：最大限度保留明暗细节`,
-      patch: { kMode: 'fixed', k, contrast: 4 },
+      id: 'm-auto',
+      label: '自动挑最少',
+      hint: `上限 ${k} 色，按 ΔE 收益拐点自动停`,
+      patch: { kMode: 'auto' },
     },
   ]
 }

@@ -316,7 +316,7 @@ section('② 优化颜色')
       useStudio.setState({ grid, activeStage: 'optimize' })
     })
     await act(async () => {
-      useStudio.getState().setOptimizeConfig({ k: 6, steps: 3000, patience: 600, seed: 11 })
+      useStudio.getState().setOptimizeConfig({ k: 6, kMode: 'fixed', clusterRadius: 0 })
       await useStudio.getState().runOptimizer()
     })
     const after = useStudio.getState()
@@ -345,7 +345,7 @@ section('② 优化颜色 · 多方案对比')
   if (grid) {
     await act(async () => {
       useStudio.setState({ activeStage: 'optimize' })
-      useStudio.getState().setOptimizeConfig({ k: 8, steps: 2000, patience: 400, seed: 5 })
+      useStudio.getState().setOptimizeConfig({ k: 8 })
       await useStudio.getState().runSweep('mixed')
     })
     const s = useStudio.getState().sweep
@@ -465,7 +465,7 @@ section('优化器与 store 一致性')
   const grid = useStudio.getState().grid
   if (grid) {
     const info = targetsFromPixmap(grid)
-    const opt = new PaletteOptimizer(palette, { ...useStudio.getState().optimizeConfig, steps: 2000, patience: 400, seed: 3 }, 'grid')
+    const opt = new PaletteOptimizer(palette, { ...useStudio.getState().optimizeConfig, clusterRadius: 0 }, 'grid')
     opt.setTargets(info.samples)
     let finalStats: { weightedAvg: number } | null = null
     for await (const ev of opt.run()) {

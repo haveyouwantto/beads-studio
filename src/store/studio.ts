@@ -1155,11 +1155,11 @@ export const useStudio = create<StudioState>((set, get) => ({
           }))
         } else {
           const reasonText =
-            event.reason === 'early-exit'
-              ? `提前收敛（连续 ${state.optimizeConfig.patience} 步无改进）`
+            event.reason === 'knee'
+              ? '已达收益拐点（再添颜色几乎不变）'
               : event.reason === 'stopped'
                 ? '已手动停止'
-                : '已完成全部退火步数'
+                : '已完成'
           set((s) => ({
             optimizeRun: {
               ...s.optimizeRun,
@@ -1269,7 +1269,7 @@ export const useStudio = create<StudioState>((set, get) => ({
           ? quantizeToPalette(
               state.grid,
               matchPalette(entries, state.renderOptions.background),
-              { ...state.quantizeOptions, quantize: true, hueWeight: cfg.hueWeight },
+              { ...state.quantizeOptions, quantize: true },
               mapping,
             )
           : null

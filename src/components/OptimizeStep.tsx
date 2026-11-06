@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { tabNameOf, useStudio } from '../store/studio.ts'
 import { Check, Empty, Field, Notice, Panel, Segmented, Stat, Swatch } from './ui.tsx'
-import { targetsFromPixmap, type OptimizeStats } from '../core/optimize.ts'
+import { targetsFromPixmap, COLOR_SPACES, DISTANCES, type OptimizeConfig, type OptimizeStats } from '../core/optimize.ts'
 import type { Pixmap } from '../core/types.ts'
 import { CODE_SYSTEMS, codeOf, compareByCode, swatchHex, type CodeSystem, type PaletteEntry } from '../core/palette.ts'
 import { buildPaletteExport, downloadText, safeFileName } from '../core/export.ts'
@@ -20,7 +20,6 @@ export function OptimizeStep() {
   const setIncludeExtended = useStudio((s) => s.setIncludeExtended)
   const config = useStudio((s) => s.optimizeConfig)
   const setConfig = useStudio((s) => s.setOptimizeConfig)
-  const setQuantizeOptions = useStudio((s) => s.setQuantizeOptions)
   const targetMode = useStudio((s) => s.optimizeTargetMode)
   const setTargetMode = useStudio((s) => s.setOptimizeTargetMode)
   const run = useStudio((s) => s.optimizeRun)
@@ -54,8 +53,8 @@ export function OptimizeStep() {
     drawPixmap(gridRef.current, grid, s, false)
   }, [grid])
 
-  // 色相权重 >0 时统计量已经不是纯 CIE76 ΔE，标签跟着改，免得把两个数混着比
-  const deltaLabel = config.hueWeight > 0 ? '色相 ΔE ' : 'ΔE '
+  // 统计一律是 Lab ΔE76，与匹配用的度量无关，两套方案可直接比较
+  const deltaLabel = 'ΔE '
 
   const sortedResult = useMemo(
     () => [...optimizedPalette].sort((a, b) => compareByCode(a, b, codeSystem)),
@@ -322,9 +321,7 @@ export function OptimizeStep() {
           </div>
           <div className="row" style={{ justifyContent: 'space-between' }}>
             <span className="tiny muted">{run.status === 'idle' ? '待运行' : `${run.progress.toFixed(1)}%`}</span>
-            <span className="tiny muted">
-              {run.step.toLocaleString()} / {config.steps.toLocaleString()} 步
-            </span>
+            <span className="tiny muted">{run.status === 'running' ? '计算中…' : ''}</span>
           </div>
 
           <div className="divider" />
@@ -363,7 +360,7 @@ export function OptimizeStep() {
               config.kMode === 'auto'
                 ? run.budget
                   ? `自动选定 ${run.budget} 色`
-                  : '自动寻找 ΔE 拐点'
+                  : '自动寻找 ΔE 收益拐点'
                 : undefined
             }
           >
@@ -384,74 +381,45 @@ export function OptimizeStep() {
               onChange={(e) => setConfig({ k: Number(e.target.value) })}
             />
           </Field>
-          <Field label="退火步数">
-            <input
-              type="number"
-              min={1000}
-              max={400000}
-              step={1000}
-              value={config.steps}
-              onChange={(e) => setConfig({ steps: Math.max(1000, Number(e.target.value) || 1000) })}
-            />
+          <Field label="色彩空间" hint={COLOR_SPACES.find((s) => s.value === config.colorSpace)?.hint}>
+            <select
+              value={config.colorSpace}
+              onChange={(e) => setConfig({ colorSpace: e.target.value as OptimizeConfig['colorSpace'] })}
+            >
+              {COLOR_SPACES.map((s) => (
+                <option key={s.value} value={s.value}>
+                  {s.label}
+                </option>
+              ))}
+            </select>
           </Field>
-          <Field label="提前终止耐心值" hint="无更优解即结束">
-            <input
-              type="number"
-              min={200}
-              max={100000}
-              step={100}
-              value={config.patience}
-              onChange={(e) => setConfig({ patience: Math.max(200, Number(e.target.value) || 200) })}
-            />
-          </Field>
-          <Field label="优化目标">
-            <Segmented
-              value={config.objective}
-              onChange={(v) => setConfig({ objective: v })}
-              options={[
-                { value: 'avg', label: '平均 ΔE' },
-                { value: 'max', label: '最大 ΔE' },
-              ]}
-            />
-          </Field>
-          <Field label="色相权重" hint="提高饱和度与色相准确度（默认 2）">
-            <input
-              type="number"
-              min={0}
-              max={4}
-              step={0.5}
-              value={config.hueWeight}
-              onChange={(e) => {
-                const v = Math.min(4, Math.max(0, Number(e.target.value) || 0))
-                setConfig({ hueWeight: v })
-                // 出图用的是 quantizeOptions，两个必须同步，否则选色与落子用的不是同一个度量
-                setQuantizeOptions({ hueWeight: v })
-              }}
-            />
+          <Field label="距离算法" hint={DISTANCES.find((d) => d.value === config.distance)?.hint}>
+            <select
+              value={config.distance}
+              onChange={(e) => setConfig({ distance: e.target.value as OptimizeConfig['distance'] })}
+            >
+              {DISTANCES.map((d) => (
+                <option key={d.value} value={d.value}>
+                  {d.label}
+                </option>
+              ))}
+            </select>
           </Field>
           <Field
-            label="明暗层次保留"
-            hint="保留明暗过渡细节（默认 2）"
+            label="聚类半径"
+            value={config.clusterRadius === 0 ? '不聚类' : String(config.clusterRadius)}
+            hint="半径内的颜色整球同豆：0 = 逐色独立匹配（最像但会花）"
           >
             <input
-              type="number"
+              type="range"
               min={0}
-              max={4}
+              max={20}
               step={0.5}
-              value={config.contrast}
-              onChange={(e) => setConfig({ contrast: Math.min(4, Math.max(0, Number(e.target.value) || 0)) })}
+              value={config.clusterRadius}
+              onChange={(e) => setConfig({ clusterRadius: Number(e.target.value) })}
             />
           </Field>
 
-          <Field label="随机种子">
-            <input
-              type="number"
-              min={1}
-              max={999999}
-              value={config.seed}
-              onChange={(e) => setConfig({ seed: Math.max(1, Number(e.target.value) || 1) })}
-            />
-          </Field>
           <Field label="色号体系">
             <select value={codeSystem} onChange={(e) => setCodeSystem(e.target.value as CodeSystem)}>
               {CODE_SYSTEMS.map((c) => (
@@ -465,26 +433,8 @@ export function OptimizeStep() {
           <div className="divider" />
 
           <div style={{ display: 'grid', gap: 9 }}>
-            <Check checked={config.weighted} onChange={(v) => setConfig({ weighted: v })}>
-              按出现次数<b>加权</b>
-            </Check>
             <Check checked={config.mandatory} onChange={(v) => setConfig({ mandatory: v })}>
-              固定包含<b>黑白</b>
-            </Check>
-            <Check checked={config.greedyInit} onChange={(v) => setConfig({ greedyInit: v })}>
-              贪心最远点<b>初始解</b>
-            </Check>
-            <Check checked={config.polish} onChange={(v) => setConfig({ polish: v })}>
-              退火后做<b>贪心精修</b>
-            </Check>
-            <Check checked={config.hueFamilies} onChange={(v) => setConfig({ hueFamilies: v })}>
-              保留小面积<b>色相</b>
-            </Check>
-            <Check checked={config.fillBudget} onChange={(v) => setConfig({ fillBudget: v })}>
-              预算未满时<b>补色</b>
-            </Check>
-            <Check checked={config.mergeLookalikes} onChange={(v) => setConfig({ mergeLookalikes: v })}>
-              过滤相近重复色
+              固定包含<b>黑白</b>（不占预算）
             </Check>
             <Check checked={includeExtended} onChange={setIncludeExtended}>
               包含<b>扩展色号</b>
@@ -498,7 +448,6 @@ export function OptimizeStep() {
             <Stat k="候选色" v={run.candidates || candidateCount} small />
             <Stat k="目标色" v={run.targets || targetCount} small />
             <Stat k="实际色数" v={run.budget ? `${run.budget} 色` : '—'} small />
-            <Stat k="当前温度" v={run.temperature ? run.temperature.toExponential(2) : '—'} small />
             <Stat k="用时" v={run.elapsedMs ? `${(run.elapsedMs / 1000).toFixed(1)}s` : '—'} small />
           </div>
           {run.status === 'done' && (

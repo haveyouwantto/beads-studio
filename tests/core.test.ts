@@ -38,7 +38,7 @@ import {
   swatchHex,
   VISIBLE_PALETTE_SOURCES,
 } from '../src/core/palette.ts'
-import { PaletteOptimizer, targetsFromPixmap, DEFAULT_OPTIMIZE_CONFIG, type TargetSample } from '../src/core/optimize.ts'
+import { PaletteOptimizer, targetsFromPixmap, DEFAULT_OPTIMIZE_CONFIG, type OptimizeConfig, type TargetSample } from '../src/core/optimize.ts'
 import { sweepVariants } from '../src/core/sweep.ts'
 import { clampRect, cropPixmap } from '../src/core/crop.ts'
 import { deltaE, deltaEHue, hexToRgb, rgbToHex, rgbToLab } from '../src/core/color.ts'
@@ -596,16 +596,16 @@ section('③ 优化颜色（以规范化结果为优化目标）')
   check('从网格提取出目标色', targetInfo.samples.length > 0, `${targetInfo.samples.length} 个`)
   check('目标权重之和 = 像素数', targetInfo.samples.reduce((a, s) => a + s.count, 0) === CELLS_W * CELLS_H)
 
-  const config = {
+  // clusterRadius = 0：每个源色独立成簇，K 才有「恰好选 k 颗」的语义
+  const config: OptimizeConfig = {
     ...DEFAULT_OPTIMIZE_CONFIG,
     k: 6,
-    steps: 4000,
-    patience: 800,
-    seed: 7,
+    kMode: 'fixed',
+    clusterRadius: 0,
   }
 
-  const runOnce = async (seed: number) => {
-    const optimizer = new PaletteOptimizer(palette, { ...config, seed }, 'grid')
+  const runOnce = async () => {
+    const optimizer = new PaletteOptimizer(palette, config, 'grid')
     optimizer.setTargets(targetInfo.samples)
     let initial = 0
     let final = 0
@@ -624,7 +624,7 @@ section('③ 优化颜色（以规范化结果为优化目标）')
     return { initial, final, selected, stats, sawProgress }
   }
 
-  const a = await runOnce(7)
+  const a = await runOnce()
   check('返回结果色数 = K + 固定黑白', a.selected.length === config.k + 2, `实际 ${a.selected.length}`)
   check('结果全部来自色号库', a.selected.every((e) => palette.includes(e)))
   check('固定色号一定被选中', a.selected.some((e) => e.codes.MARD === 'H07') && a.selected.some((e) => e.codes.MARD === 'H02'))
@@ -633,11 +633,39 @@ section('③ 优化颜色（以规范化结果为优化目标）')
   check('运行过程有进度回调', a.sawProgress)
   check('最终最大 ΔE 有限', Number.isFinite(a.stats.max) && a.stats.max >= 0)
 
-  const b = await runOnce(7)
+  const b = await runOnce()
   const sameSelection =
     a.selected.length === b.selected.length &&
     a.selected.every((e, i) => e.hex === b.selected[i].hex)
-  check('相同种子结果可复现', sameSelection)
+  check('确定性算法结果可复现', sameSelection)
+
+  // 聚类打开：同一片颜色的源色必须整簇同豆（这是新算法「不花」的核心）
+  const clustered = new PaletteOptimizer(palette, { ...config, clusterRadius: 9 }, 'grid')
+  clustered.setTargets(targetInfo.samples)
+  let clusteredMapping: { key: number; hex: string }[] = []
+  for await (const ev of clustered.run()) if (ev.type === 'completed') clusteredMapping = ev.mapping
+  const nearPairs = new Map<string, Set<string>>()
+  for (const s1 of targetInfo.samples) {
+    for (const s2 of targetInfo.samples) {
+      if (s1.rgb >= s2.rgb) continue
+      const d = deltaE(s1.lab, s2.lab)
+      if (d < 2) {
+        const hex1 = clusteredMapping.find((m) => m.key === keyOfRgb(s1.rgb))?.hex
+        const hex2 = clusteredMapping.find((m) => m.key === keyOfRgb(s2.rgb))?.hex
+        if (!hex1 || !hex2) continue
+        const set = nearPairs.get(hex1) ?? new Set<string>()
+        set.add(hex2)
+        nearPairs.set(hex1, set)
+      }
+    }
+  }
+  const splitNear = [...nearPairs.entries()].filter(([, others]) => others.size > 0).length
+  check('聚类打开后 ΔE<2 的近色源色不落两颗豆（拆色为 0）', splitNear === 0, `${splitNear} 对被拆`)
+}
+
+function keyOfRgb(rgb: readonly [number, number, number]): number {
+  const [r, g, b] = rgb
+  return (Math.round(r) << 16) | (Math.round(g) << 8) | Math.round(b)
 }
 
 /** 参照物：随机抽 k 个颜色的加权平均 ΔE，用来确认优化确实有用 */
@@ -1028,11 +1056,7 @@ section('优化颜色 · 补色（预算没用满就补回来）')
       {
         ...DEFAULT_OPTIMIZE_CONFIG,
         mandatory: false,
-        contrast: 0,
         k,
-        steps: 4000,
-        patience: 1000,
-        seed: 11,
       },
       'grid',
     )
@@ -1071,7 +1095,7 @@ section('优化颜色 · 补色不会把画面补花')
   const runWith = async (targets: TargetSample[], beads: PaletteEntry[]) => {
     const opt = new PaletteOptimizer(
       beads,
-      { ...DEFAULT_OPTIMIZE_CONFIG, mandatory: false, k: 4, steps: 4000, patience: 1000, seed: 5 },
+      { ...DEFAULT_OPTIMIZE_CONFIG, mandatory: false, k: 4 },
       'grid',
     )
     opt.setTargets(targets)
@@ -1114,10 +1138,10 @@ section('优化颜色 · 补色不会把画面补花')
   check('同一片底色的几个近色源色落同一颗豆', new Set(three).size === 1, three.join(' / '))
   check('合并后每个源色仍然有自己的分配', shadeRun.mapping.length === shades.length, `${shadeRun.mapping.length}`)
 
-  // 关掉补色：色号数只会更少，且分配仍是最近色
+  // 不聚类（半径 0）：逐色最近匹配，两个源色各自落最近的豆
   const opt = new PaletteOptimizer(
     twinBeads,
-    { ...DEFAULT_OPTIMIZE_CONFIG, mandatory: false, k: 4, steps: 2000, patience: 800, seed: 5, fillBudget: false },
+    { ...DEFAULT_OPTIMIZE_CONFIG, mandatory: false, k: 4, clusterRadius: 0 },
     'grid',
   )
   opt.setTargets([sampleOf('#E09438', 50), sampleOf('#D9A46F', 30)])
@@ -1125,7 +1149,7 @@ section('优化颜色 · 补色不会把画面补花')
   for await (const ev of opt.run()) if (ev.type === 'completed') offMapping = ev.mapping
   const offByKey = new Map(offMapping.map((m) => [m.key, m.hex]))
   check(
-    '关掉补色后仍然每个颜色都有着落',
+    '不聚类时每个颜色都有着落',
     offByKey.size === 2 && [...offByKey.values()].every((h) => typeof h === 'string'),
     `${offByKey.size}`,
   )
@@ -1149,7 +1173,7 @@ section('优化颜色 · 自动色数')
   const runAuto = async (cap: number) => {
     const opt = new PaletteOptimizer(
       beads,
-      { ...DEFAULT_OPTIMIZE_CONFIG, mandatory: false, k: cap, kMode: 'auto', steps: 3000, patience: 800, seed: 3 },
+      { ...DEFAULT_OPTIMIZE_CONFIG, mandatory: false, k: cap, kMode: 'auto' },
       'grid',
     )
     opt.setTargets(targets)
@@ -1176,110 +1200,25 @@ section('优化颜色 · 自动色数')
   check('自动模式受上限约束', capped.budget <= 2, `${capped.budget}`)
 }
 
-section('优化颜色 · 明暗层次')
-{
-  const entryOf = (hex: string, code: string): PaletteEntry => ({
-    hex,
-    rgb: hexToRgb(hex),
-    lab: rgbToLab(hexToRgb(hex)),
-    codes: { MARD: code },
-  })
-  const sampleOf = (hex: string, count: number): TargetSample => {
-    const rgb = hexToRgb(hex)
-    return { rgb, lab: rgbToLab(rgb), count }
-  }
-  // 浅灰与深灰是同一片头发的两个亮度层，中间那颗 #B4A497 对两者都是最近的豆
-  const light = '#C8B9B2'
-  const dark = '#A59489'
-  const targets = [sampleOf(light, 100), sampleOf(dark, 40)]
-  const mid = entryOf('#B4A497', 'M1')
-  // 同色系的浅一档（#E6C9B7，色相 60°）与「换了个色系」的粉灰（#C5B2BC，色相 343°）
-  const sameHue = entryOf('#E6C9B7', 'M2')
-  const otherHue = entryOf('#C5B2BC', 'M3')
-
-  const runWith = async (beads: PaletteEntry[], contrast: number) => {
-    // 关掉「补色」：那一项本来就会为了凑满预算把颜色拆开，这里只想看层次这一项的效果
-    const opt = new PaletteOptimizer(
-      beads,
-      {
-        ...DEFAULT_OPTIMIZE_CONFIG,
-        mandatory: false,
-        fillBudget: false,
-        k: 2,
-        contrast,
-        steps: 4000,
-        patience: 1200,
-        seed: 9,
-      },
-      'grid',
-    )
-    opt.setTargets(targets)
-    let mapping: { key: number; hex: string }[] = []
-    let stats = { min: 0, max: 0, avg: 0, weightedAvg: 0 }
-    for await (const ev of opt.run()) {
-      if (ev.type === 'completed') {
-        mapping = ev.mapping
-        stats = ev.stats
-      }
-    }
-    const byKey = new Map(mapping.map((m) => [m.key, m.hex]))
-    const keyOf = (hex: string) => {
-      const [r, g, b] = hexToRgb(hex)
-      return (r << 16) | (g << 8) | b
-    }
-    return { light: byKey.get(keyOf(light)), dark: byKey.get(keyOf(dark)), stats, byKey }
-  }
-
-  const off = await runWith([mid, sameHue, otherHue], 0)
-  check('对比强度 0 = 只追求 ΔE：两个亮度层压在同一颗豆上', off.light === off.dark, `${off.light} vs ${off.dark}`)
-
-  const on = await runWith([mid, sameHue, otherHue], 2)
-  check(
-    '对比强度 2：明暗层被拆到两颗豆上',
-    !!on.light && !!on.dark && on.light !== on.dark,
-    `${on.light} vs ${on.dark}`,
-  )
-  check(
-    '拆层用的是同色系的豆，不会把头发染成粉灰',
-    on.light === sameHue.hex || on.dark === sameHue.hex,
-    `${on.light} vs ${on.dark}`,
-  )
-  check('拆层后每个颜色都有着落', on.byKey.size === 2, `${on.byKey.size}`)
-
-  // 只有「换色系」这一条路时，宁可压平也不换色系
-  const onlyOther = await runWith([mid, otherHue], 4)
-  check(
-    '只有跨色相的替代豆时宁可不拆',
-    onlyOther.light === onlyOther.dark,
-    `${onlyOther.light} vs ${onlyOther.dark}`,
-  )
-}
-
 section('优化颜色 · 多方案对比')
 {
   const cfg = { ...DEFAULT_OPTIMIZE_CONFIG, k: 16 }
 
-  const mixed = sweepVariants('mixed', cfg)
-  check('综合轴给 4 套方案', mixed.length === 4, `${mixed.length}`)
+  const algo = sweepVariants('algo', cfg)
+  check('算法轴给 5 套「空间×距离」组合', algo.length === 5, `${algo.length}`)
   check(
     '每套方案都有独立的 id 和一句说明',
-    new Set(mixed.map((v) => v.id)).size === mixed.length && mixed.every((v) => v.label && v.hint),
-  )
-  const sparse = mixed.find((v) => v.id === 'm-sparse')
-  check(
-    '综合轴的「省豆」真的比当前预算少',
-    !!sparse && (sparse.patch.k ?? cfg.k) < cfg.k,
-    `${sparse?.patch.k}`,
+    new Set(algo.map((v) => v.id)).size === algo.length && algo.every((v) => v.label && v.hint),
   )
   check(
-    '综合轴覆盖「不罚层次」和「强保层次」两头',
-    mixed.some((v) => v.patch.contrast === 0) && mixed.some((v) => (v.patch.contrast ?? 0) >= 4),
+    '算法轴覆盖实验的两个冠军（YUV曼哈顿 / Lab欧氏）',
+    algo.some((v) => v.patch.colorSpace === 'yuv' && v.patch.distance === 'manhattan') &&
+      algo.some((v) => v.patch.colorSpace === 'lab' && v.patch.distance === 'euclidean'),
   )
-
-  const layers = sweepVariants('layers', cfg)
-  const contrasts = layers.map((v) => v.patch.contrast ?? cfg.contrast)
-  check('层次轴从 0 排到 4', Math.min(...contrasts) === 0 && Math.max(...contrasts) === 4, contrasts.join('/'))
-  check('层次轴四档互不相同', new Set(contrasts).size === contrasts.length, contrasts.join('/'))
+  check(
+    '算法轴只动空间和距离，其他设置原样保留',
+    algo.every((v) => v.patch.clusterRadius === undefined && v.patch.k === undefined),
+  )
 
   // 自动模式下的 K 只是上限，拿它当色数比没有意义
   const budget = sweepVariants('budget', { ...cfg, kMode: 'auto' })
@@ -1295,12 +1234,27 @@ section('优化颜色 · 多方案对比')
     tiny.map((v) => v.patch.k).join('/'),
   )
 
-  // 方案只是「打补丁」：用户自己调的开关（加权、色相族、种子）必须原样保留
-  const custom = { ...cfg, weighted: false, hueFamilies: false, seed: 7 }
+  const mixed = sweepVariants('mixed', cfg)
+  check('综合轴给 4 套方案', mixed.length === 4, `${mixed.length}`)
+  const sparse = mixed.find((v) => v.id === 'm-sparse')
+  check(
+    '综合轴的「省豆」真的比当前预算少',
+    !!sparse && (sparse.patch.k ?? cfg.k) < cfg.k,
+    `${sparse?.patch.k}`,
+  )
+  check('综合轴的「忠实原色」关闭聚类', mixed.some((v) => v.patch.clusterRadius === 0))
+  check('综合轴的「自动挑最少」是 auto 模式', mixed.some((v) => v.patch.kMode === 'auto'))
+
+  // 方案只是「打补丁」：除自己声明的项外，用户调过的设置原样保留
+  const custom = { ...cfg, colorSpace: 'lab' as const, clusterRadius: 5 }
   const applied = sweepVariants('mixed', custom).map((v) => ({ ...custom, ...v.patch }))
   check(
-    '方案只改自己那几项，其他开关原样保留',
-    applied.every((c) => c.weighted === false && c.hueFamilies === false && c.seed === 7),
+    '色彩空间任何方案都不动',
+    applied.every((c) => c.colorSpace === 'lab'),
+  )
+  check(
+    '只有「忠实原色」动聚类半径，其余方案保持 5',
+    applied.every((c) => (c.clusterRadius === 0) === (sweepVariants('mixed', custom)[applied.indexOf(c)]?.id === 'm-faithful') || c.clusterRadius === 5),
   )
   check('综合轴的预算都比原图颜色数小的时候也能跑', applied.every((c) => c.k >= 2))
 }
@@ -1346,67 +1300,6 @@ section('颜色度量 · 色相敏感 ΔE')
   check('无彩色之间不加色相惩罚',
     Math.abs(deltaEHue(g1, g2, 2) - deltaE(g1, g2)) < 0.35,
     `${deltaEHue(g1, g2, 2).toFixed(2)} vs ${deltaE(g1, g2).toFixed(2)}`)
-}
-
-section('优化颜色 · 色相族保底')
-{
-  const fullPalette = buildLibraryPalette({ includeExtended: true })
-  const hueOfHex = (hex: string): number => {
-    const lab = rgbToLab(hexToRgb(hex))
-    return ((Math.atan2(lab[2], lab[1]) * 180) / Math.PI + 360) % 360
-  }
-  const gapDeg = (x: number, y: number): number => {
-    const d = Math.abs(x - y) % 360
-    return d > 180 ? 360 - d : d
-  }
-  const sampleOf = (hex: string, count: number): TargetSample => ({
-    rgb: hexToRgb(hex),
-    lab: rgbToLab(hexToRgb(hex)),
-    count,
-  })
-  // 大面积暖色 + 大面积蓝色，再加一点几乎没人注意的青绿（占比 3%）
-  const tiny = '#4E846D'
-  const targets = [
-    sampleOf('#C9675E', 400),
-    sampleOf('#8A4526', 300),
-    sampleOf('#FEA49F', 200),
-    sampleOf('#3CAED8', 400),
-    sampleOf('#19779D', 300),
-    sampleOf(tiny, 90),
-  ]
-
-  const runWith = async (hueFamilies: boolean) => {
-    const opt = new PaletteOptimizer(
-      fullPalette,
-      { ...DEFAULT_OPTIMIZE_CONFIG, mandatory: false, k: 4, steps: 6000, patience: 1500, seed: 7, hueFamilies },
-      'grid',
-    )
-    opt.setTargets(targets)
-    let selected: number[] = []
-    let stats = { min: 0, max: 0, avg: 0, weightedAvg: 0 }
-    for await (const ev of opt.run()) {
-      if (ev.type === 'completed') {
-        selected = ev.selected
-        stats = ev.stats
-      }
-    }
-    return { selected, stats }
-  }
-
-  const on = await runWith(true)
-  const off = await runWith(false)
-  const tinyHue = hueOfHex(tiny)
-  const held = (sel: number[]) =>
-    sel.some((i) => {
-      const lab = fullPalette[i].lab
-      if (Math.hypot(lab[1], lab[2]) < 5) return false
-      return gapDeg(hueOfHex(fullPalette[i].hex), tinyHue) <= 30
-    })
-  check('开保底时青绿族有一颗同色相的豆', held(on.selected),
-    on.selected.map((i) => fullPalette[i].hex).join(' '))
-  // 保底是「加约束」，不该把结果整体拖差太多
-  check('保底带来的 ΔE 涨幅受控', on.stats.weightedAvg <= off.stats.weightedAvg + 1.5 + 1e-9,
-    `${on.stats.weightedAvg.toFixed(2)} vs ${off.stats.weightedAvg.toFixed(2)}`)
 }
 
 section('候选色方案 · 导入导出')
